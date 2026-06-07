@@ -1,0 +1,78 @@
+“Commons Clause” License Condition v1.0
+=======================================
+
+The Software is provided to you by the Licensor under the License, as defined
+below, subject to the following condition.
+
+Without limiting other conditions in the License, the grant of rights under the
+License will not include, and the License does not grant to you, the right to
+Sell the Software.
+
+For purposes of the foregoing, “Sell” means practicing any or all of the rights
+granted to you under the License to provide to third parties, for a fee or
+other consideration (including without limitation fees for hosting or
+consulting/support services related to the Software), a product or service
+whose value derives, entirely or substantially, from the functionality of the
+Software. Any license notice or attribution required by the License must also
+include this Commons Clause License Condition notice.
+
+Software:        Inventory Management System
+License:         MIT (as set forth below, modified by the Commons Clause above)
+Licensor:        Tarun Vishwakarma
+
+
+MIT License
+===========
+
+Copyright (c) 2026 Tarun Vishwakarma
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the “Software”), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice, this permission notice, and the Commons Clause
+License Condition notice above shall be included in all copies or substantial
+portions of the Software.
+
+THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Plain-Language Summary (Non-Binding)
+
+====================================
+
+This summary is provided for convenience only. The legally binding terms are
+the Commons Clause and MIT License text above.
+
+You ARE permitted to:
+
+- Clone, download, and run the Software for personal use
+- Use the Software for internal business or development purposes
+- Modify, fork, and create derivative works
+- Contribute changes back to the project
+- Redistribute the Software (with this license included)
+- Self-host the Software for your own organization’s internal use
+
+You are NOT permitted to:
+
+- Sell the Software, or a product or service whose value derives entirely
+    or substantially from the Software
+- Offer the Software as a paid hosted/managed service (SaaS) to third
+    parties
+- Provide paid support, consulting, or hosting services where the value
+    derives primarily from the Software itself
+- Remove or alter this license, the Commons Clause notice, or attribution
+
+If you wish to use the Software for any of the prohibited purposes above,
+you must obtain a separate commercial license from the Licensor:
+
+  Tarun Vishwakarma
+  Email: [taruvishwakarma81@gmail.com](mailto:taruvishwakarma81@gmail.com)
