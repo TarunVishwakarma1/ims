@@ -1,0 +1,92 @@
+package repository
+
+import (
+	"context"
+
+	"github.com/TarunVishwakarma1/ims/backend/internal/domain"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+type CategoryRepository interface {
+	Create(ctx context.Context, category *domain.Category) error
+	GetByID(ctx context.Context, id uuid.UUID) (*domain.Category, error)
+	Update(ctx context.Context, category *domain.Category) error
+	Delete(ctx context.Context, id uuid.UUID) error
+	List(ctx context.Context) ([]*domain.Category, error)
+}
+
+type categoryRepository struct {
+	pool *pgxpool.Pool
+}
+
+func NewCategoryRepository(pool *pgxpool.Pool) CategoryRepository {
+	return &categoryRepository{pool: pool}
+}
+
+func (r *categoryRepository) Create(ctx context.Context, category *domain.Category) error {
+	query := `
+		INSERT INTO categories (id, name, description, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5)
+	`
+	_, err := r.pool.Exec(ctx, query, category.ID, category.Name, category.Description, category.CreatedAt, category.UpdatedAt)
+	return err
+}
+
+func (r *categoryRepository) GetByID(ctx context.Context, id uuid.UUID) (*domain.Category, error) {
+	query := `
+		SELECT id, name, description, created_at, updated_at
+		FROM categories
+		WHERE id = $1
+	`
+	category := &domain.Category{}
+	err := r.pool.QueryRow(ctx, query, id).Scan(&category.ID, &category.Name, &category.Description, &category.CreatedAt, &category.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return category, nil
+}
+
+func (r *categoryRepository) Update(ctx context.Context, category *domain.Category) error {
+	query := `
+		UPDATE categories
+		SET name = $2, description = $3, updated_at = $4
+		WHERE id = $1
+	`
+	_, err := r.pool.Exec(ctx, query, category.ID, category.Name, category.Description, category.UpdatedAt)
+	return err
+}
+
+func (r *categoryRepository) Delete(ctx context.Context, id uuid.UUID) error {
+	query := `
+		DELETE FROM categories
+		WHERE id = $1
+	`
+	_, err := r.pool.Exec(ctx, query, id)
+	return err
+}
+
+func (r *categoryRepository) List(ctx context.Context) ([]*domain.Category, error) {
+	query := `
+		SELECT id, name, description, created_at, updated_at
+		FROM categories
+		ORDER BY created_at DESC
+	`
+	rows, err := r.pool.Query(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var categories []*domain.Category
+	for rows.Next() {
+		category := &domain.Category{}
+		err := rows.Scan(&category.ID, &category.Name, &category.Description, &category.CreatedAt, &category.UpdatedAt)
+		if err != nil {
+			return nil, err
+		}
+		categories = append(categories, category)
+	}
+
+	return categories, nil
+}
