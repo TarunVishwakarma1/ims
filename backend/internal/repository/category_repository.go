@@ -2,9 +2,11 @@ package repository
 
 import (
 	"context"
+	"errors"
 
 	"github.com/TarunVishwakarma1/ims/backend/internal/domain"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -42,6 +44,9 @@ func (r *categoryRepository) GetByID(ctx context.Context, id uuid.UUID) (*domain
 	category := &domain.Category{}
 	err := r.pool.QueryRow(ctx, query, id).Scan(&category.ID, &category.Name, &category.Description, &category.CreatedAt, &category.UpdatedAt)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, domain.ErrNotFound
+		}
 		return nil, err
 	}
 	return category, nil
@@ -86,6 +91,10 @@ func (r *categoryRepository) List(ctx context.Context) ([]*domain.Category, erro
 			return nil, err
 		}
 		categories = append(categories, category)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
 	return categories, nil
