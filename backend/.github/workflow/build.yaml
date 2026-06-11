@@ -19,7 +19,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: '1.22' # Specify your Go version
+        go-version: '1.26' # Specify your Go version
 
     # Step 3: Run Go tests (Recommended before building the image)
     - name: Run Tests
@@ -41,11 +41,9 @@ jobs:
       id: meta
       uses: docker/metadata-action@v5
       with:
-        images: ${{ secrets.DOCKERHUB_USERNAME }}/my-go-app
+        images: ${{ secrets.DOCKERHUB_USERNAME }}/ims-backend
         tags: |
-          # Dynamic version tag: e.g., sha-a1b2c3d or v1.0.0-build.1
           type=sha,format=short,prefix=v-
-          # The 'latest' tag that always updates to the newest build
           type=raw,value=latest
 
     # Step 7: Build and Push the Docker Image

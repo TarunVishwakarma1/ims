@@ -13,6 +13,8 @@ import (
 	"github.com/TarunVishwakarma1/ims/backend/internal/handler"
 	"github.com/TarunVishwakarma1/ims/backend/internal/repository"
 	"github.com/TarunVishwakarma1/ims/backend/internal/service"
+	"github.com/TarunVishwakarma1/ims/backend/pkg/logger"
+	"go.uber.org/zap"
 )
 
 func main() {
@@ -28,9 +30,16 @@ func main() {
 		log.Fatalf("failed to load config: %v", err)
 	}
 
+	appLogger, err := logger.New(cfg.ENV)
+	if err != nil {
+		log.Fatalf("failed to init logger: %v", err)
+	}
+	defer appLogger.Sync()
+	zap.ReplaceGlobals(appLogger)
+
 	pool, err := repository.NewPool(ctx, cfg.DatabaseURL)
 	if err != nil {
-		log.Fatalf("failed to create DB pool: %v", err)
+		zap.L().Fatal("failed to create DB pool", zap.Error(err))
 	}
 	defer pool.Close()
 
@@ -55,7 +64,7 @@ func main() {
 	orderH := handler.NewOrderHandler(orderService, productService)
 	authH := handler.NewAuthHandler(authService)
 
-	router := NewRouter(authH, userH, categoryH, productH, inventoryH, orderH, cfg)
+	router := NewRouter(authH, userH, categoryH, productH, inventoryH, orderH, cfg, pool)
 
 	server := &http.Server{
 		Addr:         ":" + cfg.Port,
@@ -66,21 +75,21 @@ func main() {
 	}
 
 	go func() {
-		log.Printf("Starting server on port %s in %s mode...", cfg.Port, cfg.ENV)
+		zap.L().Info("Starting server", zap.String("port", cfg.Port), zap.String("env", cfg.ENV))
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("failed to listen and serve: %v", err)
+			zap.L().Fatal("failed to listen and serve", zap.Error(err))
 		}
 	}()
 
 	<-stop
-	log.Println("Shutting down server...")
+	zap.L().Info("Shutting down server...")
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutdownCancel()
 
 	if err := server.Shutdown(shutdownCtx); err != nil {
-		log.Fatalf("server forced shutdown: %v", err)
+		zap.L().Fatal("server forced shutdown", zap.Error(err))
 	}
 
-	log.Println("Server exiting gracefully")
+	zap.L().Info("Server exiting gracefully")
 }

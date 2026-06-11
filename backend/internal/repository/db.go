@@ -3,12 +3,12 @@ package repository
 import (
 	"context"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.uber.org/zap"
 )
 
 type DBTX interface {
@@ -19,7 +19,7 @@ type DBTX interface {
 
 
 func NewPool(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
-	log.Println("Connecting to database...")
+	zap.L().Info("Connecting to database...")
 
 	config, err := pgxpool.ParseConfig(databaseURL)
 	if err != nil {
@@ -41,6 +41,6 @@ func NewPool(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
 		return nil, fmt.Errorf("database ping failed: %w", err)
 	}
 
-	log.Println("Database connection established")
+	zap.L().Info("Database connection established")
 	return pool, nil
 }

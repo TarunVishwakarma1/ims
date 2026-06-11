@@ -3,7 +3,6 @@ package handler
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 
 	"github.com/TarunVishwakarma1/ims/backend/internal/domain"
@@ -12,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 )
 
 type ProductHandler struct {
@@ -70,7 +70,7 @@ func (h *ProductHandler) CreateProduct(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusConflict, "SKU already exists")
 			return
 		}
-		fmt.Printf("CreateProduct failed: %v\n", err)
+		zap.L().Error("CreateProduct failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
@@ -88,7 +88,7 @@ func (h *ProductHandler) GetProduct(w http.ResponseWriter, r *http.Request) {
 				writeError(w, http.StatusNotFound, "product not found")
 				return
 			}
-			fmt.Printf("GetProduct by SKU failed: %v\n", err)
+			zap.L().Error("GetProduct by SKU failed", zap.Error(err))
 			writeError(w, http.StatusInternalServerError, "internal server error")
 			return
 		}
@@ -102,7 +102,7 @@ func (h *ProductHandler) GetProduct(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "product not found")
 			return
 		}
-		fmt.Printf("GetProduct by ID failed: %v\n", err)
+		zap.L().Error("GetProduct by ID failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
@@ -136,7 +136,7 @@ func (h *ProductHandler) UpdateProduct(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "product not found")
 			return
 		}
-		fmt.Printf("UpdateProduct GetByID failed: %v\n", err)
+		zap.L().Error("UpdateProduct GetByID failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
@@ -148,7 +148,7 @@ func (h *ProductHandler) UpdateProduct(w http.ResponseWriter, r *http.Request) {
 	existing.Price = req.Price
 
 	if err := h.service.Update(r.Context(), existing); err != nil {
-		fmt.Printf("UpdateProduct Update failed: %v\n", err)
+		zap.L().Error("UpdateProduct Update failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
@@ -171,7 +171,7 @@ func (h *ProductHandler) DeleteProduct(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "product not found")
 			return
 		}
-		fmt.Printf("DeleteProduct failed: %v\n", err)
+		zap.L().Error("DeleteProduct failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
@@ -188,7 +188,7 @@ func (h *ProductHandler) ListProducts(w http.ResponseWriter, r *http.Request) {
 				writeError(w, http.StatusNotFound, "product not found")
 				return
 			}
-			fmt.Printf("ListProducts GetBySKU failed: %v\n", err)
+			zap.L().Error("ListProducts GetBySKU failed", zap.Error(err))
 			writeError(w, http.StatusInternalServerError, "internal server error")
 			return
 		}
@@ -198,7 +198,7 @@ func (h *ProductHandler) ListProducts(w http.ResponseWriter, r *http.Request) {
 
 	products, err := h.service.List(r.Context())
 	if err != nil {
-		fmt.Printf("ListProducts failed: %v\n", err)
+		zap.L().Error("ListProducts failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
@@ -216,7 +216,7 @@ func (h *ProductHandler) ListByCategory(w http.ResponseWriter, r *http.Request) 
 
 	products, err := h.service.ListByCategory(r.Context(), categoryID)
 	if err != nil {
-		fmt.Printf("ListByCategory failed: %v\n", err)
+		zap.L().Error("ListByCategory failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}

@@ -3,12 +3,12 @@ package service
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/TarunVishwakarma1/ims/backend/internal/domain"
 	"github.com/TarunVishwakarma1/ims/backend/internal/repository"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 )
 
 type ProductService interface {
@@ -61,7 +61,7 @@ func (s *productService) Create(ctx context.Context, product *domain.Product, ip
 		CreatedAt: now,
 	}
 	if err := s.auditLogRepo.Create(ctx, audit); err != nil {
-		fmt.Printf("audit log failed: %v\n", err)
+		zap.L().Error("audit log failed", zap.Error(err))
 	}
 
 	return nil
@@ -95,7 +95,7 @@ func (s *productService) Delete(ctx context.Context, id uuid.UUID, ipAddress str
 		CreatedAt: time.Now().UTC(),
 	}
 	if err := s.auditLogRepo.Create(ctx, audit); err != nil {
-		fmt.Printf("audit log failed: %v\n", err)
+		zap.L().Error("audit log failed", zap.Error(err))
 	}
 
 	return nil
