@@ -3,7 +3,6 @@ package handler
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 
 	"github.com/TarunVishwakarma1/ims/backend/internal/domain"
@@ -12,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 )
 
 type InventoryHandler struct {
@@ -64,7 +64,7 @@ func (h *InventoryHandler) CreateInventory(w http.ResponseWriter, r *http.Reques
 			writeError(w, http.StatusConflict, "inventory already exists for this product")
 			return
 		}
-		fmt.Printf("CreateInventory failed: %v\n", err)
+		zap.L().Error("CreateInventory failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
@@ -86,7 +86,7 @@ func (h *InventoryHandler) GetInventoryByProduct(w http.ResponseWriter, r *http.
 			writeError(w, http.StatusNotFound, "inventory not found")
 			return
 		}
-		fmt.Printf("GetInventoryByProduct failed: %v\n", err)
+		zap.L().Error("GetInventoryByProduct failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
@@ -120,7 +120,7 @@ func (h *InventoryHandler) UpdateInventory(w http.ResponseWriter, r *http.Reques
 			writeError(w, http.StatusNotFound, "inventory not found")
 			return
 		}
-		fmt.Printf("UpdateInventory GetByID failed: %v\n", err)
+		zap.L().Error("UpdateInventory GetByID failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
@@ -130,7 +130,7 @@ func (h *InventoryHandler) UpdateInventory(w http.ResponseWriter, r *http.Reques
 	existing.LowStockThreshold = req.LowStockThreshold
 
 	if err := h.service.Update(r.Context(), existing); err != nil {
-		fmt.Printf("UpdateInventory Update failed: %v\n", err)
+		zap.L().Error("UpdateInventory Update failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
@@ -141,7 +141,7 @@ func (h *InventoryHandler) UpdateInventory(w http.ResponseWriter, r *http.Reques
 func (h *InventoryHandler) ListInventory(w http.ResponseWriter, r *http.Request) {
 	list, err := h.service.List(r.Context())
 	if err != nil {
-		fmt.Printf("ListInventory failed: %v\n", err)
+		zap.L().Error("ListInventory failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
@@ -152,7 +152,7 @@ func (h *InventoryHandler) ListInventory(w http.ResponseWriter, r *http.Request)
 func (h *InventoryHandler) ListLowStock(w http.ResponseWriter, r *http.Request) {
 	list, err := h.service.ListLowStock(r.Context())
 	if err != nil {
-		fmt.Printf("ListLowStock failed: %v\n", err)
+		zap.L().Error("ListLowStock failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}

@@ -3,13 +3,13 @@ package handler
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 
 	"github.com/TarunVishwakarma1/ims/backend/internal/domain"
 	"github.com/TarunVishwakarma1/ims/backend/internal/service"
 	"github.com/TarunVishwakarma1/ims/backend/pkg/utils"
 	"github.com/go-playground/validator/v10"
+	"go.uber.org/zap"
 )
 
 type AuthHandler struct {
@@ -54,7 +54,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusUnauthorized, "invalid email or password")
 			return
 		}
-		fmt.Printf("Login failed: %v\n", err)
+		zap.L().Error("Login failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
@@ -81,7 +81,7 @@ func (h *AuthHandler) RefreshToken(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusUnauthorized, "invalid refresh token")
 			return
 		}
-		fmt.Printf("RefreshToken failed: %v\n", err)
+		zap.L().Error("RefreshToken failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}

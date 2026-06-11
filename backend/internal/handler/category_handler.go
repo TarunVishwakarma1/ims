@@ -3,7 +3,6 @@ package handler
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 
 	"github.com/TarunVishwakarma1/ims/backend/internal/domain"
@@ -12,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 )
 
 type CategoryHandler struct {
@@ -57,7 +57,7 @@ func (h *CategoryHandler) CreateCategory(w http.ResponseWriter, r *http.Request)
 	}
 
 	if err := h.service.Create(r.Context(), category, ipAddress); err != nil {
-		fmt.Printf("CreateCategory failed: %v\n", err)
+		zap.L().Error("CreateCategory failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
@@ -79,7 +79,7 @@ func (h *CategoryHandler) GetCategory(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "category not found")
 			return
 		}
-		fmt.Printf("GetCategory failed: %v\n", err)
+		zap.L().Error("GetCategory failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
@@ -113,7 +113,7 @@ func (h *CategoryHandler) UpdateCategory(w http.ResponseWriter, r *http.Request)
 			writeError(w, http.StatusNotFound, "category not found")
 			return
 		}
-		fmt.Printf("UpdateCategory GetByID failed: %v\n", err)
+		zap.L().Error("UpdateCategory GetByID failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
@@ -122,7 +122,7 @@ func (h *CategoryHandler) UpdateCategory(w http.ResponseWriter, r *http.Request)
 	existing.Description = req.Description
 
 	if err := h.service.Update(r.Context(), existing); err != nil {
-		fmt.Printf("UpdateCategory Update failed: %v\n", err)
+		zap.L().Error("UpdateCategory Update failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
@@ -145,7 +145,7 @@ func (h *CategoryHandler) DeleteCategory(w http.ResponseWriter, r *http.Request)
 			writeError(w, http.StatusNotFound, "category not found")
 			return
 		}
-		fmt.Printf("DeleteCategory failed: %v\n", err)
+		zap.L().Error("DeleteCategory failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
@@ -156,7 +156,7 @@ func (h *CategoryHandler) DeleteCategory(w http.ResponseWriter, r *http.Request)
 func (h *CategoryHandler) ListCategories(w http.ResponseWriter, r *http.Request) {
 	categories, err := h.service.List(r.Context())
 	if err != nil {
-		fmt.Printf("ListCategories failed: %v\n", err)
+		zap.L().Error("ListCategories failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}

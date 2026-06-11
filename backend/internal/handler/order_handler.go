@@ -3,7 +3,6 @@ package handler
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 
 	"github.com/TarunVishwakarma1/ims/backend/internal/domain"
@@ -13,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 )
 
 type OrderHandler struct {
@@ -78,10 +78,10 @@ func (h *OrderHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 		prod, err := h.productService.GetByID(r.Context(), item.ProductID)
 		if err != nil {
 			if errors.Is(err, domain.ErrNotFound) {
-				writeError(w, http.StatusBadRequest, fmt.Sprintf("product not found: %s", item.ProductID))
+				writeError(w, http.StatusBadRequest, "product not found: "+item.ProductID.String())
 				return
 			}
-			fmt.Printf("GetByID for product %s failed: %v\n", item.ProductID, err)
+			zap.L().Error("GetByID for product failed", zap.String("product_id", item.ProductID.String()), zap.Error(err))
 			writeError(w, http.StatusInternalServerError, "internal server error")
 			return
 		}
@@ -98,7 +98,7 @@ func (h *OrderHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "insufficient stock for one or more items")
 			return
 		}
-		fmt.Printf("CreateOrder failed: %v\n", err)
+		zap.L().Error("CreateOrder failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
@@ -124,7 +124,7 @@ func (h *OrderHandler) GetOrder(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "order not found")
 			return
 		}
-		fmt.Printf("GetOrder failed: %v\n", err)
+		zap.L().Error("GetOrder failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
@@ -159,7 +159,7 @@ func (h *OrderHandler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "order not found")
 			return
 		}
-		fmt.Printf("UpdateStatus failed: %v\n", err)
+		zap.L().Error("UpdateStatus failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
@@ -182,7 +182,7 @@ func (h *OrderHandler) DeleteOrder(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "order not found")
 			return
 		}
-		fmt.Printf("DeleteOrder failed: %v\n", err)
+		zap.L().Error("DeleteOrder failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
@@ -193,7 +193,7 @@ func (h *OrderHandler) DeleteOrder(w http.ResponseWriter, r *http.Request) {
 func (h *OrderHandler) ListOrders(w http.ResponseWriter, r *http.Request) {
 	orders, err := h.service.List(r.Context())
 	if err != nil {
-		fmt.Printf("ListOrders failed: %v\n", err)
+		zap.L().Error("ListOrders failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
@@ -221,7 +221,7 @@ func (h *OrderHandler) ListUserOrders(w http.ResponseWriter, r *http.Request) {
 
 	orders, err := h.service.ListByUser(r.Context(), userID)
 	if err != nil {
-		fmt.Printf("ListUserOrders failed: %v\n", err)
+		zap.L().Error("ListUserOrders failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
@@ -239,7 +239,7 @@ func (h *OrderHandler) GetOrderItems(w http.ResponseWriter, r *http.Request) {
 
 	items, err := h.service.GetOrderItems(r.Context(), id)
 	if err != nil {
-		fmt.Printf("GetOrderItems failed: %v\n", err)
+		zap.L().Error("GetOrderItems failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}

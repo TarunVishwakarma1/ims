@@ -2,12 +2,12 @@ package service
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/TarunVishwakarma1/ims/backend/internal/domain"
 	"github.com/TarunVishwakarma1/ims/backend/internal/repository"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 )
 
 type OrderService interface {
@@ -97,7 +97,7 @@ func (s *orderService) Create(ctx context.Context, order *domain.Order, items []
 		CreatedAt: now,
 	}
 	if err := s.auditLogRepo.Create(ctx, audit); err != nil {
-		fmt.Printf("audit log failed: %v\n", err)
+		zap.L().Error("audit log failed", zap.Error(err))
 	}
 
 	return nil
@@ -127,7 +127,7 @@ func (s *orderService) Delete(ctx context.Context, id uuid.UUID, ipAddress strin
 		CreatedAt: time.Now().UTC(),
 	}
 	if err := s.auditLogRepo.Create(ctx, audit); err != nil {
-		fmt.Printf("audit log failed: %v\n", err)
+		zap.L().Error("audit log failed", zap.Error(err))
 	}
 
 	return nil
@@ -152,7 +152,7 @@ func (s *orderService) UpdateStatus(ctx context.Context, id uuid.UUID, status do
 		CreatedAt: time.Now().UTC(),
 	}
 	if err := s.auditLogRepo.Create(ctx, audit); err != nil {
-		fmt.Printf("audit log failed: %v\n", err)
+		zap.L().Error("audit log failed", zap.Error(err))
 	}
 
 	return nil

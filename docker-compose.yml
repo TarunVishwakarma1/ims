@@ -1,0 +1,38 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: "ims"
+      POSTGRES_PASSWORD: "yourpassword"
+      POSTGRES_DB: "ims_db"
+    ports:
+      - 5432:5432
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ims -d ims_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file: 
+      - ./backend/.env.docker
+    ports: 
+      - 8080:8080
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+
+networks:
+  default:
+    name: ims_net
+
+  
+    

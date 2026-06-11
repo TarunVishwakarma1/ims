@@ -3,12 +3,12 @@ package service
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/TarunVishwakarma1/ims/backend/internal/domain"
 	"github.com/TarunVishwakarma1/ims/backend/internal/repository"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 )
 
 type InventoryService interface {
@@ -59,7 +59,7 @@ func (s *inventoryService) Create(ctx context.Context, inventory *domain.Invento
 		CreatedAt: inventory.UpdatedAt,
 	}
 	if err := s.auditLogRepo.Create(ctx, audit); err != nil {
-		fmt.Printf("audit log failed: %v\n", err)
+		zap.L().Error("audit log failed", zap.Error(err))
 	}
 
 	return nil
@@ -93,7 +93,7 @@ func (s *inventoryService) Delete(ctx context.Context, id uuid.UUID, ipAddress s
 		CreatedAt: time.Now().UTC(),
 	}
 	if err := s.auditLogRepo.Create(ctx, audit); err != nil {
-		fmt.Printf("audit log failed: %v\n", err)
+		zap.L().Error("audit log failed", zap.Error(err))
 	}
 
 	return nil

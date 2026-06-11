@@ -3,7 +3,6 @@ package handler
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 
 	"github.com/TarunVishwakarma1/ims/backend/internal/domain"
@@ -12,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 )
 
 type UserHandler struct {
@@ -68,7 +68,7 @@ func (h *UserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusConflict, "email already exists")
 			return
 		}
-		fmt.Printf("CreateUser failed: %v\n", err)
+		zap.L().Error("CreateUser failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
@@ -90,7 +90,7 @@ func (h *UserHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "user not found")
 			return
 		}
-		fmt.Printf("GetUser failed: %v\n", err)
+		zap.L().Error("GetUser failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
@@ -124,7 +124,7 @@ func (h *UserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "user not found")
 			return
 		}
-		fmt.Printf("UpdateUser GetByID failed: %v\n", err)
+		zap.L().Error("UpdateUser GetByID failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
@@ -135,7 +135,7 @@ func (h *UserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	existing.IsActive = req.IsActive
 
 	if err := h.service.Update(r.Context(), existing); err != nil {
-		fmt.Printf("UpdateUser Update failed: %v\n", err)
+		zap.L().Error("UpdateUser Update failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
@@ -158,7 +158,7 @@ func (h *UserHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "user not found")
 			return
 		}
-		fmt.Printf("DeleteUser failed: %v\n", err)
+		zap.L().Error("DeleteUser failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
@@ -169,7 +169,7 @@ func (h *UserHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 func (h *UserHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	users, err := h.service.List(r.Context())
 	if err != nil {
-		fmt.Printf("ListUsers failed: %v\n", err)
+		zap.L().Error("ListUsers failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}

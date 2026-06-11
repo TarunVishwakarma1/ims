@@ -3,12 +3,12 @@ package service
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/TarunVishwakarma1/ims/backend/internal/domain"
 	"github.com/TarunVishwakarma1/ims/backend/internal/repository"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -68,7 +68,7 @@ func (s *userService) Create(ctx context.Context, user *domain.User, ipAddress s
 		CreatedAt: now,
 	}
 	if err := s.auditLogRepo.Create(ctx, audit); err != nil {
-		fmt.Printf("audit log failed: %v\n", err)
+		zap.L().Error("audit log failed", zap.Error(err))
 	}
 
 	return nil
@@ -102,7 +102,7 @@ func (s *userService) Delete(ctx context.Context, id uuid.UUID, ipAddress string
 		CreatedAt: time.Now().UTC(),
 	}
 	if err := s.auditLogRepo.Create(ctx, audit); err != nil {
-		fmt.Printf("audit log failed: %v\n", err)
+		zap.L().Error("audit log failed", zap.Error(err))
 	}
 
 	return nil
