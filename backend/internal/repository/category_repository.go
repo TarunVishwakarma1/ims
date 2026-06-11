@@ -7,7 +7,6 @@ import (
 	"github.com/TarunVishwakarma1/ims/backend/internal/domain"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type CategoryRepository interface {
@@ -16,14 +15,19 @@ type CategoryRepository interface {
 	Update(ctx context.Context, category *domain.Category) error
 	Delete(ctx context.Context, id uuid.UUID) error
 	List(ctx context.Context) ([]*domain.Category, error)
+	WithTx(tx pgx.Tx) CategoryRepository
 }
 
 type categoryRepository struct {
-	pool *pgxpool.Pool
+	db DBTX
 }
 
-func NewCategoryRepository(pool *pgxpool.Pool) CategoryRepository {
-	return &categoryRepository{pool: pool}
+func NewCategoryRepository(db DBTX) CategoryRepository {
+	return &categoryRepository{db: db}
+}
+
+func (r *categoryRepository) WithTx(tx pgx.Tx) CategoryRepository {
+	return &categoryRepository{db: tx}
 }
 
 func (r *categoryRepository) Create(ctx context.Context, category *domain.Category) error {
@@ -31,7 +35,7 @@ func (r *categoryRepository) Create(ctx context.Context, category *domain.Catego
 		INSERT INTO categories (id, name, description, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5)
 	`
-	_, err := r.pool.Exec(ctx, query, category.ID, category.Name, category.Description, category.CreatedAt, category.UpdatedAt)
+	_, err := r.db.Exec(ctx, query, category.ID, category.Name, category.Description, category.CreatedAt, category.UpdatedAt)
 	return err
 }
 
@@ -42,7 +46,7 @@ func (r *categoryRepository) GetByID(ctx context.Context, id uuid.UUID) (*domain
 		WHERE id = $1
 	`
 	category := &domain.Category{}
-	err := r.pool.QueryRow(ctx, query, id).Scan(&category.ID, &category.Name, &category.Description, &category.CreatedAt, &category.UpdatedAt)
+	err := r.db.QueryRow(ctx, query, id).Scan(&category.ID, &category.Name, &category.Description, &category.CreatedAt, &category.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, domain.ErrNotFound
@@ -58,7 +62,7 @@ func (r *categoryRepository) Update(ctx context.Context, category *domain.Catego
 		SET name = $2, description = $3, updated_at = $4
 		WHERE id = $1
 	`
-	_, err := r.pool.Exec(ctx, query, category.ID, category.Name, category.Description, category.UpdatedAt)
+	_, err := r.db.Exec(ctx, query, category.ID, category.Name, category.Description, category.UpdatedAt)
 	return err
 }
 
@@ -67,7 +71,7 @@ func (r *categoryRepository) Delete(ctx context.Context, id uuid.UUID) error {
 		DELETE FROM categories
 		WHERE id = $1
 	`
-	_, err := r.pool.Exec(ctx, query, id)
+	_, err := r.db.Exec(ctx, query, id)
 	return err
 }
 
@@ -77,7 +81,7 @@ func (r *categoryRepository) List(ctx context.Context) ([]*domain.Category, erro
 		FROM categories
 		ORDER BY created_at DESC
 	`
-	rows, err := r.pool.Query(ctx, query)
+	rows, err := r.db.Query(ctx, query)
 	if err != nil {
 		return nil, err
 	}

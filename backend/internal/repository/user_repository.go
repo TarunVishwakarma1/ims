@@ -7,7 +7,6 @@ import (
 	"github.com/TarunVishwakarma1/ims/backend/internal/domain"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type UserRepository interface {
@@ -17,14 +16,19 @@ type UserRepository interface {
 	Update(ctx context.Context, user *domain.User) error
 	Delete(ctx context.Context, id uuid.UUID) error
 	List(ctx context.Context) ([]*domain.User, error)
+	WithTx(tx pgx.Tx) UserRepository
 }
 
 type userRepository struct {
-	pool *pgxpool.Pool
+	db DBTX
 }
 
-func NewUserRepository(pool *pgxpool.Pool) UserRepository {
-	return &userRepository{pool: pool}
+func NewUserRepository(db DBTX) UserRepository {
+	return &userRepository{db: db}
+}
+
+func (r *userRepository) WithTx(tx pgx.Tx) UserRepository {
+	return &userRepository{db: tx}
 }
 
 func (r *userRepository) Create(ctx context.Context, user *domain.User) error {
@@ -32,7 +36,7 @@ func (r *userRepository) Create(ctx context.Context, user *domain.User) error {
 		INSERT INTO users (id, name, email, password_hash, role, is_active, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 	`
-	_, err := r.pool.Exec(ctx, query, user.ID, user.Name, user.Email, user.PasswordHash, user.Role, user.IsActive, user.CreatedAt, user.UpdatedAt)
+	_, err := r.db.Exec(ctx, query, user.ID, user.Name, user.Email, user.PasswordHash, user.Role, user.IsActive, user.CreatedAt, user.UpdatedAt)
 	return err
 }
 
@@ -43,7 +47,7 @@ func (r *userRepository) GetByID(ctx context.Context, id uuid.UUID) (*domain.Use
 		WHERE id = $1
 	`
 	user := &domain.User{}
-	err := r.pool.QueryRow(ctx, query, id).Scan(&user.ID, &user.Name, &user.Email, &user.PasswordHash, &user.Role, &user.IsActive, &user.CreatedAt, &user.UpdatedAt)
+	err := r.db.QueryRow(ctx, query, id).Scan(&user.ID, &user.Name, &user.Email, &user.PasswordHash, &user.Role, &user.IsActive, &user.CreatedAt, &user.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, domain.ErrNotFound
@@ -60,7 +64,7 @@ func (r *userRepository) GetByEmail(ctx context.Context, email string) (*domain.
 		WHERE email = $1
 	`
 	user := &domain.User{}
-	err := r.pool.QueryRow(ctx, query, email).Scan(&user.ID, &user.Name, &user.Email, &user.PasswordHash, &user.Role, &user.IsActive, &user.CreatedAt, &user.UpdatedAt)
+	err := r.db.QueryRow(ctx, query, email).Scan(&user.ID, &user.Name, &user.Email, &user.PasswordHash, &user.Role, &user.IsActive, &user.CreatedAt, &user.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, domain.ErrNotFound
@@ -76,7 +80,7 @@ func (r *userRepository) Update(ctx context.Context, user *domain.User) error {
 		SET name = $2, email = $3, password_hash = $4, role = $5, is_active = $6, updated_at = $7
 		WHERE id = $1
 	`
-	_, err := r.pool.Exec(ctx, query, user.ID, user.Name, user.Email, user.PasswordHash, user.Role, user.IsActive, user.UpdatedAt)
+	_, err := r.db.Exec(ctx, query, user.ID, user.Name, user.Email, user.PasswordHash, user.Role, user.IsActive, user.UpdatedAt)
 	return err
 }
 
@@ -86,7 +90,7 @@ func (r *userRepository) Delete(ctx context.Context, id uuid.UUID) error {
 		SET is_active = false, updated_at = NOW()
 		WHERE id = $1
 	`
-	_, err := r.pool.Exec(ctx, query, id)
+	_, err := r.db.Exec(ctx, query, id)
 	return err
 }
 
@@ -96,7 +100,7 @@ func (r *userRepository) List(ctx context.Context) ([]*domain.User, error) {
 		FROM users
 		ORDER BY created_at DESC
 	`
-	rows, err := r.pool.Query(ctx, query)
+	rows, err := r.db.Query(ctx, query)
 	if err != nil {
 		return nil, err
 	}

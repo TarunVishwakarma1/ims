@@ -20,14 +20,28 @@ type OrderRepository interface {
 	ListByUser(ctx context.Context, userID uuid.UUID) ([]*domain.Order, error)
 	CreateOrderItem(ctx context.Context, item *domain.OrderItem) error
 	GetOrderItems(ctx context.Context, orderID uuid.UUID) ([]*domain.OrderItem, error)
+	WithTx(tx pgx.Tx) OrderRepository
+	BeginTx(ctx context.Context) (pgx.Tx, error)
 }
 
 type orderRepository struct {
+	db   DBTX
 	pool *pgxpool.Pool
 }
 
 func NewOrderRepository(pool *pgxpool.Pool) OrderRepository {
-	return &orderRepository{pool: pool}
+	return &orderRepository{db: pool, pool: pool}
+}
+
+func (r *orderRepository) WithTx(tx pgx.Tx) OrderRepository {
+	return &orderRepository{db: tx, pool: r.pool}
+}
+
+func (r *orderRepository) BeginTx(ctx context.Context) (pgx.Tx, error) {
+	if r.pool == nil {
+		return nil, errors.New("cannot begin transaction: no pool available")
+	}
+	return r.pool.Begin(ctx)
 }
 
 func (r *orderRepository) Create(ctx context.Context, order *domain.Order) error {
@@ -35,7 +49,7 @@ func (r *orderRepository) Create(ctx context.Context, order *domain.Order) error
 		INSERT INTO orders (id, user_id, status, total_amount, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6)
 	`
-	_, err := r.pool.Exec(ctx, query, order.ID, order.UserID, order.Status, order.TotalAmount, order.CreatedAt, order.UpdatedAt)
+	_, err := r.db.Exec(ctx, query, order.ID, order.UserID, order.Status, order.TotalAmount, order.CreatedAt, order.UpdatedAt)
 	return err
 }
 
@@ -46,7 +60,7 @@ func (r *orderRepository) GetByID(ctx context.Context, id uuid.UUID) (*domain.Or
 		WHERE id = $1
 	`
 	order := &domain.Order{}
-	err := r.pool.QueryRow(ctx, query, id).Scan(&order.ID, &order.UserID, &order.Status, &order.TotalAmount, &order.CreatedAt, &order.UpdatedAt)
+	err := r.db.QueryRow(ctx, query, id).Scan(&order.ID, &order.UserID, &order.Status, &order.TotalAmount, &order.CreatedAt, &order.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, domain.ErrNotFound
@@ -62,7 +76,7 @@ func (r *orderRepository) Update(ctx context.Context, order *domain.Order) error
 		SET user_id = $2, status = $3, total_amount = $4, updated_at = $5
 		WHERE id = $1
 	`
-	_, err := r.pool.Exec(ctx, query, order.ID, order.UserID, order.Status, order.TotalAmount, order.UpdatedAt)
+	_, err := r.db.Exec(ctx, query, order.ID, order.UserID, order.Status, order.TotalAmount, order.UpdatedAt)
 	return err
 }
 
@@ -71,7 +85,7 @@ func (r *orderRepository) Delete(ctx context.Context, id uuid.UUID) error {
 		DELETE FROM orders
 		WHERE id = $1
 	`
-	_, err := r.pool.Exec(ctx, query, id)
+	_, err := r.db.Exec(ctx, query, id)
 	return err
 }
 
@@ -81,7 +95,7 @@ func (r *orderRepository) List(ctx context.Context) ([]*domain.Order, error) {
 		FROM orders
 		ORDER BY created_at DESC
 	`
-	rows, err := r.pool.Query(ctx, query)
+	rows, err := r.db.Query(ctx, query)
 	if err != nil {
 		return nil, err
 	}
@@ -110,7 +124,7 @@ func (r *orderRepository) UpdateStatus(ctx context.Context, id uuid.UUID, status
 		SET status = $2, updated_at = NOW()
 		WHERE id = $1
 	`
-	_, err := r.pool.Exec(ctx, query, id, status)
+	_, err := r.db.Exec(ctx, query, id, status)
 	return err
 }
 
@@ -121,7 +135,7 @@ func (r *orderRepository) ListByUser(ctx context.Context, userID uuid.UUID) ([]*
 		WHERE user_id = $1
 		ORDER BY created_at DESC
 	`
-	rows, err := r.pool.Query(ctx, query, userID)
+	rows, err := r.db.Query(ctx, query, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -149,7 +163,7 @@ func (r *orderRepository) CreateOrderItem(ctx context.Context, item *domain.Orde
 		INSERT INTO order_items (id, order_id, product_id, quantity, unit_price)
 		VALUES ($1, $2, $3, $4, $5)
 	`
-	_, err := r.pool.Exec(ctx, query, item.ID, item.OrderID, item.ProductID, item.Quantity, item.UnitPrice)
+	_, err := r.db.Exec(ctx, query, item.ID, item.OrderID, item.ProductID, item.Quantity, item.UnitPrice)
 	return err
 }
 
@@ -159,7 +173,7 @@ func (r *orderRepository) GetOrderItems(ctx context.Context, orderID uuid.UUID) 
 		FROM order_items
 		WHERE order_id = $1
 	`
-	rows, err := r.pool.Query(ctx, query, orderID)
+	rows, err := r.db.Query(ctx, query, orderID)
 	if err != nil {
 		return nil, err
 	}
