@@ -7,7 +7,6 @@ import (
 	"github.com/TarunVishwakarma1/ims/backend/internal/domain"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type InventoryRepository interface {
@@ -18,14 +17,19 @@ type InventoryRepository interface {
 	Delete(ctx context.Context, id uuid.UUID) error
 	List(ctx context.Context) ([]*domain.Inventory, error)
 	ListLowStock(ctx context.Context) ([]*domain.Inventory, error)
+	WithTx(tx pgx.Tx) InventoryRepository
 }
 
 type inventoryRepository struct {
-	pool *pgxpool.Pool
+	db DBTX
 }
 
-func NewInventoryRepository(pool *pgxpool.Pool) InventoryRepository {
-	return &inventoryRepository{pool: pool}
+func NewInventoryRepository(db DBTX) InventoryRepository {
+	return &inventoryRepository{db: db}
+}
+
+func (r *inventoryRepository) WithTx(tx pgx.Tx) InventoryRepository {
+	return &inventoryRepository{db: tx}
 }
 
 func (r *inventoryRepository) Create(ctx context.Context, inventory *domain.Inventory) error {
@@ -33,7 +37,7 @@ func (r *inventoryRepository) Create(ctx context.Context, inventory *domain.Inve
 		INSERT INTO inventory (id, product_id, quantity, low_stock_threshold, updated_at)
 		VALUES ($1, $2, $3, $4, $5)
 	`
-	_, err := r.pool.Exec(ctx, query, inventory.ID, inventory.ProductID, inventory.Quantity, inventory.LowStockThreshold, inventory.UpdatedAt)
+	_, err := r.db.Exec(ctx, query, inventory.ID, inventory.ProductID, inventory.Quantity, inventory.LowStockThreshold, inventory.UpdatedAt)
 	return err
 }
 
@@ -44,7 +48,7 @@ func (r *inventoryRepository) GetByID(ctx context.Context, id uuid.UUID) (*domai
 		WHERE id = $1
 	`
 	inventory := &domain.Inventory{}
-	err := r.pool.QueryRow(ctx, query, id).Scan(&inventory.ID, &inventory.ProductID, &inventory.Quantity, &inventory.LowStockThreshold, &inventory.UpdatedAt)
+	err := r.db.QueryRow(ctx, query, id).Scan(&inventory.ID, &inventory.ProductID, &inventory.Quantity, &inventory.LowStockThreshold, &inventory.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, domain.ErrNotFound
@@ -61,7 +65,7 @@ func (r *inventoryRepository) GetByProductID(ctx context.Context, productID uuid
 		WHERE product_id = $1
 	`
 	inventory := &domain.Inventory{}
-	err := r.pool.QueryRow(ctx, query, productID).Scan(&inventory.ID, &inventory.ProductID, &inventory.Quantity, &inventory.LowStockThreshold, &inventory.UpdatedAt)
+	err := r.db.QueryRow(ctx, query, productID).Scan(&inventory.ID, &inventory.ProductID, &inventory.Quantity, &inventory.LowStockThreshold, &inventory.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, domain.ErrNotFound
@@ -77,7 +81,7 @@ func (r *inventoryRepository) Update(ctx context.Context, inventory *domain.Inve
 		SET product_id = $2, quantity = $3, low_stock_threshold = $4, updated_at = $5
 		WHERE id = $1
 	`
-	_, err := r.pool.Exec(ctx, query, inventory.ID, inventory.ProductID, inventory.Quantity, inventory.LowStockThreshold, inventory.UpdatedAt)
+	_, err := r.db.Exec(ctx, query, inventory.ID, inventory.ProductID, inventory.Quantity, inventory.LowStockThreshold, inventory.UpdatedAt)
 	return err
 }
 
@@ -86,7 +90,7 @@ func (r *inventoryRepository) Delete(ctx context.Context, id uuid.UUID) error {
 		DELETE FROM inventory
 		WHERE id = $1
 	`
-	_, err := r.pool.Exec(ctx, query, id)
+	_, err := r.db.Exec(ctx, query, id)
 	return err
 }
 
@@ -96,7 +100,7 @@ func (r *inventoryRepository) List(ctx context.Context) ([]*domain.Inventory, er
 		FROM inventory
 		ORDER BY updated_at DESC
 	`
-	rows, err := r.pool.Query(ctx, query)
+	rows, err := r.db.Query(ctx, query)
 	if err != nil {
 		return nil, err
 	}
@@ -126,7 +130,7 @@ func (r *inventoryRepository) ListLowStock(ctx context.Context) ([]*domain.Inven
 		WHERE quantity <= low_stock_threshold
 		ORDER BY quantity ASC
 	`
-	rows, err := r.pool.Query(ctx, query)
+	rows, err := r.db.Query(ctx, query)
 	if err != nil {
 		return nil, err
 	}
