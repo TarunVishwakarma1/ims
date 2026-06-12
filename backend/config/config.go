@@ -20,7 +20,10 @@ type Config struct {
 
 func LoadConfig() (*Config, error) {
 
-	_ = godotenv.Load()
+	err := godotenv.Load()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load .env file: %w", err)
+	}
 
 	env := os.Getenv("ENV")
 	if env != "production" && env != "development" && env != "testing" {

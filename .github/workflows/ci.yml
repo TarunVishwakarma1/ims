@@ -2,12 +2,34 @@ name: CI
 
 on:
   push:
-    branches: [develop, testing, feature/*, bugfix/*, hotfix/*]
+    branches: [develop, testing, feature/*, bugfix/*, hotfix/*, develop/*]
   pull_request:
     branches: [main, develop]
+
 jobs:
-  build-and-test:
-    name: Build and Test
+  filter:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      web: ${{ steps.filter.outputs.web }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Check path changes
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            backend:
+              - 'backend/**'
+            web:
+              - 'web/**'
+
+  backend-build-and-test:
+    name: Backend Build and Test
+    needs: filter
+    if: needs.filter.outputs.backend == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -29,4 +51,30 @@ jobs:
         run: go build -o /dev/null -v ./...
       - name: Run tests
         run: go test -v ./...
-      
+
+  web-build-and-test:
+    name: Web Build and Test
+    needs: filter
+    if: needs.filter.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Type check
+        run: bunx tsc --noEmit
+      - name: Lint
+        run: bun run lint
+      - name: Build
+        run: bun run build
+        env:
+          NEXT_TELEMETRY_DISABLED: 1
+
