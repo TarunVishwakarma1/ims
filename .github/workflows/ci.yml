@@ -9,7 +9,7 @@ on:
 jobs:
   filter:
     name: Detect Changes
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
       web: ${{ steps.filter.outputs.web }}
@@ -30,7 +30,7 @@ jobs:
     name: Backend Build and Test
     needs: filter
     if: needs.filter.outputs.backend == 'true'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     defaults:
       run:
         working-directory: backend
@@ -56,7 +56,7 @@ jobs:
     name: Web Build and Test
     needs: filter
     if: needs.filter.outputs.web == 'true'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     defaults:
       run:
         working-directory: web
