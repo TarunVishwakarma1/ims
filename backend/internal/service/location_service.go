@@ -27,6 +27,7 @@ func NewLocationService(repo repository.LocationRepository) LocationService {
 
 func (s *locationService) Create(ctx context.Context, location *domain.OrgLocation) error {
 	location.ID = uuid.New()
+	location.IsActive = true
 	now := time.Now()
 	location.CreatedAt = now
 	location.UpdatedAt = now

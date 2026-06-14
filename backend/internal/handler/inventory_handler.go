@@ -34,9 +34,8 @@ type CreateInventoryRequest struct {
 }
 
 type UpdateInventoryRequest struct {
-	ProductID         uuid.UUID `json:"product_id" validate:"required"`
-	Quantity          int       `json:"quantity" validate:"min=0"`
-	LowStockThreshold int       `json:"low_stock_threshold" validate:"min=0"`
+	Quantity          int `json:"quantity" validate:"min=0"`
+	LowStockThreshold int `json:"low_stock_threshold" validate:"min=0"`
 }
 
 func (h *InventoryHandler) CreateInventory(w http.ResponseWriter, r *http.Request) {
@@ -145,7 +144,6 @@ func (h *InventoryHandler) UpdateInventory(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	existing.ProductID = req.ProductID
 	existing.Quantity = req.Quantity
 	existing.LowStockThreshold = req.LowStockThreshold
 

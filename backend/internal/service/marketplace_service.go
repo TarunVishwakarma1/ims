@@ -57,6 +57,7 @@ func NewMarketplaceService(
 func (s *marketplaceService) CreateListing(ctx context.Context, listing *domain.MarketplaceListing, orgID uuid.UUID) error {
 	listing.ID = uuid.New()
 	listing.OrgID = orgID
+	listing.IsActive = true
 	now := time.Now()
 	listing.CreatedAt = now
 	listing.UpdatedAt = now
