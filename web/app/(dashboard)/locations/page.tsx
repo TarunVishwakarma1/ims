@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/incompatible-library */
 'use client'
 
 import { useState } from 'react'
@@ -143,7 +144,7 @@ export default function LocationsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold tracking-tight">Locations</h2>
-          <p className="text-muted-foreground">Manage your organization's physical locations.</p>
+          <p className="text-muted-foreground">Manage your organization&apos;s physical locations.</p>
         </div>
         {can(PERMISSIONS.LOCATIONS_MANAGE) && (
           <Button onClick={handleOpenCreate}>

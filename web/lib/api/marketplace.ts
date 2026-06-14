@@ -11,7 +11,7 @@ import type {
 
 export const marketplaceApi = {
   search: (params: MarketplaceSearchParams) =>
-    api.get('marketplace/search', { searchParams: params as any }).json<MarketplaceListing[]>(),
+    api.get('marketplace/search', { searchParams: params as Record<string, string | number | boolean> }).json<MarketplaceListing[]>(),
   listByOrg: () => api.get('listings').json<MarketplaceListing[]>(),
   createListing: (data: CreateListingRequest) => api.post('listings', { json: data }).json<MarketplaceListing>(),
   updateListing: (id: string, data: Partial<CreateListingRequest>) => api.put(`listings/${id}`, { json: data }).json<MarketplaceListing>(),

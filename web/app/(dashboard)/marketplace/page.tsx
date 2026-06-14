@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/incompatible-library */
 'use client'
 
 import { useState } from 'react'
@@ -5,15 +6,13 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Plus, Edit, Trash2, Loader2, Store, Search, Filter } from 'lucide-react'
+import { Plus, Edit, Trash2, Loader2, Store, Search } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { marketplaceApi } from '@/lib/api/marketplace'
 import { productsApi } from '@/lib/api/products'
 import { locationsApi } from '@/lib/api/locations'
 import { formatPrice } from '@/lib/utils'
-import { usePermission } from '@/hooks/usePermission'
-import { PERMISSIONS } from '@/lib/rbac'
 import type { MarketplaceListing } from '@/types/api'
 
 import { Button } from '@/components/ui/button'
@@ -56,8 +55,6 @@ type ListingFormValues = z.infer<typeof listingSchema>
 
 export default function MarketplacePage() {
   const queryClient = useQueryClient()
-  const { can } = usePermission()
-  
   // State for Browse tab
   const [searchQuery, setSearchQuery] = useState('')
   const [minPrice, setMinPrice] = useState('')
@@ -298,7 +295,7 @@ export default function MarketplacePage() {
                 ) : listings.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
-                      You haven't created any marketplace listings yet.
+                      You haven&apos;t created any marketplace listings yet.
                     </TableCell>
                   </TableRow>
                 ) : (

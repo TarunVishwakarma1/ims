@@ -53,7 +53,7 @@ export default function CartPage() {
       toast.success(`Checkout successful! Created ${orders.length} orders.`)
       router.push('/orders')
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       toast.error(err.message || 'Checkout failed')
     }
   })

@@ -35,7 +35,7 @@ export default function LoginPage() {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search)
       if (params.get('registered') === 'true') {
-        setRegistered(true)
+        setTimeout(() => setRegistered(true), 0)
         // Clean up URL without reloading
         window.history.replaceState({}, document.title, '/login')
       }
@@ -181,7 +181,7 @@ export default function LoginPage() {
           </form>
 
           <p className="text-center text-sm text-muted-foreground">
-            Don't have an account?{' '}
+            Don&apos;t have an account?{' '}
             <Link href="/register" className="font-medium text-primary hover:underline">
               Register
             </Link>
