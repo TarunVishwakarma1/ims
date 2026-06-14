@@ -45,6 +45,7 @@ func (h *MarketplaceHandler) CreateListing(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	var req domain.MarketplaceListing
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -77,6 +78,7 @@ func (h *MarketplaceHandler) UpdateListing(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	var req domain.MarketplaceListing
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -234,9 +236,15 @@ func (h *MarketplaceHandler) AddToCart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	var req cartItemReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if req.Quantity < 1 {
+		writeError(w, http.StatusBadRequest, "quantity must be at least 1")
 		return
 	}
 
@@ -262,11 +270,17 @@ func (h *MarketplaceHandler) UpdateCartItem(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	var req struct {
 		Quantity int `json:"quantity"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if req.Quantity < 1 {
+		writeError(w, http.StatusBadRequest, "quantity must be at least 1")
 		return
 	}
 
@@ -327,9 +341,10 @@ func (h *MarketplaceHandler) Checkout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	var req checkoutReq
 	if r.Body != nil && r.Body != http.NoBody {
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err.Error() != "EOF" {
 			writeError(w, http.StatusBadRequest, "invalid request body")
 			return
 		}

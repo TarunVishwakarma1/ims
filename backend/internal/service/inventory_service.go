@@ -7,6 +7,7 @@ import (
 
 	"github.com/TarunVishwakarma1/ims/backend/internal/domain"
 	"github.com/TarunVishwakarma1/ims/backend/internal/repository"
+	"github.com/TarunVishwakarma1/ims/backend/pkg/cache"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
@@ -24,13 +25,20 @@ type InventoryService interface {
 type inventoryService struct {
 	repo         repository.InventoryRepository
 	auditLogRepo repository.AuditLogRepository
+	cache        cache.Cache
 }
 
-func NewInventoryService(repo repository.InventoryRepository, auditLogRepo repository.AuditLogRepository) InventoryService {
+func NewInventoryService(repo repository.InventoryRepository, auditLogRepo repository.AuditLogRepository, c cache.Cache) InventoryService {
 	return &inventoryService{
 		repo:         repo,
 		auditLogRepo: auditLogRepo,
+		cache:        c,
 	}
+}
+
+// Inventory mutations bust marketplace search (stock counts feed into it).
+func (s *inventoryService) invalidate(ctx context.Context) {
+	_ = s.cache.DeleteByPattern(ctx, cache.MarketplaceSearchPattern())
 }
 
 func (s *inventoryService) Create(ctx context.Context, inventory *domain.Inventory, ipAddress string) error {
@@ -63,6 +71,7 @@ func (s *inventoryService) Create(ctx context.Context, inventory *domain.Invento
 		zap.L().Error("audit log failed", zap.Error(err))
 	}
 
+	s.invalidate(ctx)
 	return nil
 }
 
@@ -76,7 +85,11 @@ func (s *inventoryService) GetByProductID(ctx context.Context, productID uuid.UU
 
 func (s *inventoryService) Update(ctx context.Context, inventory *domain.Inventory) error {
 	inventory.UpdatedAt = time.Now().UTC()
-	return s.repo.Update(ctx, inventory)
+	if err := s.repo.Update(ctx, inventory); err != nil {
+		return err
+	}
+	s.invalidate(ctx)
+	return nil
 }
 
 func (s *inventoryService) Delete(ctx context.Context, id uuid.UUID, orgID uuid.UUID, ipAddress string) error {
@@ -98,6 +111,7 @@ func (s *inventoryService) Delete(ctx context.Context, id uuid.UUID, orgID uuid.
 		zap.L().Error("audit log failed", zap.Error(err))
 	}
 
+	s.invalidate(ctx)
 	return nil
 }
 

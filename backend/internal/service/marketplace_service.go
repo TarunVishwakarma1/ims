@@ -8,6 +8,7 @@ import (
 
 	"github.com/TarunVishwakarma1/ims/backend/internal/domain"
 	"github.com/TarunVishwakarma1/ims/backend/internal/repository"
+	"github.com/TarunVishwakarma1/ims/backend/pkg/cache"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -32,54 +33,134 @@ type MarketplaceService interface {
 }
 
 type marketplaceService struct {
-	marketRepo repository.MarketplaceRepository
-	invRepo    repository.InventoryRepository
-	orderRepo  repository.OrderRepository
-	pool       *pgxpool.Pool
+	marketRepo   repository.MarketplaceRepository
+	invRepo      repository.InventoryRepository
+	orderRepo    repository.OrderRepository
+	productRepo  repository.ProductRepository
+	locationRepo repository.LocationRepository
+	cache        cache.Cache
+	pool         *pgxpool.Pool
 }
 
 func NewMarketplaceService(
 	marketRepo repository.MarketplaceRepository,
 	invRepo repository.InventoryRepository,
 	orderRepo repository.OrderRepository,
+	productRepo repository.ProductRepository,
+	locationRepo repository.LocationRepository,
+	c cache.Cache,
 	pool *pgxpool.Pool,
 ) MarketplaceService {
 	return &marketplaceService{
-		marketRepo: marketRepo,
-		invRepo:    invRepo,
-		orderRepo:  orderRepo,
-		pool:       pool,
+		marketRepo:   marketRepo,
+		invRepo:      invRepo,
+		orderRepo:    orderRepo,
+		productRepo:  productRepo,
+		locationRepo: locationRepo,
+		cache:        c,
+		pool:         pool,
 	}
+}
+
+func (s *marketplaceService) invalidate(ctx context.Context, orgID uuid.UUID) {
+	_ = s.cache.DeleteByPattern(ctx, cache.ListingsByOrgPattern(orgID))
+	_ = s.cache.DeleteByPattern(ctx, cache.MarketplaceSearchPattern())
 }
 
 // --- Listings ---
 
 func (s *marketplaceService) CreateListing(ctx context.Context, listing *domain.MarketplaceListing, orgID uuid.UUID) error {
+	// Validate price
+	if listing.ListingPrice < 0 {
+		return errors.New("listing price must be non-negative")
+	}
+	if listing.MinOrderQty < 1 {
+		listing.MinOrderQty = 1
+	}
+	if listing.MaxOrderQty != nil && *listing.MaxOrderQty < listing.MinOrderQty {
+		return errors.New("max_order_qty must be >= min_order_qty")
+	}
+
+	// Verify product belongs to org
+	if _, err := s.productRepo.GetByID(ctx, listing.ProductID, orgID); err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			return errors.New("product not found in your organization")
+		}
+		return err
+	}
+
+	// Verify location belongs to org (if specified)
+	if listing.LocationID != nil {
+		if _, err := s.locationRepo.GetByID(ctx, *listing.LocationID, orgID); err != nil {
+			if errors.Is(err, domain.ErrNotFound) {
+				return errors.New("location not found in your organization")
+			}
+			return err
+		}
+	}
+
 	listing.ID = uuid.New()
 	listing.OrgID = orgID
 	listing.IsActive = true
 	now := time.Now()
 	listing.CreatedAt = now
 	listing.UpdatedAt = now
-	return s.marketRepo.CreateListing(ctx, listing)
+	if err := s.marketRepo.CreateListing(ctx, listing); err != nil {
+		return err
+	}
+	s.invalidate(ctx, orgID)
+	return nil
 }
 
 func (s *marketplaceService) UpdateListing(ctx context.Context, listing *domain.MarketplaceListing, orgID uuid.UUID) error {
 	listing.OrgID = orgID
 	listing.UpdatedAt = time.Now()
-	return s.marketRepo.UpdateListing(ctx, listing)
+	if err := s.marketRepo.UpdateListing(ctx, listing); err != nil {
+		return err
+	}
+	s.invalidate(ctx, orgID)
+	return nil
 }
 
 func (s *marketplaceService) DeleteListing(ctx context.Context, id uuid.UUID, orgID uuid.UUID) error {
-	return s.marketRepo.DeleteListing(ctx, id, orgID)
+	if err := s.marketRepo.DeleteListing(ctx, id, orgID); err != nil {
+		return err
+	}
+	s.invalidate(ctx, orgID)
+	return nil
 }
 
 func (s *marketplaceService) ListByOrg(ctx context.Context, orgID uuid.UUID) ([]*domain.MarketplaceListing, error) {
-	return s.marketRepo.ListByOrg(ctx, orgID)
+	key := cache.ListingsByOrgKey(orgID)
+	var cached []*domain.MarketplaceListing
+	if err := s.cache.Get(ctx, key, &cached); err == nil {
+		return cached, nil
+	}
+
+	list, err := s.marketRepo.ListByOrg(ctx, orgID)
+	if err != nil {
+		return nil, err
+	}
+	_ = s.cache.Set(ctx, key, list, cache.TTLMedium)
+	return list, nil
 }
 
 func (s *marketplaceService) Search(ctx context.Context, query string, lat, lng, radiusKM *float64, filters map[string]any) ([]*domain.MarketplaceListing, error) {
-	return s.marketRepo.Search(ctx, query, lat, lng, radiusKM, filters)
+	// Build a canonical fingerprint of the request so identical searches share a key.
+	fingerprint := fmt.Sprintf("q=%q|lat=%v|lng=%v|r=%v|f=%v", query, lat, lng, radiusKM, filters)
+	key := cache.MarketplaceSearchKey(fingerprint)
+
+	var cached []*domain.MarketplaceListing
+	if err := s.cache.Get(ctx, key, &cached); err == nil {
+		return cached, nil
+	}
+
+	results, err := s.marketRepo.Search(ctx, query, lat, lng, radiusKM, filters)
+	if err != nil {
+		return nil, err
+	}
+	_ = s.cache.Set(ctx, key, results, cache.TTLShort)
+	return results, nil
 }
 
 // --- Cart ---
@@ -108,6 +189,33 @@ func (s *marketplaceService) GetOrCreateCart(ctx context.Context, buyerOrgID, cu
 }
 
 func (s *marketplaceService) AddToCart(ctx context.Context, cartID, listingID uuid.UUID, quantity int) error {
+	if quantity < 1 {
+		return errors.New("quantity must be at least 1")
+	}
+
+	listing, err := s.marketRepo.GetListingByID(ctx, listingID)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			return errors.New("listing not found")
+		}
+		return err
+	}
+	if !listing.IsActive {
+		return errors.New("listing is no longer available")
+	}
+	if quantity < listing.MinOrderQty {
+		return fmt.Errorf("minimum order quantity is %d", listing.MinOrderQty)
+	}
+	if listing.MaxOrderQty != nil && quantity > *listing.MaxOrderQty {
+		return fmt.Errorf("maximum order quantity is %d", *listing.MaxOrderQty)
+	}
+
+	// Stock check
+	inv, err := s.invRepo.GetByProductID(ctx, listing.ProductID, listing.OrgID)
+	if err == nil && inv.Quantity < quantity {
+		return fmt.Errorf("only %d in stock", inv.Quantity)
+	}
+
 	item := &domain.CartItem{
 		ID:        uuid.New(),
 		CartID:    cartID,
@@ -119,6 +227,30 @@ func (s *marketplaceService) AddToCart(ctx context.Context, cartID, listingID uu
 }
 
 func (s *marketplaceService) UpdateCartItem(ctx context.Context, cartID, listingID uuid.UUID, quantity int) error {
+	if quantity < 1 {
+		return errors.New("quantity must be at least 1")
+	}
+
+	listing, err := s.marketRepo.GetListingByID(ctx, listingID)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			return errors.New("listing not found")
+		}
+		return err
+	}
+	if listing.MaxOrderQty != nil && quantity > *listing.MaxOrderQty {
+		return fmt.Errorf("maximum order quantity is %d", *listing.MaxOrderQty)
+	}
+	if quantity < listing.MinOrderQty {
+		return fmt.Errorf("minimum order quantity is %d", listing.MinOrderQty)
+	}
+
+	// Stock check
+	inv, err := s.invRepo.GetByProductID(ctx, listing.ProductID, listing.OrgID)
+	if err == nil && inv.Quantity < quantity {
+		return fmt.Errorf("only %d in stock", inv.Quantity)
+	}
+
 	item := &domain.CartItem{
 		CartID:    cartID,
 		ListingID: listingID,

@@ -40,14 +40,36 @@ func (r *userRepository) Create(ctx context.Context, user *domain.User) error {
 	return err
 }
 
+const userSelectCols = `id, org_id, name, email, password_hash, role, is_active,
+	email_verified, failed_login_count, locked_until, last_login_at, password_changed_at,
+	created_at, updated_at`
+
+func scanUser(scanner interface {
+	Scan(dest ...any) error
+}) (*domain.User, error) {
+	u := &domain.User{}
+	err := scanner.Scan(&u.ID, &u.OrgID, &u.Name, &u.Email, &u.PasswordHash, &u.Role, &u.IsActive,
+		&u.EmailVerified, &u.FailedLoginCount, &u.LockedUntil, &u.LastLoginAt, &u.PasswordChangedAt,
+		&u.CreatedAt, &u.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return u, nil
+}
+
 func (r *userRepository) GetByID(ctx context.Context, id uuid.UUID, orgID uuid.UUID) (*domain.User, error) {
-	query := `
-		SELECT id, org_id, name, email, password_hash, role, is_active, created_at, updated_at
-		FROM users
-		WHERE id = $1 AND org_id = $2
-	`
-	user := &domain.User{}
-	err := r.db.QueryRow(ctx, query, id, orgID).Scan(&user.ID, &user.OrgID, &user.Name, &user.Email, &user.PasswordHash, &user.Role, &user.IsActive, &user.CreatedAt, &user.UpdatedAt)
+	// orgID == uuid.Nil → cross-org lookup (used by refresh token flow to load by ID alone).
+	var query string
+	var args []any
+	if orgID == uuid.Nil {
+		query = `SELECT ` + userSelectCols + ` FROM users WHERE id = $1`
+		args = []any{id}
+	} else {
+		query = `SELECT ` + userSelectCols + ` FROM users WHERE id = $1 AND org_id = $2`
+		args = []any{id, orgID}
+	}
+
+	user, err := scanUser(r.db.QueryRow(ctx, query, args...))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, domain.ErrNotFound
@@ -58,13 +80,8 @@ func (r *userRepository) GetByID(ctx context.Context, id uuid.UUID, orgID uuid.U
 }
 
 func (r *userRepository) GetByEmail(ctx context.Context, email string) (*domain.User, error) {
-	query := `
-		SELECT id, org_id, name, email, password_hash, role, is_active, created_at, updated_at
-		FROM users
-		WHERE email = $1
-	`
-	user := &domain.User{}
-	err := r.db.QueryRow(ctx, query, email).Scan(&user.ID, &user.OrgID, &user.Name, &user.Email, &user.PasswordHash, &user.Role, &user.IsActive, &user.CreatedAt, &user.UpdatedAt)
+	query := `SELECT ` + userSelectCols + ` FROM users WHERE email = $1`
+	user, err := scanUser(r.db.QueryRow(ctx, query, email))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, domain.ErrNotFound
@@ -95,12 +112,7 @@ func (r *userRepository) Delete(ctx context.Context, id uuid.UUID, orgID uuid.UU
 }
 
 func (r *userRepository) List(ctx context.Context, orgID uuid.UUID) ([]*domain.User, error) {
-	query := `
-		SELECT id, org_id, name, email, password_hash, role, is_active, created_at, updated_at
-		FROM users
-		WHERE org_id = $1
-		ORDER BY created_at DESC
-	`
+	query := `SELECT ` + userSelectCols + ` FROM users WHERE org_id = $1 ORDER BY created_at DESC`
 	rows, err := r.db.Query(ctx, query, orgID)
 	if err != nil {
 		return nil, err
@@ -109,17 +121,14 @@ func (r *userRepository) List(ctx context.Context, orgID uuid.UUID) ([]*domain.U
 
 	users := make([]*domain.User, 0)
 	for rows.Next() {
-		user := &domain.User{}
-		err := rows.Scan(&user.ID, &user.OrgID, &user.Name, &user.Email, &user.PasswordHash, &user.Role, &user.IsActive, &user.CreatedAt, &user.UpdatedAt)
+		user, err := scanUser(rows)
 		if err != nil {
 			return nil, err
 		}
 		users = append(users, user)
 	}
-
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-
 	return users, nil
 }

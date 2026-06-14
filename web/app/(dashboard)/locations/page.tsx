@@ -6,12 +6,16 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Plus, Edit, Trash2, Loader2, Star } from 'lucide-react'
+import { Plus, Edit, Trash2, Loader2, Star, Navigation } from 'lucide-react'
+import { toast } from 'sonner'
+import { HTTPError } from 'ky'
 
 import { locationsApi } from '@/lib/api/locations'
 import { usePermission } from '@/hooks/usePermission'
 import { PERMISSIONS } from '@/lib/rbac'
 import type { OrgLocation } from '@/types/api'
+import { MapPicker } from '@/components/map/map-picker'
+import { LocationsMap } from '@/components/map/locations-map'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -31,6 +35,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
+  DialogDescription,
 } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
 
@@ -54,6 +59,7 @@ export default function LocationsPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [selectedLocation, setSelectedLocation] = useState<OrgLocation | null>(null)
+  const [isLocating, setIsLocating] = useState(false)
 
   const { data: rawLocations, isLoading } = useQuery({
     queryKey: ['locations'],
@@ -68,6 +74,14 @@ export default function LocationsPage() {
       setIsDialogOpen(false)
       reset()
     },
+    onError: async (err: Error) => {
+      if (err instanceof HTTPError) {
+        const errorData = await err.response.json().catch(() => ({}))
+        toast.error(errorData.error || errorData.message || 'Failed to create location')
+      } else {
+        toast.error(err.message || 'Failed to create location')
+      }
+    }
   })
 
   const updateMutation = useMutation({
@@ -76,6 +90,14 @@ export default function LocationsPage() {
       queryClient.invalidateQueries({ queryKey: ['locations'] })
       setIsDialogOpen(false)
     },
+    onError: async (err: Error) => {
+      if (err instanceof HTTPError) {
+        const errorData = await err.response.json().catch(() => ({}))
+        toast.error(errorData.error || errorData.message || 'Failed to update location')
+      } else {
+        toast.error(err.message || 'Failed to update location')
+      }
+    }
   })
 
   const deleteMutation = useMutation({
@@ -102,6 +124,8 @@ export default function LocationsPage() {
   })
 
   const isPrimary = watch('is_primary')
+  const currentLat = watch('lat')
+  const currentLng = watch('lng')
 
   const handleOpenCreate = () => {
     setSelectedLocation(null)
@@ -152,6 +176,8 @@ export default function LocationsPage() {
           </Button>
         )}
       </div>
+
+      <LocationsMap locations={locations} height="380px" />
 
       <div className="rounded-md border bg-white dark:bg-zinc-950">
         <Table>
@@ -228,6 +254,7 @@ export default function LocationsPage() {
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
             <DialogTitle>{selectedLocation ? 'Edit Location' : 'Add Location'}</DialogTitle>
+            <DialogDescription className="sr-only">Fill out the location details.</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 py-4">
             <div className="grid grid-cols-2 gap-4">
@@ -262,14 +289,69 @@ export default function LocationsPage() {
                 <Input id="country" {...register('country')} />
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="lat">Latitude</Label>
-                <Input id="lat" type="number" step="any" {...register('lat', { valueAsNumber: true, setValueAs: v => v === "" || isNaN(v) ? undefined : v })} />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="lng">Longitude</Label>
-                <Input id="lng" type="number" step="any" {...register('lng', { valueAsNumber: true, setValueAs: v => v === "" || isNaN(v) ? undefined : v })} />
+              <div className="col-span-2 space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label>Coordinates</Label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      if (!('geolocation' in navigator)) {
+                        toast.error('Geolocation not supported by your browser')
+                        return
+                      }
+                      setIsLocating(true)
+                      navigator.geolocation.getCurrentPosition(
+                        (pos) => {
+                          setValue('lat', Number(pos.coords.latitude.toFixed(6)), { shouldValidate: true })
+                          setValue('lng', Number(pos.coords.longitude.toFixed(6)), { shouldValidate: true })
+                          toast.success('Location captured')
+                          setIsLocating(false)
+                        },
+                        (err) => {
+                          const msg = err.code === err.PERMISSION_DENIED
+                            ? 'Location permission denied'
+                            : err.code === err.POSITION_UNAVAILABLE
+                            ? 'Location unavailable'
+                            : err.code === err.TIMEOUT
+                            ? 'Location request timed out'
+                            : 'Failed to get location'
+                          toast.error(msg)
+                          setIsLocating(false)
+                        },
+                        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+                      )
+                    }}
+                    disabled={isLocating}
+                  >
+                    {isLocating ? (
+                      <Loader2 className="w-3 h-3 mr-2 animate-spin" />
+                    ) : (
+                      <Navigation className="w-3 h-3 mr-2" />
+                    )}
+                    Use My Location
+                  </Button>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <Label htmlFor="lat" className="text-xs text-muted-foreground">Latitude</Label>
+                    <Input id="lat" type="number" step="any" placeholder="e.g. 19.076" {...register('lat', { valueAsNumber: true, setValueAs: v => v === "" || isNaN(v) ? undefined : v })} />
+                  </div>
+                  <div>
+                    <Label htmlFor="lng" className="text-xs text-muted-foreground">Longitude</Label>
+                    <Input id="lng" type="number" step="any" placeholder="e.g. 72.877" {...register('lng', { valueAsNumber: true, setValueAs: v => v === "" || isNaN(v) ? undefined : v })} />
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">Click on the map to set coordinates</p>
+                <MapPicker
+                  lat={typeof currentLat === 'number' && !isNaN(currentLat) ? currentLat : undefined}
+                  lng={typeof currentLng === 'number' && !isNaN(currentLng) ? currentLng : undefined}
+                  onChange={(lat, lng) => {
+                    setValue('lat', Number(lat.toFixed(6)), { shouldValidate: true })
+                    setValue('lng', Number(lng.toFixed(6)), { shouldValidate: true })
+                  }}
+                />
               </div>
 
               <div className="flex items-center space-x-2 col-span-2 pt-2">
@@ -299,6 +381,7 @@ export default function LocationsPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Delete Location</DialogTitle>
+            <DialogDescription className="sr-only">Confirm deletion of the selected location.</DialogDescription>
           </DialogHeader>
           <div className="py-4">
             <p>Are you sure you want to delete <strong>{selectedLocation?.name}</strong>? This action cannot be undone.</p>

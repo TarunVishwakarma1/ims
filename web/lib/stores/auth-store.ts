@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { User, LoginResponse, Organization } from '@/types/api';
-import { setTokens, clearTokens, getAccessToken } from '@/lib/api/client';
+import { setTokens, clearTokens, getAccessToken, getRefreshToken } from '@/lib/api/client';
+import { authApi } from '@/lib/api/auth';
 
 interface AuthState {
   user: User | null;
@@ -11,7 +12,7 @@ interface AuthState {
 
   // Actions
   login: (response: LoginResponse) => void;
-  logout: () => void;
+  logout: () => Promise<void>;
   setUser: (user: User) => void;
 }
 
@@ -33,7 +34,13 @@ export const useAuthStore = create<AuthState>()(
         });
       },
 
-      logout: () => {
+      logout: async () => {
+        const refreshToken = getRefreshToken();
+        if (refreshToken) {
+          // Tell backend to revoke the entire refresh token family.
+          // Fire-and-forget — UX shouldn't block on this.
+          authApi.logout(refreshToken).catch(() => {});
+        }
         clearTokens();
         set({
           user: null,

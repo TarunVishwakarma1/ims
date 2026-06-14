@@ -6,7 +6,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Plus, Edit, Trash2, Loader2, Store, Search } from 'lucide-react'
+import { Plus, Edit, Trash2, Loader2, Store, Search, Map as MapIcon, List as ListIcon, Navigation } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { marketplaceApi } from '@/lib/api/marketplace'
@@ -14,6 +14,8 @@ import { productsApi } from '@/lib/api/products'
 import { locationsApi } from '@/lib/api/locations'
 import { formatPrice } from '@/lib/utils'
 import type { MarketplaceListing } from '@/types/api'
+import { useDebounce } from '@/hooks/useDebounce'
+import { MarketplaceMap } from '@/components/map/marketplace-map'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -59,6 +61,14 @@ export default function MarketplacePage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [minPrice, setMinPrice] = useState('')
   const [maxPrice, setMaxPrice] = useState('')
+  const [viewMode, setViewMode] = useState<'list' | 'map'>('list')
+  const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null)
+  const [radiusKm, setRadiusKm] = useState<number | null>(null)
+
+  // Debounce text + price inputs to avoid spamming server on every keystroke
+  const debouncedQuery = useDebounce(searchQuery, 350)
+  const debouncedMin = useDebounce(minPrice, 350)
+  const debouncedMax = useDebounce(maxPrice, 350)
 
   // State for My Listings tab dialogs
   const [isDialogOpen, setIsDialogOpen] = useState(false)
@@ -67,11 +77,14 @@ export default function MarketplacePage() {
 
   // Fetch Data
   const { data: searchResults, isLoading: isSearching } = useQuery({
-    queryKey: ['marketplace', 'search', searchQuery, minPrice, maxPrice],
+    queryKey: ['marketplace', 'search', debouncedQuery, debouncedMin, debouncedMax, userCoords, radiusKm],
     queryFn: () => marketplaceApi.search({
-      q: searchQuery || undefined,
-      min_price: minPrice ? Number(minPrice) * 100 : undefined,
-      max_price: maxPrice ? Number(maxPrice) * 100 : undefined,
+      q: debouncedQuery || undefined,
+      min_price: debouncedMin ? Number(debouncedMin) * 100 : undefined,
+      max_price: debouncedMax ? Number(debouncedMax) * 100 : undefined,
+      lat: userCoords?.lat,
+      lng: userCoords?.lng,
+      radius: radiusKm ?? undefined,
     }),
   })
 
@@ -206,7 +219,80 @@ export default function MarketplacePage() {
             </div>
           </div>
 
-          {isSearching ? (
+          {/* View Mode + Geolocation controls */}
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-white dark:bg-zinc-950 p-3 rounded-md border">
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant={viewMode === 'list' ? 'default' : 'outline'}
+                onClick={() => setViewMode('list')}
+              >
+                <ListIcon className="h-3.5 w-3.5 mr-2" /> List
+              </Button>
+              <Button
+                size="sm"
+                variant={viewMode === 'map' ? 'default' : 'outline'}
+                onClick={() => setViewMode('map')}
+              >
+                <MapIcon className="h-3.5 w-3.5 mr-2" /> Map
+              </Button>
+            </div>
+            <div className="flex items-center gap-2">
+              {userCoords ? (
+                <>
+                  <span className="text-xs text-muted-foreground">
+                    Near {userCoords.lat.toFixed(3)}, {userCoords.lng.toFixed(3)}
+                  </span>
+                  <select
+                    value={radiusKm ?? ''}
+                    onChange={e => setRadiusKm(e.target.value ? Number(e.target.value) : null)}
+                    className="text-xs border rounded-md px-2 py-1 bg-background"
+                  >
+                    <option value="">No radius</option>
+                    <option value="5">Within 5 km</option>
+                    <option value="10">Within 10 km</option>
+                    <option value="25">Within 25 km</option>
+                    <option value="50">Within 50 km</option>
+                    <option value="100">Within 100 km</option>
+                  </select>
+                  <Button size="sm" variant="ghost" onClick={() => { setUserCoords(null); setRadiusKm(null) }}>
+                    Clear
+                  </Button>
+                </>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    if (!('geolocation' in navigator)) {
+                      toast.error('Geolocation not supported by your browser')
+                      return
+                    }
+                    navigator.geolocation.getCurrentPosition(
+                      pos => {
+                        setUserCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude })
+                        if (!radiusKm) setRadiusKm(25)
+                        toast.success('Showing listings near you')
+                      },
+                      () => toast.error('Could not get your location'),
+                      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 },
+                    )
+                  }}
+                >
+                  <Navigation className="h-3.5 w-3.5 mr-2" /> Use My Location
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {viewMode === 'map' ? (
+            <MarketplaceMap
+              listings={searchResults ?? []}
+              userLat={userCoords?.lat}
+              userLng={userCoords?.lng}
+              height="500px"
+            />
+          ) : isSearching ? (
             <div className="flex justify-center p-12">
               <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
             </div>

@@ -6,6 +6,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Loader2, Plus, RefreshCw, Save, Pencil, Trash } from 'lucide-react'
+import { TableSkeleton } from '@/components/ui/table-skeleton'
 
 import { rolesApi, Role } from '@/lib/api/roles'
 import { usePermission } from '@/hooks/usePermission'
@@ -230,11 +231,7 @@ export default function RolesPage() {
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow>
-                <TableCell colSpan={permissions.length + 2} className="h-24 text-center">
-                  <Loader2 className="w-6 h-6 animate-spin mx-auto text-muted-foreground" />
-                </TableCell>
-              </TableRow>
+              <TableSkeleton columns={permissions.length + 2} rows={5} />
             ) : roles.length > 0 ? (
               roles.map((role) => {
                 // Use pending permissions if available, otherwise fallback to saved permissions

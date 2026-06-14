@@ -6,6 +6,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Plus, Edit, Trash2, Loader2 } from 'lucide-react'
+import { TableSkeleton } from '@/components/ui/table-skeleton'
 
 import { categoriesApi } from '@/lib/api/categories'
 import { usePermission } from '@/hooks/usePermission'
@@ -149,11 +150,7 @@ export default function CategoriesPage() {
           </TableHeader>
           <TableBody>
             {isLoadingCategories ? (
-              <TableRow>
-                <TableCell colSpan={3} className="h-24 text-center">
-                  <Loader2 className="w-6 h-6 animate-spin mx-auto text-muted-foreground" />
-                </TableCell>
-              </TableRow>
+              <TableSkeleton columns={3} rows={5} />
             ) : categories.length > 0 ? (
               categories.map((category) => (
                 <TableRow key={category.id}>

@@ -6,6 +6,7 @@ import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Edit, Loader2, Eye, Plus } from 'lucide-react'
+import { TableSkeleton } from '@/components/ui/table-skeleton'
 import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
 import { HTTPError } from 'ky'
@@ -214,11 +215,7 @@ export default function OrdersPage() {
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow>
-                <TableCell colSpan={7} className="h-24 text-center">
-                  <Loader2 className="w-6 h-6 animate-spin mx-auto text-muted-foreground" />
-                </TableCell>
-              </TableRow>
+              <TableSkeleton columns={7} rows={5} />
             ) : orders.length > 0 ? (
               orders.map((order) => (
                 <TableRow key={order.id}>

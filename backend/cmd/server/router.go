@@ -5,6 +5,7 @@ import (
 
 	"github.com/TarunVishwakarma1/ims/backend/config"
 	"github.com/TarunVishwakarma1/ims/backend/internal/handler"
+	"github.com/TarunVishwakarma1/ims/backend/pkg/cache"
 	"github.com/TarunVishwakarma1/ims/backend/pkg/middleware"
 	"github.com/TarunVishwakarma1/ims/backend/pkg/rbac"
 	"github.com/go-chi/chi/v5"
@@ -24,6 +25,7 @@ func NewRouter(
 	marketH *handler.MarketplaceHandler,
 	cfg *config.Config,
 	pool *pgxpool.Pool,
+	cacheClient cache.Cache,
 ) http.Handler {
 	r := chi.NewRouter()
 
@@ -32,14 +34,21 @@ func NewRouter(
 	r.Use(middleware.RealIP)
 	r.Use(chiMiddleware.Logger)
 	r.Use(chiMiddleware.Recoverer)
+	r.Use(middleware.SecurityHeaders())
 	r.Use(middleware.RateLimiter())
 	r.Use(middleware.CORS(cfg.AllowedOrigins))
 
 	// Public routes (no auth)
-	r.Get("/health", handler.HealthCheck(pool))
-	r.Post("/api/auth/register", authH.Signup)
-	r.Post("/api/auth/login", authH.Login)
-	r.Post("/api/auth/refresh", authH.RefreshToken)
+	r.Get("/health", handler.HealthCheck(pool, cacheClient))
+
+	// Auth routes — stricter rate limit (anti brute-force)
+	r.Group(func(r chi.Router) {
+		r.Use(middleware.AuthRateLimiter())
+		r.Post("/api/auth/register", authH.Signup)
+		r.Post("/api/auth/login", authH.Login)
+		r.Post("/api/auth/refresh", authH.RefreshToken)
+		r.Post("/api/auth/logout", authH.Logout)
+	})
 
 	// Marketplace Search (Public)
 	r.Get("/api/marketplace/search", marketH.Search)
@@ -47,6 +56,10 @@ func NewRouter(
 	// Protected routes
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.Auth(cfg.JWTSecret))
+
+		// Email verification (authenticated user only)
+		r.Post("/api/auth/verify-email", authH.VerifyEmail)
+		r.Post("/api/auth/resend-verification", authH.ResendVerification)
 
 		// Users
 		r.With(middleware.RequirePermission(rbac.UsersView)).Get("/api/users", userH.ListUsers)

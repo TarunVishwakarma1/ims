@@ -22,6 +22,7 @@ export const metadata: Metadata = {
 };
 
 import { QueryProvider } from "@/components/query-provider";
+import { Toaster } from "@/components/ui/sonner";
 
 export default function RootLayout({
   children,
@@ -40,7 +41,10 @@ export default function RootLayout({
             defaultTheme="dark"
             enableSystem
             disableTransitionOnChange
-          >{children}</ThemeProvider>
+          >
+            {children}
+            <Toaster position="top-right" richColors closeButton />
+          </ThemeProvider>
         </QueryProvider>
       </body>
     </html>

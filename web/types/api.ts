@@ -21,6 +21,8 @@ export interface User {
   email: string;
   role: Role;
   is_active: boolean;
+  email_verified: boolean;
+  last_login_at?: ISODate | null;
   created_at: ISODate;
   updated_at: ISODate;
 }
@@ -200,6 +202,8 @@ export interface MarketplaceListing {
   org_slug?: string;
   location_name?: string;
   location_city?: string;
+  location_lat?: number | null;
+  location_lng?: number | null;
   stock_quantity?: number;
   distance_km?: number | null;
 }

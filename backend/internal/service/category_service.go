@@ -6,6 +6,7 @@ import (
 
 	"github.com/TarunVishwakarma1/ims/backend/internal/domain"
 	"github.com/TarunVishwakarma1/ims/backend/internal/repository"
+	"github.com/TarunVishwakarma1/ims/backend/pkg/cache"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
@@ -21,13 +22,19 @@ type CategoryService interface {
 type categoryService struct {
 	repo         repository.CategoryRepository
 	auditLogRepo repository.AuditLogRepository
+	cache        cache.Cache
 }
 
-func NewCategoryService(repo repository.CategoryRepository, auditLogRepo repository.AuditLogRepository) CategoryService {
+func NewCategoryService(repo repository.CategoryRepository, auditLogRepo repository.AuditLogRepository, c cache.Cache) CategoryService {
 	return &categoryService{
 		repo:         repo,
 		auditLogRepo: auditLogRepo,
+		cache:        c,
 	}
+}
+
+func (s *categoryService) invalidate(ctx context.Context, orgID uuid.UUID) {
+	_ = s.cache.DeleteByPattern(ctx, cache.CategoriesListPattern(orgID))
 }
 
 func (s *categoryService) Create(ctx context.Context, category *domain.Category, ipAddress string) error {
@@ -54,6 +61,7 @@ func (s *categoryService) Create(ctx context.Context, category *domain.Category,
 		zap.L().Error("audit log failed", zap.Error(err))
 	}
 
+	s.invalidate(ctx, category.OrgID)
 	return nil
 }
 
@@ -63,7 +71,11 @@ func (s *categoryService) GetByID(ctx context.Context, id uuid.UUID, orgID uuid.
 
 func (s *categoryService) Update(ctx context.Context, category *domain.Category) error {
 	category.UpdatedAt = time.Now().UTC()
-	return s.repo.Update(ctx, category)
+	if err := s.repo.Update(ctx, category); err != nil {
+		return err
+	}
+	s.invalidate(ctx, category.OrgID)
+	return nil
 }
 
 func (s *categoryService) Delete(ctx context.Context, id uuid.UUID, orgID uuid.UUID, ipAddress string) error {
@@ -85,9 +97,21 @@ func (s *categoryService) Delete(ctx context.Context, id uuid.UUID, orgID uuid.U
 		zap.L().Error("audit log failed", zap.Error(err))
 	}
 
+	s.invalidate(ctx, orgID)
 	return nil
 }
 
 func (s *categoryService) List(ctx context.Context, orgID uuid.UUID) ([]*domain.Category, error) {
-	return s.repo.List(ctx, orgID)
+	key := cache.CategoriesListKey(orgID)
+	var cached []*domain.Category
+	if err := s.cache.Get(ctx, key, &cached); err == nil {
+		return cached, nil
+	}
+
+	cats, err := s.repo.List(ctx, orgID)
+	if err != nil {
+		return nil, err
+	}
+	_ = s.cache.Set(ctx, key, cats, cache.TTLLong)
+	return cats, nil
 }

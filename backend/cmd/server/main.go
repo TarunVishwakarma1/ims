@@ -16,6 +16,8 @@ import (
 	"github.com/TarunVishwakarma1/ims/backend/internal/service"
 	"github.com/TarunVishwakarma1/ims/backend/migrations"
 	"github.com/TarunVishwakarma1/ims/backend/pkg/logger"
+	"github.com/TarunVishwakarma1/ims/backend/pkg/cache"
+	"github.com/TarunVishwakarma1/ims/backend/pkg/jobs"
 	"github.com/TarunVishwakarma1/ims/backend/pkg/rbac"
 
 	"github.com/golang-migrate/migrate/v4"
@@ -97,15 +99,24 @@ func main() {
 	rbac.Cache.Load(rolePerms)
 	zap.L().Info("permission cache loaded")
 
+	authRepo := repository.NewAuthRepository(pool)
+
+	// Valkey cache — falls back to no-op if unavailable
+	cacheClient := cache.MustNew(cfg.ValkeyURL)
+
+	// Start background jobs
+	jobs.StartReservationExpiry(ctx, marketRepo, 1*time.Minute)
+	jobs.StartRefreshTokenCleanup(ctx, authRepo, 1*time.Hour)
+
 	userService := service.NewUserService(userRepo, auditLogRepo)
-	categoryService := service.NewCategoryService(categoryRepo, auditLogRepo)
-	productService := service.NewProductService(productRepo, inventoryRepo, auditLogRepo)
-	inventoryService := service.NewInventoryService(inventoryRepo, auditLogRepo)
+	categoryService := service.NewCategoryService(categoryRepo, auditLogRepo, cacheClient)
+	productService := service.NewProductService(productRepo, inventoryRepo, auditLogRepo, cacheClient)
+	inventoryService := service.NewInventoryService(inventoryRepo, auditLogRepo, cacheClient)
 	orderService := service.NewOrderService(orderRepo, inventoryRepo, auditLogRepo)
-	authService := service.NewAuthService(userRepo, orgRepo, auditLogRepo, pool, cfg.JWTSecret, cfg.JWTAccessExpiry, cfg.JWTRefreshExpiry)
+	authService := service.NewAuthService(userRepo, orgRepo, auditLogRepo, authRepo, pool, cfg.JWTSecret, cfg.JWTAccessExpiry, cfg.JWTRefreshExpiry)
 	roleService := service.NewRoleService(roleRepo)
-	locationService := service.NewLocationService(locationRepo)
-	marketService := service.NewMarketplaceService(marketRepo, inventoryRepo, orderRepo, pool)
+	locationService := service.NewLocationService(locationRepo, cacheClient)
+	marketService := service.NewMarketplaceService(marketRepo, inventoryRepo, orderRepo, productRepo, locationRepo, cacheClient, pool)
 
 	userH := handler.NewUserHandler(userService)
 	categoryH := handler.NewCategoryHandler(categoryService)
@@ -117,7 +128,7 @@ func main() {
 	locationH := handler.NewLocationHandler(locationService)
 	marketH := handler.NewMarketplaceHandler(marketService)
 
-	router := NewRouter(authH, userH, categoryH, productH, inventoryH, orderH, roleH, locationH, marketH, cfg, pool)
+	router := NewRouter(authH, userH, categoryH, productH, inventoryH, orderH, roleH, locationH, marketH, cfg, pool, cacheClient)
 
 	server := &http.Server{
 		Addr:         ":" + cfg.Port,

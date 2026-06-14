@@ -6,6 +6,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Edit, Loader2, AlertTriangle, CheckCircle2, Plus, XCircle } from 'lucide-react'
+import { TableSkeleton } from '@/components/ui/table-skeleton'
 
 import { inventoryApi } from '@/lib/api/inventory'
 import { productsApi } from '@/lib/api/products'
@@ -157,11 +158,7 @@ export default function InventoryPage() {
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow>
-                <TableCell colSpan={6} className="h-24 text-center">
-                  <Loader2 className="w-6 h-6 animate-spin mx-auto text-muted-foreground" />
-                </TableCell>
-              </TableRow>
+              <TableSkeleton columns={6} rows={5} />
             ) : inventoryList.length > 0 ? (
               inventoryList.map((inv) => {
                 const product = products.find(p => p.id === inv.product_id)

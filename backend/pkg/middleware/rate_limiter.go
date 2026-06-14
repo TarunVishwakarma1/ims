@@ -17,11 +17,15 @@ type limiterEntry struct {
 type ipRateLimiter struct {
 	limiters map[string]*limiterEntry
 	mu       sync.RWMutex
+	rps      rate.Limit
+	burst    int
 }
 
-func newIPRateLimiter() *ipRateLimiter {
+func newIPRateLimiter(rps rate.Limit, burst int) *ipRateLimiter {
 	l := &ipRateLimiter{
 		limiters: make(map[string]*limiterEntry),
+		rps:      rps,
+		burst:    burst,
 	}
 	go l.cleanup()
 	return l
@@ -44,7 +48,7 @@ func (l *ipRateLimiter) getLimiter(ip string) *rate.Limiter {
 
 	entry, exists = l.limiters[ip]
 	if !exists {
-		limiter := rate.NewLimiter(rate.Limit(60), 60)
+		limiter := rate.NewLimiter(l.rps, l.burst)
 		entry = &limiterEntry{
 			limiter:  limiter,
 			lastSeen: time.Now(),
@@ -70,8 +74,9 @@ func (l *ipRateLimiter) cleanup() {
 	}
 }
 
+// RateLimiter — 60 req/sec, burst 60 (global default)
 func RateLimiter() func(http.Handler) http.Handler {
-	limiter := newIPRateLimiter()
+	limiter := newIPRateLimiter(rate.Limit(60), 60)
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -79,6 +84,23 @@ func RateLimiter() func(http.Handler) http.Handler {
 			lim := limiter.getLimiter(ip)
 			if !lim.Allow() {
 				http.Error(w, http.StatusText(http.StatusTooManyRequests), http.StatusTooManyRequests)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// AuthRateLimiter — 5 req/min, burst 5 (anti brute-force)
+func AuthRateLimiter() func(http.Handler) http.Handler {
+	limiter := newIPRateLimiter(rate.Every(12*time.Second), 5)
+
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ip := utils.GetClientIP(r)
+			lim := limiter.getLimiter(ip)
+			if !lim.Allow() {
+				http.Error(w, "too many authentication attempts, try again later", http.StatusTooManyRequests)
 				return
 			}
 			next.ServeHTTP(w, r)

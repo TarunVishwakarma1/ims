@@ -17,6 +17,7 @@ type MarketplaceRepository interface {
 	CreateListing(ctx context.Context, listing *domain.MarketplaceListing) error
 	UpdateListing(ctx context.Context, listing *domain.MarketplaceListing) error
 	DeleteListing(ctx context.Context, id uuid.UUID, orgID uuid.UUID) error
+	GetListingByID(ctx context.Context, id uuid.UUID) (*domain.MarketplaceListing, error)
 	ListByOrg(ctx context.Context, orgID uuid.UUID) ([]*domain.MarketplaceListing, error)
 
 	// Search
@@ -103,6 +104,25 @@ func (r *marketplaceRepository) DeleteListing(ctx context.Context, id uuid.UUID,
 	return nil
 }
 
+func (r *marketplaceRepository) GetListingByID(ctx context.Context, id uuid.UUID) (*domain.MarketplaceListing, error) {
+	query := `
+		SELECT id, org_id, product_id, location_id, listing_price, min_order_qty, max_order_qty, is_active, created_at, updated_at
+		FROM marketplace_listings WHERE id = $1
+	`
+	var l domain.MarketplaceListing
+	err := r.db.QueryRow(ctx, query, id).Scan(
+		&l.ID, &l.OrgID, &l.ProductID, &l.LocationID, &l.ListingPrice,
+		&l.MinOrderQty, &l.MaxOrderQty, &l.IsActive, &l.CreatedAt, &l.UpdatedAt,
+	)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, domain.ErrNotFound
+		}
+		return nil, err
+	}
+	return &l, nil
+}
+
 func (r *marketplaceRepository) ListByOrg(ctx context.Context, orgID uuid.UUID) ([]*domain.MarketplaceListing, error) {
 	query := `
 		SELECT m.id, m.org_id, m.product_id, m.location_id, m.listing_price, m.min_order_qty, m.max_order_qty, m.is_active, m.created_at, m.updated_at,
@@ -150,7 +170,7 @@ func (r *marketplaceRepository) Search(ctx context.Context, query string, lat, l
 
 	selectClause := `
 		SELECT m.id, m.org_id, m.product_id, m.location_id, m.listing_price, m.min_order_qty, m.max_order_qty, m.is_active, m.created_at, m.updated_at,
-		       p.name, p.sku, o.name, o.slug, l.name, l.city,
+		       p.name, p.sku, o.name, o.slug, l.name, l.city, l.lat, l.lng,
 			   COALESCE(SUM(i.quantity), 0) as stock_quantity
 	`
 	fromClause := `
@@ -225,14 +245,14 @@ func (r *marketplaceRepository) Search(ctx context.Context, query string, lat, l
 	}
 	defer rows.Close()
 
-	var listings []*domain.MarketplaceListing
+	listings := make([]*domain.MarketplaceListing, 0)
 	for rows.Next() {
 		var m domain.MarketplaceListing
 		var pname, psku, oname, oslug, lname, lcity *string
 		var rank float64 // Ignored in struct, used for sorting
 		if err := rows.Scan(
 			&m.ID, &m.OrgID, &m.ProductID, &m.LocationID, &m.ListingPrice, &m.MinOrderQty, &m.MaxOrderQty, &m.IsActive, &m.CreatedAt, &m.UpdatedAt,
-			&pname, &psku, &oname, &oslug, &lname, &lcity, &m.StockQuantity, &rank, &m.DistanceKM,
+			&pname, &psku, &oname, &oslug, &lname, &lcity, &m.LocationLat, &m.LocationLng, &m.StockQuantity, &rank, &m.DistanceKM,
 		); err != nil {
 			return nil, err
 		}

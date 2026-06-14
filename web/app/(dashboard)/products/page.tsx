@@ -6,6 +6,7 @@ import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Plus, Edit, Trash2, Loader2 } from 'lucide-react'
+import { TableSkeleton } from '@/components/ui/table-skeleton'
 
 import { productsApi } from '@/lib/api/products'
 import { categoriesApi } from '@/lib/api/categories'
@@ -179,11 +180,7 @@ export default function ProductsPage() {
           </TableHeader>
           <TableBody>
             {isLoadingProducts || isLoadingCategories ? (
-              <TableRow>
-                <TableCell colSpan={5} className="h-24 text-center">
-                  <Loader2 className="w-6 h-6 animate-spin mx-auto text-muted-foreground" />
-                </TableCell>
-              </TableRow>
+              <TableSkeleton columns={5} rows={6} />
             ) : products.length > 0 ? (
               products.map((product) => (
                 <TableRow key={product.id}>

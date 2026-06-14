@@ -12,6 +12,7 @@ type Config struct {
 	ENV              string
 	Port             string
 	DatabaseURL      string
+	ValkeyURL        string // e.g. redis://valkey:6379/0 — optional, app runs without it
 	JWTSecret        string
 	JWTAccessExpiry  time.Duration
 	JWTRefreshExpiry time.Duration
@@ -63,6 +64,7 @@ func LoadConfig() (*Config, error) {
 		ENV:              env,
 		Port:             port,
 		DatabaseURL:      databaseURL,
+		ValkeyURL:        os.Getenv("VALKEY_URL"),
 		JWTSecret:        jwtSecret,
 		JWTAccessExpiry:  accessExpiry,
 		JWTRefreshExpiry: refreshExpiry,

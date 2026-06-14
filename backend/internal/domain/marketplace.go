@@ -25,6 +25,8 @@ type MarketplaceListing struct {
 	OrgSlug       string   `json:"org_slug,omitempty"`
 	LocationName  string   `json:"location_name,omitempty"`
 	LocationCity  string   `json:"location_city,omitempty"`
+	LocationLat   *float64 `json:"location_lat,omitempty"`
+	LocationLng   *float64 `json:"location_lng,omitempty"`
 	StockQuantity int      `json:"stock_quantity,omitempty"`
 	DistanceKM    *float64 `json:"distance_km,omitempty"`
 }

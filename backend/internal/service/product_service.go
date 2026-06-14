@@ -7,6 +7,7 @@ import (
 
 	"github.com/TarunVishwakarma1/ims/backend/internal/domain"
 	"github.com/TarunVishwakarma1/ims/backend/internal/repository"
+	"github.com/TarunVishwakarma1/ims/backend/pkg/cache"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
@@ -25,14 +26,21 @@ type productService struct {
 	repo          repository.ProductRepository
 	inventoryRepo repository.InventoryRepository
 	auditLogRepo  repository.AuditLogRepository
+	cache         cache.Cache
 }
 
-func NewProductService(repo repository.ProductRepository, inventoryRepo repository.InventoryRepository, auditLogRepo repository.AuditLogRepository) ProductService {
+func NewProductService(repo repository.ProductRepository, inventoryRepo repository.InventoryRepository, auditLogRepo repository.AuditLogRepository, c cache.Cache) ProductService {
 	return &productService{
 		repo:          repo,
 		inventoryRepo: inventoryRepo,
 		auditLogRepo:  auditLogRepo,
+		cache:         c,
 	}
+}
+
+func (s *productService) invalidate(ctx context.Context, orgID uuid.UUID) {
+	_ = s.cache.DeleteByPattern(ctx, cache.ProductsListPattern(orgID))
+	_ = s.cache.DeleteByPattern(ctx, cache.MarketplaceSearchPattern())
 }
 
 func (s *productService) Create(ctx context.Context, product *domain.Product, ipAddress string) error {
@@ -79,6 +87,7 @@ func (s *productService) Create(ctx context.Context, product *domain.Product, ip
 		zap.L().Error("audit log failed", zap.Error(err))
 	}
 
+	s.invalidate(ctx, product.OrgID)
 	return nil
 }
 
@@ -92,7 +101,11 @@ func (s *productService) GetBySKU(ctx context.Context, sku string, orgID uuid.UU
 
 func (s *productService) Update(ctx context.Context, product *domain.Product) error {
 	product.UpdatedAt = time.Now().UTC()
-	return s.repo.Update(ctx, product)
+	if err := s.repo.Update(ctx, product); err != nil {
+		return err
+	}
+	s.invalidate(ctx, product.OrgID)
+	return nil
 }
 
 func (s *productService) Delete(ctx context.Context, id uuid.UUID, orgID uuid.UUID, ipAddress string) error {
@@ -114,11 +127,23 @@ func (s *productService) Delete(ctx context.Context, id uuid.UUID, orgID uuid.UU
 		zap.L().Error("audit log failed", zap.Error(err))
 	}
 
+	s.invalidate(ctx, orgID)
 	return nil
 }
 
 func (s *productService) List(ctx context.Context, orgID uuid.UUID) ([]*domain.Product, error) {
-	return s.repo.List(ctx, orgID)
+	key := cache.ProductsListKey(orgID)
+	var cached []*domain.Product
+	if err := s.cache.Get(ctx, key, &cached); err == nil {
+		return cached, nil
+	}
+
+	products, err := s.repo.List(ctx, orgID)
+	if err != nil {
+		return nil, err
+	}
+	_ = s.cache.Set(ctx, key, products, cache.TTLMedium)
+	return products, nil
 }
 
 func (s *productService) ListByCategory(ctx context.Context, categoryID uuid.UUID, orgID uuid.UUID) ([]*domain.Product, error) {
