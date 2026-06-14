@@ -86,7 +86,7 @@ func main() {
 
 	userService := service.NewUserService(userRepo, auditLogRepo)
 	categoryService := service.NewCategoryService(categoryRepo, auditLogRepo)
-	productService := service.NewProductService(productRepo, auditLogRepo)
+	productService := service.NewProductService(productRepo, inventoryRepo, auditLogRepo)
 	inventoryService := service.NewInventoryService(inventoryRepo, auditLogRepo)
 	orderService := service.NewOrderService(orderRepo, inventoryRepo, auditLogRepo)
 	authService := service.NewAuthService(userRepo, cfg.JWTSecret, cfg.JWTAccessExpiry, cfg.JWTRefreshExpiry)

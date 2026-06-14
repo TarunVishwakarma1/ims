@@ -10,6 +10,8 @@ import { Plus, Edit, Trash2, Loader2 } from 'lucide-react'
 import { productsApi } from '@/lib/api/products'
 import { categoriesApi } from '@/lib/api/categories'
 import { formatPrice } from '@/lib/utils'
+import { usePermission } from '@/hooks/usePermission'
+import { PERMISSIONS } from '@/lib/rbac'
 import type { Product } from '@/types/api'
 
 import { Button } from '@/components/ui/button'
@@ -51,6 +53,7 @@ type ProductFormValues = z.infer<typeof productSchema>
 
 export default function ProductsPage() {
   const queryClient = useQueryClient()
+  const { can } = usePermission()
   
   // State for dialogs
   const [isDialogOpen, setIsDialogOpen] = useState(false)
@@ -156,9 +159,11 @@ export default function ProductsPage() {
           <h2 className="text-2xl font-bold tracking-tight">Products</h2>
           <p className="text-muted-foreground">Manage your product catalog.</p>
         </div>
-        <Button onClick={handleOpenCreate}>
-          <Plus className="mr-2 h-4 w-4" /> Add Product
-        </Button>
+        {can(PERMISSIONS.PRODUCTS_MANAGE) && (
+          <Button onClick={handleOpenCreate}>
+            <Plus className="mr-2 h-4 w-4" /> Add Product
+          </Button>
+        )}
       </div>
 
       <div className="rounded-md border bg-white dark:bg-zinc-950">
@@ -190,25 +195,29 @@ export default function ProductsPage() {
                   <TableCell>{formatPrice(product.price)}</TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
-                      <Button variant="ghost" size="icon" onClick={() => {
-                        setSelectedProduct(product)
-                        reset({
-                          name: product.name,
-                          sku: product.sku,
-                          category_id: product.category_id,
-                          description: product.description,
-                          price: product.price / 100,
-                        })
-                        setIsDialogOpen(true)
-                      }}>
-                        <Edit className="w-4 h-4 text-blue-600" />
-                      </Button>
-                      <Button variant="ghost" size="icon" onClick={() => {
-                        setSelectedProduct(product)
-                        setIsDeleteDialogOpen(true)
-                      }}>
-                        <Trash2 className="w-4 h-4 text-red-600" />
-                      </Button>
+                      {can(PERMISSIONS.PRODUCTS_MANAGE) && (
+                        <>
+                          <Button variant="ghost" size="icon" onClick={() => {
+                            setSelectedProduct(product)
+                            reset({
+                              name: product.name,
+                              sku: product.sku,
+                              category_id: product.category_id,
+                              description: product.description,
+                              price: product.price / 100,
+                            })
+                            setIsDialogOpen(true)
+                          }}>
+                            <Edit className="w-4 h-4 text-blue-600" />
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => {
+                            setSelectedProduct(product)
+                            setIsDeleteDialogOpen(true)
+                          }}>
+                            <Trash2 className="w-4 h-4 text-red-600" />
+                          </Button>
+                        </>
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>

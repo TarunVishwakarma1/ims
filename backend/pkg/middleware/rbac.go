@@ -2,12 +2,12 @@ package middleware
 
 import (
 	"net/http"
-	"slices"
 
 	"github.com/TarunVishwakarma1/ims/backend/internal/domain"
+	"github.com/TarunVishwakarma1/ims/backend/pkg/rbac"
 )
 
-func RequireRole(roles ...domain.Role) func(http.Handler) http.Handler {
+func RequirePermission(perm rbac.Permission) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			roleStr, ok := GetRoleFromContext(r.Context())
@@ -17,7 +17,7 @@ func RequireRole(roles ...domain.Role) func(http.Handler) http.Handler {
 			}
 
 			userRole := domain.Role(roleStr)
-			if !slices.Contains(roles, userRole) {
+			if !rbac.HasPermission(userRole, perm) {
 				http.Error(w, "Forbidden", http.StatusForbidden)
 				return
 			}

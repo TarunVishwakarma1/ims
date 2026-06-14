@@ -22,14 +22,16 @@ type ProductService interface {
 }
 
 type productService struct {
-	repo         repository.ProductRepository
-	auditLogRepo repository.AuditLogRepository
+	repo          repository.ProductRepository
+	inventoryRepo repository.InventoryRepository
+	auditLogRepo  repository.AuditLogRepository
 }
 
-func NewProductService(repo repository.ProductRepository, auditLogRepo repository.AuditLogRepository) ProductService {
+func NewProductService(repo repository.ProductRepository, inventoryRepo repository.InventoryRepository, auditLogRepo repository.AuditLogRepository) ProductService {
 	return &productService{
-		repo:         repo,
-		auditLogRepo: auditLogRepo,
+		repo:          repo,
+		inventoryRepo: inventoryRepo,
+		auditLogRepo:  auditLogRepo,
 	}
 }
 
@@ -49,6 +51,17 @@ func (s *productService) Create(ctx context.Context, product *domain.Product, ip
 
 	if err := s.repo.Create(ctx, product); err != nil {
 		return err
+	}
+
+	inv := &domain.Inventory{
+		ID:                uuid.New(),
+		ProductID:         product.ID,
+		Quantity:          0,
+		LowStockThreshold: 10,
+		UpdatedAt:         now,
+	}
+	if err := s.inventoryRepo.Create(ctx, inv); err != nil {
+		zap.L().Error("failed to create inventory record", zap.Error(err))
 	}
 
 	audit := &domain.AuditLog{

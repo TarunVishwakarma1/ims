@@ -13,20 +13,23 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/lib/stores/auth-store'
+import { usePermission } from '@/hooks/usePermission'
+import { PERMISSIONS } from '@/lib/rbac'
 import { Button } from '@/components/ui/button'
-
-const navItems = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/products', label: 'Products', icon: Package },
-  { href: '/categories', label: 'Categories', icon: Tags },
-  { href: '/inventory', label: 'Inventory', icon: Boxes },
-  { href: '/orders', label: 'Orders', icon: ShoppingCart },
-  { href: '/users', label: 'Users', icon: Users },
-]
 
 export function Sidebar() {
   const pathname = usePathname()
   const { user, logout } = useAuthStore()
+  const { can } = usePermission()
+
+  const dynamicNavItems = [
+    { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, permission: null },
+    { href: '/products',  label: 'Products',  icon: Package,         permission: PERMISSIONS.PRODUCTS_VIEW },
+    { href: '/categories',label: 'Categories',icon: Tags,            permission: PERMISSIONS.CATEGORIES_VIEW },
+    { href: '/inventory', label: 'Inventory', icon: Boxes,           permission: PERMISSIONS.INVENTORY_VIEW },
+    { href: '/orders',    label: 'Orders',    icon: ShoppingCart,    permission: PERMISSIONS.ORDERS_VIEW },
+    { href: '/users',     label: 'Users',     icon: Users,           permission: PERMISSIONS.USERS_VIEW },
+  ].filter(item => item.permission === null || can(item.permission))
 
   return (
     <aside className="w-64 border-r bg-white dark:bg-zinc-950 flex flex-col">
@@ -35,7 +38,7 @@ export function Sidebar() {
       </div>
       
       <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
-        {navItems.map((item) => {
+        {dynamicNavItems.map((item) => {
           const isActive = pathname.startsWith(item.href)
           const Icon = item.icon
           
