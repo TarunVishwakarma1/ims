@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useForm } from 'react-hook-form'
+import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Plus, Edit, Trash2, Loader2 } from 'lucide-react'
@@ -10,7 +10,7 @@ import { Plus, Edit, Trash2, Loader2 } from 'lucide-react'
 import { productsApi } from '@/lib/api/products'
 import { categoriesApi } from '@/lib/api/categories'
 import { formatPrice } from '@/lib/utils'
-import type { Product, Category } from '@/types/api'
+import type { Product } from '@/types/api'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -101,8 +101,7 @@ export default function ProductsPage() {
   const {
     register,
     handleSubmit,
-    setValue,
-    watch,
+    control,
     reset,
     formState: { errors, isSubmitting }
   } = useForm<ProductFormValues>({
@@ -115,9 +114,6 @@ export default function ProductsPage() {
       price: 0,
     }
   })
-
-  const categoryIdValue = watch('category_id')
-
 
   // Handlers
   const handleOpenCreate = () => {
@@ -259,21 +255,27 @@ export default function ProductsPage() {
 
             <div className="grid gap-2">
               <Label htmlFor="category">Category</Label>
-              <Select
-                value={categoryIdValue}
-                onValueChange={(val) => setValue('category_id', val)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a category" />
-                </SelectTrigger>
-                <SelectContent>
-                  {categories.map((cat) => (
-                    <SelectItem key={cat.id} value={cat.id}>
-                      {cat.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Controller
+                name="category_id"
+                control={control}
+                render={({ field }) => (
+                  <Select
+                    value={field.value}
+                    onValueChange={field.onChange}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {categories.map((cat) => (
+                        <SelectItem key={cat.id} value={cat.id}>
+                          {cat.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              />
               {errors.category_id && <p className="text-xs text-red-500">{errors.category_id.message}</p>}
             </div>
 
