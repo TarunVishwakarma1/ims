@@ -5,7 +5,7 @@ import { NextResponse } from 'next/server'
 const PROTECTED = ['/dashboard', '/products', '/inventory', '/orders', '/users', '/categories']
 
 // Auth routes — redirect to dashboard if already logged in
-const AUTH_ROUTES = ['/login']
+const AUTH_ROUTES = ['/login', '/register']
 
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl

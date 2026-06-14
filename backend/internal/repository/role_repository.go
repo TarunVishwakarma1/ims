@@ -13,6 +13,8 @@ type RoleRepository interface {
 	ListRoles(ctx context.Context) ([]*domain.Role, error)
 	ListPermissions(ctx context.Context) ([]*domain.Permission, error)
 	CreateRole(ctx context.Context, role *domain.Role) error
+	UpdateRole(ctx context.Context, role *domain.Role) error
+	DeleteRole(ctx context.Context, id uuid.UUID) error
 	UpdateRolePermissions(ctx context.Context, roleID uuid.UUID, permissionIDs []uuid.UUID) error
 	LoadRolePermissions(ctx context.Context) (map[string][]string, error)
 }
@@ -113,6 +115,19 @@ func (r *roleRepository) CreateRole(ctx context.Context, role *domain.Role) erro
 		VALUES ($1, $2, $3, $4, $5, $6)
 	`
 	_, err := r.db.Exec(ctx, query, role.ID, role.Name, role.Description, role.IsSystem, role.CreatedAt, role.UpdatedAt)
+	return err
+}
+
+func (r *roleRepository) UpdateRole(ctx context.Context, role *domain.Role) error {
+	_, err := r.db.Exec(ctx,
+		`UPDATE roles SET name=$2, description=$3, updated_at=$4 WHERE id=$1`,
+		role.ID, role.Name, role.Description, role.UpdatedAt,
+	)
+	return err
+}
+
+func (r *roleRepository) DeleteRole(ctx context.Context, id uuid.UUID) error {
+	_, err := r.db.Exec(ctx, `DELETE FROM roles WHERE id=$1 AND is_system=false`, id)
 	return err
 }
 

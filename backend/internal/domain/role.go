@@ -15,7 +15,7 @@ type Role struct {
 	UpdatedAt   time.Time `json:"updated_at" db:"updated_at"`
 
 	// Permissions is populated when fetching a role with its permissions
-	Permissions []Permission `json:"permissions,omitempty"`
+	Permissions []Permission `json:"permissions"`
 }
 
 type Permission struct {

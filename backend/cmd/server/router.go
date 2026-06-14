@@ -82,8 +82,10 @@ func NewRouter(
 		// Roles & Permissions
 		r.With(middleware.RequirePermission(rbac.RolesManage)).Get("/api/roles", roleH.ListRoles)
 		r.With(middleware.RequirePermission(rbac.RolesManage)).Post("/api/roles", roleH.CreateRole)
-		r.With(middleware.RequirePermission(rbac.RolesManage)).Get("/api/permissions", roleH.ListPermissions)
 		r.With(middleware.RequirePermission(rbac.RolesManage)).Put("/api/roles/{id}/permissions", roleH.UpdateRolePermissions)
+		r.With(middleware.RequirePermission(rbac.RolesManage)).Put("/api/roles/{id}", roleH.UpdateRole)
+		r.With(middleware.RequirePermission(rbac.RolesManage)).Delete("/api/roles/{id}", roleH.DeleteRole)
+		r.With(middleware.RequirePermission(rbac.RolesManage)).Get("/api/permissions", roleH.ListPermissions)
 		r.With(middleware.RequirePermission(rbac.RolesManage)).Post("/api/roles/reload", roleH.ReloadPermissions)
 	})
 

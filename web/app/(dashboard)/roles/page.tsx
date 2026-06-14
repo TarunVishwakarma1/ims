@@ -1,13 +1,13 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Loader2, Plus, RefreshCw, Save } from 'lucide-react'
+import { Loader2, Plus, RefreshCw, Save, Pencil, Trash } from 'lucide-react'
 
-import { rolesApi } from '@/lib/api/roles'
+import { rolesApi, Role } from '@/lib/api/roles'
 import { usePermission } from '@/hooks/usePermission'
 import { PERMISSIONS } from '@/lib/rbac'
 
@@ -44,6 +44,8 @@ export default function RolesPage() {
   const { can } = usePermission()
   
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
+  const [roleToEdit, setRoleToEdit] = useState<Role | null>(null)
+  const [roleToDelete, setRoleToDelete] = useState<Role | null>(null)
   const [pendingPermissions, setPendingPermissions] = useState<Record<string, string[]>>({})
 
   const { data: rawRoles, isLoading: isLoadingRoles } = useQuery({
@@ -81,6 +83,22 @@ export default function RolesPage() {
     mutationFn: rolesApi.reloadCache,
   })
 
+  const updateMutation = useMutation({
+    mutationFn: (data: { id: string; name: string; description: string }) => rolesApi.updateRole(data.id, { name: data.name, description: data.description }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['roles'] })
+      setRoleToEdit(null)
+    },
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: rolesApi.deleteRole,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['roles'] })
+      setRoleToDelete(null)
+    },
+  })
+
   const {
     register,
     handleSubmit,
@@ -93,6 +111,21 @@ export default function RolesPage() {
       description: '',
     }
   })
+
+  const {
+    register: registerEdit,
+    handleSubmit: handleEditSubmit,
+    reset: resetEdit,
+    formState: { errors: editErrors, isSubmitting: isEditSubmitting }
+  } = useForm<CreateRoleFormValues>({
+    resolver: zodResolver(createRoleSchema)
+  })
+
+  useEffect(() => {
+    if (roleToEdit) {
+      resetEdit({ name: roleToEdit.name, description: roleToEdit.description || '' })
+    }
+  }, [roleToEdit, resetEdit])
 
   if (!can(PERMISSIONS.ROLES_MANAGE)) {
     return (
@@ -109,13 +142,22 @@ export default function RolesPage() {
     })
   }
 
+  const onEditSubmit = (data: CreateRoleFormValues) => {
+    if (!roleToEdit) return
+    updateMutation.mutate({
+      id: roleToEdit.id,
+      name: data.name,
+      description: data.description || '',
+    })
+  }
+
   // Handle local toggle before save
   const togglePermission = (roleId: string, permId: string) => {
     const role = roles.find(r => r.id === roleId)
     if (!role) return
 
     // Initialize from existing if not yet modified
-    const current = pendingPermissions[roleId] ?? role.permissions.map(p => p.id)
+    const current = pendingPermissions[roleId] ?? (role.permissions || []).map(p => p.id)
     
     let next: string[]
     if (current.includes(permId)) {
@@ -196,7 +238,7 @@ export default function RolesPage() {
             ) : roles.length > 0 ? (
               roles.map((role) => {
                 // Use pending permissions if available, otherwise fallback to saved permissions
-                const activePerms = pendingPermissions[role.id] ?? role.permissions.map(p => p.id)
+                const activePerms = pendingPermissions[role.id] ?? (role.permissions || []).map(p => p.id)
                 const isDirty = hasUnsavedChanges(role.id)
 
                 return (
@@ -206,16 +248,18 @@ export default function RolesPage() {
                       {role.is_system && <Badge variant="secondary" className="mt-1 text-[10px]">System</Badge>}
                     </TableCell>
                     {permissions.map(p => (
-                      <TableCell key={p.id} className="text-center">
-                        <Checkbox 
-                          checked={activePerms.includes(p.id)}
-                          onCheckedChange={() => togglePermission(role.id, p.id)}
-                          disabled={role.name === 'admin'} // Admin role is hardcoded full access conceptually, though DB might reflect it
-                        />
+                      <TableCell key={p.id} className="text-center align-middle !pr-2">
+                        <div className="flex justify-center">
+                          <Checkbox 
+                            checked={activePerms.includes(p.id)}
+                            onCheckedChange={() => togglePermission(role.id, p.id)}
+                            disabled={role.name === 'admin'} 
+                          />
+                        </div>
                       </TableCell>
                     ))}
-                    <TableCell className="text-right">
-                      {isDirty && (
+                    <TableCell className="text-right whitespace-nowrap">
+                      {isDirty ? (
                         <Button 
                           size="sm" 
                           onClick={() => handleSavePermissions(role.id)}
@@ -228,6 +272,24 @@ export default function RolesPage() {
                           )}
                           Save
                         </Button>
+                      ) : (
+                        <>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => setRoleToEdit(role)}
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => setRoleToDelete(role)}
+                            disabled={role.is_system}
+                          >
+                            <Trash className="w-4 h-4" />
+                          </Button>
+                        </>
                       )}
                     </TableCell>
                   </TableRow>
@@ -273,6 +335,64 @@ export default function RolesPage() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={roleToEdit !== null} onOpenChange={(open) => !open && setRoleToEdit(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Role</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleEditSubmit(onEditSubmit)} className="space-y-4">
+            <div className="grid gap-2">
+              <Label htmlFor="edit-name">Role Name</Label>
+              <Input id="edit-name" {...registerEdit('name')} disabled={roleToEdit?.is_system} />
+              {editErrors.name && <p className="text-xs text-red-500">{editErrors.name.message}</p>}
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="edit-description">Description</Label>
+              <Textarea id="edit-description" {...registerEdit('description')} />
+            </div>
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setRoleToEdit(null)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isEditSubmitting || updateMutation.isPending}>
+                {(isEditSubmitting || updateMutation.isPending) && (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                )}
+                Save Changes
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={roleToDelete !== null} onOpenChange={(open) => !open && setRoleToDelete(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Role</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <p>Are you sure you want to delete the role <strong>{roleToDelete?.name}</strong>?</p>
+            <p className="text-sm text-muted-foreground mt-2">This action cannot be undone. Users currently assigned to this role must be reassigned first.</p>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setRoleToDelete(null)}>
+              Cancel
+            </Button>
+            <Button 
+              type="button" 
+              variant="destructive" 
+              onClick={() => roleToDelete && deleteMutation.mutate(roleToDelete.id)}
+              disabled={deleteMutation.isPending}
+            >
+              {deleteMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Delete Role
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

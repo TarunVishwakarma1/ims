@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 
@@ -107,6 +108,62 @@ func (h *RoleHandler) UpdateRolePermissions(w http.ResponseWriter, r *http.Reque
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"message": "permissions updated successfully"})
+}
+
+type UpdateRoleRequest struct {
+	Name        string `json:"name" validate:"required,min=2,max=50"`
+	Description string `json:"description"`
+}
+
+func (h *RoleHandler) UpdateRole(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		writeJSON(w, 400, map[string]string{"error": "invalid role ID"})
+		return
+	}
+
+	var req UpdateRoleRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, 400, map[string]string{"error": "invalid body"})
+		return
+	}
+	if err := h.validate.Struct(req); err != nil {
+		writeJSON(w, 400, map[string]string{"error": err.Error()})
+		return
+	}
+
+	if err := h.service.UpdateRole(r.Context(), id, req.Name, req.Description); err != nil {
+		zap.L().Error("update role failed", zap.Error(err))
+		writeJSON(w, 500, map[string]string{"error": "internal server error"})
+		return
+	}
+
+	reloadAfterChange(h.service, r.Context())
+	writeJSON(w, 200, map[string]string{"message": "role updated"})
+}
+
+func (h *RoleHandler) DeleteRole(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		writeJSON(w, 400, map[string]string{"error": "invalid role ID"})
+		return
+	}
+
+	if err := h.service.DeleteRole(r.Context(), id); err != nil {
+		zap.L().Error("delete role failed", zap.Error(err))
+		writeJSON(w, 500, map[string]string{"error": "internal server error"})
+		return
+	}
+
+	reloadAfterChange(h.service, r.Context())
+	writeJSON(w, 200, map[string]string{"message": "role deleted"})
+}
+
+// helper to auto-reload cache after mutation
+func reloadAfterChange(svc service.RoleService, ctx context.Context) {
+	if perms, err := svc.LoadRolePermissions(ctx); err == nil {
+		rbac.Cache.Load(perms)
+	}
 }
 
 func (h *RoleHandler) ReloadPermissions(w http.ResponseWriter, r *http.Request) {
