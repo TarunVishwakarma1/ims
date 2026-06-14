@@ -13,7 +13,10 @@ COPY . .
 
 ENV NEXT_TELEMETRY_DISABLED=1
 
-COPY .env.docker .env.production
+# Use build args for public variables instead of hardcoded .env files
+ARG NEXT_PUBLIC_API_URL=http://localhost:8080/api
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+
 RUN bun run build
 
 FROM node:26-alpine AS runner
