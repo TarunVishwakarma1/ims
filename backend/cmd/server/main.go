@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -14,6 +15,11 @@ import (
 	"github.com/TarunVishwakarma1/ims/backend/internal/repository"
 	"github.com/TarunVishwakarma1/ims/backend/internal/service"
 	"github.com/TarunVishwakarma1/ims/backend/pkg/logger"
+	"github.com/TarunVishwakarma1/ims/backend/migrations"
+	
+	"github.com/golang-migrate/migrate/v4"
+	_ "github.com/golang-migrate/migrate/v4/database/pgx/v5"
+	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"go.uber.org/zap"
 )
 
@@ -36,6 +42,34 @@ func main() {
 	}
 	defer appLogger.Sync()
 	zap.ReplaceGlobals(appLogger)
+
+	// Run Migrations
+	d, err := iofs.New(migrations.FS, ".")
+	if err != nil {
+		zap.L().Fatal("failed to initialize migrations iofs", zap.Error(err))
+	}
+
+	dbURL := strings.ReplaceAll(cfg.DatabaseURL, "postgres://", "pgx5://")
+	dbURL = strings.ReplaceAll(dbURL, "postgresql://", "pgx5://")
+
+	m, err := migrate.NewWithSourceInstance("iofs", d, dbURL)
+	if err != nil {
+		zap.L().Fatal("failed to create migrate instance", zap.Error(err))
+	}
+	defer func() {
+		srcErr, dbErr := m.Close()
+		if srcErr != nil {
+			zap.L().Warn("migrate source close error", zap.Error(srcErr))
+		}
+		if dbErr != nil {
+			zap.L().Warn("migrate db close error", zap.Error(dbErr))
+		}
+	}()
+
+	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
+		zap.L().Fatal("migration failed", zap.Error(err))
+	}
+	zap.L().Info("migrations applied successfully")
 
 	pool, err := repository.NewPool(ctx, cfg.DatabaseURL)
 	if err != nil {

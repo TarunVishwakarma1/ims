@@ -26,6 +26,17 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    ports:
+      - 3000:3000
+    env_file:
+      - ./web/.env.docker
+    depends_on:
+      backend:
+        condition: service_started
 
 volumes:
   postgres_data:

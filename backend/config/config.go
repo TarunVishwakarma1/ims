@@ -20,10 +20,9 @@ type Config struct {
 
 func LoadConfig() (*Config, error) {
 
-	err := godotenv.Load()
-	if err != nil {
-		return nil, fmt.Errorf("failed to load .env file: %w", err)
-	}
+	// Try to load .env.docker or .env. Ignore the error if they don't exist
+	// because in production we will use native OS env vars (k8s/docker secrets)
+	_ = godotenv.Load(".env.docker", ".env")
 
 	env := os.Getenv("ENV")
 	if env != "production" && env != "development" && env != "testing" {

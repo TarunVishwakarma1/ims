@@ -3,3 +3,4 @@
 *.test
 *_test.go
 .git
+!.env.docker
