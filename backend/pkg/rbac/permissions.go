@@ -24,6 +24,8 @@ const (
 	OrdersManage Permission = "orders:manage"
 
 	RolesManage Permission = "roles:manage"
+
+	LocationsManage Permission = "locations:manage"
 )
 
 

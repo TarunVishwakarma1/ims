@@ -95,10 +95,10 @@ func NewRouter(
 		r.With(middleware.RequirePermission(rbac.RolesManage)).Post("/api/roles/reload", roleH.ReloadPermissions)
 
 		// Locations
-		r.Get("/api/locations", locationH.List)
-		r.Post("/api/locations", locationH.Create)
-		r.Put("/api/locations/{id}", locationH.Update)
-		r.Delete("/api/locations/{id}", locationH.Delete)
+		r.With(middleware.RequirePermission(rbac.LocationsManage)).Get("/api/locations", locationH.List)
+		r.With(middleware.RequirePermission(rbac.LocationsManage)).Post("/api/locations", locationH.Create)
+		r.With(middleware.RequirePermission(rbac.LocationsManage)).Put("/api/locations/{id}", locationH.Update)
+		r.With(middleware.RequirePermission(rbac.LocationsManage)).Delete("/api/locations/{id}", locationH.Delete)
 
 		// Marketplace Listings
 		r.Get("/api/listings", marketH.ListByOrg)
