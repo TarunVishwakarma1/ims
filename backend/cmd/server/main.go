@@ -14,6 +14,11 @@ import (
 	"github.com/TarunVishwakarma1/ims/backend/internal/repository"
 	"github.com/TarunVishwakarma1/ims/backend/internal/service"
 	"github.com/TarunVishwakarma1/ims/backend/pkg/logger"
+	"github.com/TarunVishwakarma1/ims/backend/migrations"
+	
+	"github.com/golang-migrate/migrate/v4"
+	_ "github.com/golang-migrate/migrate/v4/database/pgx/v5"
+	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"go.uber.org/zap"
 )
 
@@ -36,6 +41,22 @@ func main() {
 	}
 	defer appLogger.Sync()
 	zap.ReplaceGlobals(appLogger)
+
+	// Run Migrations
+	d, err := iofs.New(migrations.FS, ".")
+	if err != nil {
+		zap.L().Fatal("failed to initialize migrations iofs", zap.Error(err))
+	}
+
+	m, err := migrate.NewWithSourceInstance("iofs", d, cfg.DatabaseURL)
+	if err != nil {
+		zap.L().Fatal("failed to create migrate instance", zap.Error(err))
+	}
+
+	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
+		zap.L().Fatal("migration failed", zap.Error(err))
+	}
+	zap.L().Info("migrations applied successfully")
 
 	pool, err := repository.NewPool(ctx, cfg.DatabaseURL)
 	if err != nil {
