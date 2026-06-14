@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Trash2, Loader2, Minus, Plus, ShoppingBag } from 'lucide-react'
 import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
+import { HTTPError } from 'ky'
 
 import { marketplaceApi } from '@/lib/api/marketplace'
 import { formatPrice } from '@/lib/utils'
@@ -35,6 +36,14 @@ export default function CartPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['cart'] })
     },
+    onError: async (err: Error) => {
+      if (err instanceof HTTPError) {
+        const errorData = await err.response.json().catch(() => ({}))
+        toast.error(errorData.error || errorData.message || 'Failed to update quantity')
+      } else {
+        toast.error(err.message || 'Failed to update quantity')
+      }
+    }
   })
 
   const removeItemMutation = useMutation({
@@ -53,8 +62,13 @@ export default function CartPage() {
       toast.success(`Checkout successful! Created ${orders.length} orders.`)
       router.push('/orders')
     },
-    onError: (err: Error) => {
-      toast.error(err.message || 'Checkout failed')
+    onError: async (err: Error) => {
+      if (err instanceof HTTPError) {
+        const errorData = await err.response.json().catch(() => ({}))
+        toast.error(errorData.error || errorData.message || 'Checkout failed')
+      } else {
+        toast.error(err.message || 'Checkout failed')
+      }
     }
   })
 
@@ -146,7 +160,7 @@ export default function CartPage() {
                               variant="outline" 
                               size="icon" 
                               className="h-6 w-6"
-                              disabled={(item.listing?.max_order_qty && item.quantity >= item.listing.max_order_qty) || updateQuantityMutation.isPending}
+                              disabled={(item.listing?.max_order_qty && item.quantity >= item.listing.max_order_qty) || (item.listing?.stock_quantity !== undefined && item.quantity >= item.listing.stock_quantity) || updateQuantityMutation.isPending}
                               onClick={() => updateQuantityMutation.mutate({ listingId: item.listing_id, quantity: item.quantity + 1 })}
                             >
                               <Plus className="h-3 w-3" />
@@ -189,6 +203,10 @@ export default function CartPage() {
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Items</span>
                 <span>{items.length}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Expires</span>
+                <span>{cart?.expires_at ? new Date(cart.expires_at).toLocaleString() : 'N/A'}</span>
               </div>
               <div className="flex justify-between font-semibold text-lg border-t pt-4">
                 <span>Grand Total</span>

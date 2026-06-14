@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -125,7 +126,7 @@ func (h *MarketplaceHandler) DeleteListing(w http.ResponseWriter, r *http.Reques
 
 func (h *MarketplaceHandler) Search(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query().Get("q")
-	
+
 	var lat, lng, radius *float64
 	if latStr := r.URL.Query().Get("lat"); latStr != "" {
 		if val, err := strconv.ParseFloat(latStr, 64); err == nil {
@@ -160,7 +161,7 @@ func (h *MarketplaceHandler) Search(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	
+
 	if listings == nil {
 		listings = []*domain.MarketplaceListing{}
 	}
@@ -172,7 +173,7 @@ func (h *MarketplaceHandler) Search(w http.ResponseWriter, r *http.Request) {
 
 func (h *MarketplaceHandler) getActiveCart(r *http.Request) (*domain.Cart, error) {
 	orgID, hasOrg := middleware.GetOrgIDFromContext(r.Context())
-	
+
 	var buyerOrgID *uuid.UUID
 	var customerID *uuid.UUID
 
@@ -186,7 +187,7 @@ func (h *MarketplaceHandler) getActiveCart(r *http.Request) (*domain.Cart, error
 			}
 		}
 	}
-	
+
 	if buyerOrgID == nil && customerID == nil {
 		return nil, domain.ErrUnauthorized
 	}
@@ -203,8 +204,15 @@ func (h *MarketplaceHandler) GetCart(w http.ResponseWriter, r *http.Request) {
 
 	fullCart, err := h.service.GetCart(r.Context(), cart.ID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
+		if errors.Is(err, domain.ErrNotFound) {
+			fullCart = &domain.Cart{
+				ID:    cart.ID,
+				Items: []domain.CartItem{},
+			}
+		} else {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
 	}
 
 	if fullCart.Items == nil {

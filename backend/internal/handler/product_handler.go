@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/TarunVishwakarma1/ims/backend/internal/domain"
 	"github.com/TarunVishwakarma1/ims/backend/internal/service"
@@ -193,6 +194,15 @@ func (h *ProductHandler) DeleteProduct(w http.ResponseWriter, r *http.Request) {
 	ipAddress := utils.GetClientIP(r)
 
 	if err := h.service.Delete(r.Context(), id, orgID, ipAddress); err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "product not found")
+			return
+		}
+		// FK violation from order_items — product has order history
+		if strings.Contains(err.Error(), "order_items") {
+			writeError(w, http.StatusConflict, "cannot delete product with existing orders")
+			return
+		}
 		zap.L().Error("DeleteProduct failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return

@@ -2,7 +2,7 @@ export type UUID = string;
 export type ISODate = string;
 
 export type Role = "admin" | "manager" | "staff";
-export type OrderStatus = "pending" | "confirmed" | "cancelled";
+export type OrderStatus = "pending" | "accepted" | "rejected" | "processing" | "ready" | "shipped" | "delivered" | "completed" | "refunded" | "confirmed" | "cancelled";
 
 export interface Organization {
   id: UUID;
@@ -57,6 +57,7 @@ export interface Order {
   user_id: UUID;
   status: OrderStatus;
   total_amount: number;
+  order_type: string;
   created_at: ISODate;
   updated_at: ISODate;
 }
@@ -65,6 +66,7 @@ export interface OrderItem {
   id: UUID;
   order_id: UUID;
   product_id: UUID;
+  product_name?: string;
   quantity: number;
   unit_price: number;
 }

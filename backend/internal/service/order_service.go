@@ -141,6 +141,33 @@ func (s *orderService) List(ctx context.Context, orgID uuid.UUID) ([]*domain.Ord
 }
 
 func (s *orderService) UpdateStatus(ctx context.Context, id uuid.UUID, status domain.OrderStatus, orgID uuid.UUID, ipAddress string) error {
+	existing, err := s.repo.GetByID(ctx, id, orgID)
+	if err != nil {
+		return err
+	}
+
+	valid := false
+	switch existing.Status {
+	case domain.OrderStatusPending:
+		valid = status == domain.OrderStatusAccepted || status == domain.OrderStatusRejected || status == domain.OrderStatusCancelled
+	case domain.OrderStatusAccepted:
+		valid = status == domain.OrderStatusProcessing || status == domain.OrderStatusCancelled
+	case domain.OrderStatusProcessing:
+		valid = status == domain.OrderStatusReady || status == domain.OrderStatusCancelled
+	case domain.OrderStatusReady:
+		valid = status == domain.OrderStatusShipped || status == domain.OrderStatusCancelled
+	case domain.OrderStatusShipped:
+		valid = status == domain.OrderStatusDelivered
+	case domain.OrderStatusDelivered:
+		valid = status == domain.OrderStatusCompleted
+	case domain.OrderStatusConfirmed:
+		valid = status == domain.OrderStatusAccepted || status == domain.OrderStatusCancelled
+	}
+
+	if !valid {
+		return domain.ErrConflict
+	}
+
 	if err := s.repo.UpdateStatus(ctx, id, status, orgID); err != nil {
 		return err
 	}
