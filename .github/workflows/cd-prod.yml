@@ -6,7 +6,7 @@ on:
       - main
 
 jobs:
-  test:
+  backend-test:
     name: Run Backend Tests
     runs-on: ubuntu-latest
     defaults:
@@ -54,7 +54,7 @@ jobs:
 
   build-and-push-backend:
     name: Build and Push Backend Image
-    needs: test
+    needs: backend-test 
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
