@@ -86,6 +86,8 @@ func main() {
 	inventoryRepo := repository.NewInventoryRepository(pool)
 	orderRepo := repository.NewOrderRepository(pool)
 	roleRepo := repository.NewRoleRepository(pool)
+	locationRepo := repository.NewLocationRepository(pool)
+	marketRepo := repository.NewMarketplaceRepository(pool)
 
 	// Load permissions cache on startup
 	rolePerms, err := roleRepo.LoadRolePermissions(ctx)
@@ -102,6 +104,8 @@ func main() {
 	orderService := service.NewOrderService(orderRepo, inventoryRepo, auditLogRepo)
 	authService := service.NewAuthService(userRepo, orgRepo, auditLogRepo, pool, cfg.JWTSecret, cfg.JWTAccessExpiry, cfg.JWTRefreshExpiry)
 	roleService := service.NewRoleService(roleRepo)
+	locationService := service.NewLocationService(locationRepo)
+	marketService := service.NewMarketplaceService(marketRepo, inventoryRepo, orderRepo, pool)
 
 	userH := handler.NewUserHandler(userService)
 	categoryH := handler.NewCategoryHandler(categoryService)
@@ -110,8 +114,10 @@ func main() {
 	orderH := handler.NewOrderHandler(orderService, productService)
 	authH := handler.NewAuthHandler(authService)
 	roleH := handler.NewRoleHandler(roleService)
+	locationH := handler.NewLocationHandler(locationService)
+	marketH := handler.NewMarketplaceHandler(marketService)
 
-	router := NewRouter(authH, userH, categoryH, productH, inventoryH, orderH, roleH, cfg, pool)
+	router := NewRouter(authH, userH, categoryH, productH, inventoryH, orderH, roleH, locationH, marketH, cfg, pool)
 
 	server := &http.Server{
 		Addr:         ":" + cfg.Port,

@@ -11,6 +11,7 @@ import Link from 'next/link'
 import { authApi } from '@/lib/api/auth'
 import { useAuthStore } from '@/lib/stores/auth-store'
 import type { ApiError } from '@/types/api'
+import { cn } from '@/lib/utils'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -162,7 +163,7 @@ export default function RegisterPage() {
                     type="text"
                     placeholder="acme-corp"
                     {...register('org_slug')}
-                    className={errors.org_slug ? 'border-red-500 flex-1' : 'flex-1'}
+                    className={cn('flex-1', errors.org_slug && 'border-red-500')}
                     disabled={isSubmitting}
                   />
                 </div>

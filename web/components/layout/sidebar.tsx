@@ -10,7 +10,10 @@ import {
   ShoppingCart,
   Users,
   Shield,
-  LogOut
+  LogOut,
+  Store,
+  ShoppingBag,
+  MapPin
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/lib/stores/auth-store'
@@ -31,6 +34,9 @@ export function Sidebar() {
     { href: '/orders',    label: 'Orders',    icon: ShoppingCart,    permission: PERMISSIONS.ORDERS_VIEW },
     { href: '/users',     label: 'Users',     icon: Users,           permission: PERMISSIONS.USERS_VIEW },
     { href: '/roles',     label: 'Roles',     icon: Shield,          permission: PERMISSIONS.ROLES_MANAGE },
+    { href: '/marketplace', label: 'Marketplace', icon: Store, permission: PERMISSIONS.PRODUCTS_VIEW },
+    { href: '/cart',        label: 'Cart',        icon: ShoppingBag, permission: PERMISSIONS.ORDERS_CREATE },
+    { href: '/locations',   label: 'Locations',   icon: MapPin, permission: PERMISSIONS.LOCATIONS_MANAGE },
   ].filter(item => item.permission === null || can(item.permission))
 
   return (

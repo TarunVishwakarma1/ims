@@ -11,10 +11,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { LogOut } from 'lucide-react'
+import { LogOut, Building2 } from 'lucide-react'
 
 export function Header() {
-  const { user, logout } = useAuthStore()
+  const { user, organization, logout } = useAuthStore()
 
   // Get initials for avatar
   const initials = user?.name
@@ -26,7 +26,10 @@ export function Header() {
       <div className="flex items-center">
         {/* We can put breadcrumbs or page title here later, using static IMS for now per instructions */}
         <h1 className="text-lg font-semibold md:hidden">IMS</h1>
-        <div className="hidden md:block"></div>
+        <div className="hidden md:flex items-center gap-2 text-sm text-muted-foreground">
+          <Building2 className="h-4 w-4" />
+          <span>{organization?.name ?? 'Loading...'}</span>
+        </div>
       </div>
 
       <div className="flex items-center gap-4">

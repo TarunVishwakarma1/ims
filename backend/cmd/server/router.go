@@ -20,6 +20,8 @@ func NewRouter(
 	inventoryH *handler.InventoryHandler,
 	orderH *handler.OrderHandler,
 	roleH *handler.RoleHandler,
+	locationH *handler.LocationHandler,
+	marketH *handler.MarketplaceHandler,
 	cfg *config.Config,
 	pool *pgxpool.Pool,
 ) http.Handler {
@@ -38,6 +40,9 @@ func NewRouter(
 	r.Post("/api/auth/register", authH.Signup)
 	r.Post("/api/auth/login", authH.Login)
 	r.Post("/api/auth/refresh", authH.RefreshToken)
+
+	// Marketplace Search (Public)
+	r.Get("/api/marketplace/search", marketH.Search)
 
 	// Protected routes
 	r.Group(func(r chi.Router) {
@@ -88,6 +93,25 @@ func NewRouter(
 		r.With(middleware.RequirePermission(rbac.RolesManage)).Delete("/api/roles/{id}", roleH.DeleteRole)
 		r.With(middleware.RequirePermission(rbac.RolesManage)).Get("/api/permissions", roleH.ListPermissions)
 		r.With(middleware.RequirePermission(rbac.RolesManage)).Post("/api/roles/reload", roleH.ReloadPermissions)
+
+		// Locations
+		r.Get("/api/locations", locationH.List)
+		r.Post("/api/locations", locationH.Create)
+		r.Put("/api/locations/{id}", locationH.Update)
+		r.Delete("/api/locations/{id}", locationH.Delete)
+
+		// Marketplace Listings
+		r.Get("/api/listings", marketH.ListByOrg)
+		r.Post("/api/listings", marketH.CreateListing)
+		r.Put("/api/listings/{id}", marketH.UpdateListing)
+		r.Delete("/api/listings/{id}", marketH.DeleteListing)
+
+		// Marketplace Cart
+		r.Get("/api/cart", marketH.GetCart)
+		r.Post("/api/cart/items", marketH.AddToCart)
+		r.Put("/api/cart/items/{listing_id}", marketH.UpdateCartItem)
+		r.Delete("/api/cart/items/{listing_id}", marketH.RemoveFromCart)
+		r.Post("/api/cart/checkout", marketH.Checkout)
 	})
 
 	return r

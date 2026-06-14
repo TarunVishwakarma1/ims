@@ -160,3 +160,97 @@ export interface UpdateOrderStatusRequest {
 export interface ApiError {
   error: string;
 }
+
+// Org Location
+export interface OrgLocation {
+  id: UUID;
+  org_id: UUID;
+  name: string;
+  address: string;
+  city: string;
+  state: string;
+  country: string;
+  postal_code: string;
+  lat: number | null;
+  lng: number | null;
+  is_primary: boolean;
+  is_active: boolean;
+  created_at: ISODate;
+  updated_at: ISODate;
+}
+
+// Marketplace
+export interface MarketplaceListing {
+  id: UUID;
+  org_id: UUID;
+  product_id: UUID;
+  location_id: UUID | null;
+  listing_price: number;  // paise
+  min_order_qty: number;
+  max_order_qty: number | null;
+  is_active: boolean;
+  created_at: ISODate;
+  updated_at: ISODate;
+  // joined fields
+  product_name?: string;
+  product_sku?: string;
+  org_name?: string;
+  org_slug?: string;
+  location_name?: string;
+  location_city?: string;
+  stock_quantity?: number;
+  distance_km?: number | null;
+}
+
+export interface CartItem {
+  id: UUID;
+  cart_id: UUID;
+  listing_id: UUID;
+  quantity: number;
+  added_at: ISODate;
+  listing?: MarketplaceListing;
+}
+
+export interface Cart {
+  id: UUID;
+  buyer_org_id: UUID | null;
+  customer_id: UUID | null;
+  expires_at: ISODate;
+  created_at: ISODate;
+  items?: CartItem[];
+}
+
+// Request types
+export interface CreateListingRequest {
+  product_id: UUID;
+  location_id?: UUID;
+  listing_price: number;  // rupees on frontend → paise on submit
+  min_order_qty: number;
+  max_order_qty?: number;
+}
+
+export interface AddToCartRequest {
+  listing_id: UUID;
+  quantity: number;
+}
+
+export interface MarketplaceSearchParams {
+  q?: string;
+  lat?: number;
+  lng?: number;
+  radius?: number;
+  min_price?: number;
+  max_price?: number;
+}
+
+export interface CreateLocationRequest {
+  name: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  postal_code?: string;
+  lat?: number;
+  lng?: number;
+  is_primary?: boolean;
+}
