@@ -7,6 +7,7 @@ import (
 
 	"github.com/TarunVishwakarma1/ims/backend/internal/domain"
 	"github.com/TarunVishwakarma1/ims/backend/internal/service"
+	"github.com/TarunVishwakarma1/ims/backend/pkg/middleware"
 	"github.com/TarunVishwakarma1/ims/backend/pkg/utils"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-playground/validator/v10"
@@ -39,6 +40,12 @@ type UpdateInventoryRequest struct {
 }
 
 func (h *InventoryHandler) CreateInventory(w http.ResponseWriter, r *http.Request) {
+	orgID, ok := middleware.GetOrgIDFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "organization not found in context")
+		return
+	}
+
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1MB
 	var req CreateInventoryRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -54,6 +61,7 @@ func (h *InventoryHandler) CreateInventory(w http.ResponseWriter, r *http.Reques
 	ipAddress := utils.GetClientIP(r)
 
 	inventory := &domain.Inventory{
+		OrgID:             orgID,
 		ProductID:         req.ProductID,
 		Quantity:          req.Quantity,
 		LowStockThreshold: req.LowStockThreshold,
@@ -73,6 +81,12 @@ func (h *InventoryHandler) CreateInventory(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *InventoryHandler) GetInventoryByProduct(w http.ResponseWriter, r *http.Request) {
+	orgID, ok := middleware.GetOrgIDFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "organization not found in context")
+		return
+	}
+
 	productIDStr := chi.URLParam(r, "product_id")
 	productID, err := uuid.Parse(productIDStr)
 	if err != nil {
@@ -80,7 +94,7 @@ func (h *InventoryHandler) GetInventoryByProduct(w http.ResponseWriter, r *http.
 		return
 	}
 
-	inventory, err := h.service.GetByProductID(r.Context(), productID)
+	inventory, err := h.service.GetByProductID(r.Context(), productID, orgID)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "inventory not found")
@@ -95,6 +109,12 @@ func (h *InventoryHandler) GetInventoryByProduct(w http.ResponseWriter, r *http.
 }
 
 func (h *InventoryHandler) UpdateInventory(w http.ResponseWriter, r *http.Request) {
+	orgID, ok := middleware.GetOrgIDFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "organization not found in context")
+		return
+	}
+
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
 	if err != nil {
@@ -114,7 +134,7 @@ func (h *InventoryHandler) UpdateInventory(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	existing, err := h.service.GetByID(r.Context(), id)
+	existing, err := h.service.GetByID(r.Context(), id, orgID)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "inventory not found")
@@ -139,7 +159,13 @@ func (h *InventoryHandler) UpdateInventory(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *InventoryHandler) ListInventory(w http.ResponseWriter, r *http.Request) {
-	list, err := h.service.List(r.Context())
+	orgID, ok := middleware.GetOrgIDFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "organization not found in context")
+		return
+	}
+
+	list, err := h.service.List(r.Context(), orgID)
 	if err != nil {
 		zap.L().Error("ListInventory failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "internal server error")
@@ -150,7 +176,13 @@ func (h *InventoryHandler) ListInventory(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *InventoryHandler) ListLowStock(w http.ResponseWriter, r *http.Request) {
-	list, err := h.service.ListLowStock(r.Context())
+	orgID, ok := middleware.GetOrgIDFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "organization not found in context")
+		return
+	}
+
+	list, err := h.service.ListLowStock(r.Context(), orgID)
 	if err != nil {
 		zap.L().Error("ListLowStock failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "internal server error")

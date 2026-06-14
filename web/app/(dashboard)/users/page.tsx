@@ -8,7 +8,6 @@ import { z } from 'zod'
 import { Edit, Loader2, Trash2, Shield, User as UserIcon, Plus } from 'lucide-react'
 
 import { usersApi } from '@/lib/api/users'
-import { authApi } from '@/lib/api/auth'
 import { usePermission } from '@/hooks/usePermission'
 import { PERMISSIONS } from '@/lib/rbac'
 import type { User, Role } from '@/types/api'
@@ -75,7 +74,7 @@ export default function UsersPage() {
   const users = rawUsers ?? []
 
   const createMutation = useMutation({
-    mutationFn: authApi.register,
+    mutationFn: usersApi.create,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] })
       setIsCreateDialogOpen(false)

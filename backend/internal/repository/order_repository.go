@@ -12,14 +12,14 @@ import (
 
 type OrderRepository interface {
 	Create(ctx context.Context, order *domain.Order) error
-	GetByID(ctx context.Context, id uuid.UUID) (*domain.Order, error)
+	GetByID(ctx context.Context, id uuid.UUID, orgID uuid.UUID) (*domain.Order, error)
 	Update(ctx context.Context, order *domain.Order) error
-	Delete(ctx context.Context, id uuid.UUID) error
-	List(ctx context.Context) ([]*domain.Order, error)
-	UpdateStatus(ctx context.Context, id uuid.UUID, status domain.OrderStatus) error
-	ListByUser(ctx context.Context, userID uuid.UUID) ([]*domain.Order, error)
+	Delete(ctx context.Context, id uuid.UUID, orgID uuid.UUID) error
+	List(ctx context.Context, orgID uuid.UUID) ([]*domain.Order, error)
+	UpdateStatus(ctx context.Context, id uuid.UUID, status domain.OrderStatus, orgID uuid.UUID) error
+	ListByUser(ctx context.Context, userID uuid.UUID, orgID uuid.UUID) ([]*domain.Order, error)
 	CreateOrderItem(ctx context.Context, item *domain.OrderItem) error
-	GetOrderItems(ctx context.Context, orderID uuid.UUID) ([]*domain.OrderItem, error)
+	GetOrderItems(ctx context.Context, orderID uuid.UUID, orgID uuid.UUID) ([]*domain.OrderItem, error)
 	WithTx(tx pgx.Tx) OrderRepository
 	BeginTx(ctx context.Context) (pgx.Tx, error)
 }
@@ -46,21 +46,21 @@ func (r *orderRepository) BeginTx(ctx context.Context) (pgx.Tx, error) {
 
 func (r *orderRepository) Create(ctx context.Context, order *domain.Order) error {
 	query := `
-		INSERT INTO orders (id, user_id, status, total_amount, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO orders (id, org_id, user_id, status, total_amount, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 	`
-	_, err := r.db.Exec(ctx, query, order.ID, order.UserID, order.Status, order.TotalAmount, order.CreatedAt, order.UpdatedAt)
+	_, err := r.db.Exec(ctx, query, order.ID, order.OrgID, order.UserID, order.Status, order.TotalAmount, order.CreatedAt, order.UpdatedAt)
 	return err
 }
 
-func (r *orderRepository) GetByID(ctx context.Context, id uuid.UUID) (*domain.Order, error) {
+func (r *orderRepository) GetByID(ctx context.Context, id uuid.UUID, orgID uuid.UUID) (*domain.Order, error) {
 	query := `
-		SELECT id, user_id, status, total_amount, created_at, updated_at
+		SELECT id, org_id, user_id, status, total_amount, created_at, updated_at
 		FROM orders
-		WHERE id = $1
+		WHERE id = $1 AND org_id = $2
 	`
 	order := &domain.Order{}
-	err := r.db.QueryRow(ctx, query, id).Scan(&order.ID, &order.UserID, &order.Status, &order.TotalAmount, &order.CreatedAt, &order.UpdatedAt)
+	err := r.db.QueryRow(ctx, query, id, orgID).Scan(&order.ID, &order.OrgID, &order.UserID, &order.Status, &order.TotalAmount, &order.CreatedAt, &order.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, domain.ErrNotFound
@@ -73,29 +73,30 @@ func (r *orderRepository) GetByID(ctx context.Context, id uuid.UUID) (*domain.Or
 func (r *orderRepository) Update(ctx context.Context, order *domain.Order) error {
 	query := `
 		UPDATE orders
-		SET user_id = $2, status = $3, total_amount = $4, updated_at = $5
-		WHERE id = $1
+		SET user_id = $3, status = $4, total_amount = $5, updated_at = $6
+		WHERE id = $1 AND org_id = $2
 	`
-	_, err := r.db.Exec(ctx, query, order.ID, order.UserID, order.Status, order.TotalAmount, order.UpdatedAt)
+	_, err := r.db.Exec(ctx, query, order.ID, order.OrgID, order.UserID, order.Status, order.TotalAmount, order.UpdatedAt)
 	return err
 }
 
-func (r *orderRepository) Delete(ctx context.Context, id uuid.UUID) error {
+func (r *orderRepository) Delete(ctx context.Context, id uuid.UUID, orgID uuid.UUID) error {
 	query := `
 		DELETE FROM orders
-		WHERE id = $1
+		WHERE id = $1 AND org_id = $2
 	`
-	_, err := r.db.Exec(ctx, query, id)
+	_, err := r.db.Exec(ctx, query, id, orgID)
 	return err
 }
 
-func (r *orderRepository) List(ctx context.Context) ([]*domain.Order, error) {
+func (r *orderRepository) List(ctx context.Context, orgID uuid.UUID) ([]*domain.Order, error) {
 	query := `
-		SELECT id, user_id, status, total_amount, created_at, updated_at
+		SELECT id, org_id, user_id, status, total_amount, created_at, updated_at
 		FROM orders
+		WHERE org_id = $1
 		ORDER BY created_at DESC
 	`
-	rows, err := r.db.Query(ctx, query)
+	rows, err := r.db.Query(ctx, query, orgID)
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +105,7 @@ func (r *orderRepository) List(ctx context.Context) ([]*domain.Order, error) {
 	list := make([]*domain.Order, 0)
 	for rows.Next() {
 		order := &domain.Order{}
-		err := rows.Scan(&order.ID, &order.UserID, &order.Status, &order.TotalAmount, &order.CreatedAt, &order.UpdatedAt)
+		err := rows.Scan(&order.ID, &order.OrgID, &order.UserID, &order.Status, &order.TotalAmount, &order.CreatedAt, &order.UpdatedAt)
 		if err != nil {
 			return nil, err
 		}
@@ -118,24 +119,24 @@ func (r *orderRepository) List(ctx context.Context) ([]*domain.Order, error) {
 	return list, nil
 }
 
-func (r *orderRepository) UpdateStatus(ctx context.Context, id uuid.UUID, status domain.OrderStatus) error {
+func (r *orderRepository) UpdateStatus(ctx context.Context, id uuid.UUID, status domain.OrderStatus, orgID uuid.UUID) error {
 	query := `
 		UPDATE orders
-		SET status = $2, updated_at = NOW()
-		WHERE id = $1
+		SET status = $3, updated_at = NOW()
+		WHERE id = $1 AND org_id = $2
 	`
-	_, err := r.db.Exec(ctx, query, id, status)
+	_, err := r.db.Exec(ctx, query, id, orgID, status)
 	return err
 }
 
-func (r *orderRepository) ListByUser(ctx context.Context, userID uuid.UUID) ([]*domain.Order, error) {
+func (r *orderRepository) ListByUser(ctx context.Context, userID uuid.UUID, orgID uuid.UUID) ([]*domain.Order, error) {
 	query := `
-		SELECT id, user_id, status, total_amount, created_at, updated_at
+		SELECT id, org_id, user_id, status, total_amount, created_at, updated_at
 		FROM orders
-		WHERE user_id = $1
+		WHERE user_id = $1 AND org_id = $2
 		ORDER BY created_at DESC
 	`
-	rows, err := r.db.Query(ctx, query, userID)
+	rows, err := r.db.Query(ctx, query, userID, orgID)
 	if err != nil {
 		return nil, err
 	}
@@ -144,7 +145,7 @@ func (r *orderRepository) ListByUser(ctx context.Context, userID uuid.UUID) ([]*
 	list := make([]*domain.Order, 0)
 	for rows.Next() {
 		order := &domain.Order{}
-		err := rows.Scan(&order.ID, &order.UserID, &order.Status, &order.TotalAmount, &order.CreatedAt, &order.UpdatedAt)
+		err := rows.Scan(&order.ID, &order.OrgID, &order.UserID, &order.Status, &order.TotalAmount, &order.CreatedAt, &order.UpdatedAt)
 		if err != nil {
 			return nil, err
 		}
@@ -160,20 +161,20 @@ func (r *orderRepository) ListByUser(ctx context.Context, userID uuid.UUID) ([]*
 
 func (r *orderRepository) CreateOrderItem(ctx context.Context, item *domain.OrderItem) error {
 	query := `
-		INSERT INTO order_items (id, order_id, product_id, quantity, unit_price)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO order_items (id, org_id, order_id, product_id, quantity, unit_price)
+		VALUES ($1, $2, $3, $4, $5, $6)
 	`
-	_, err := r.db.Exec(ctx, query, item.ID, item.OrderID, item.ProductID, item.Quantity, item.UnitPrice)
+	_, err := r.db.Exec(ctx, query, item.ID, item.OrgID, item.OrderID, item.ProductID, item.Quantity, item.UnitPrice)
 	return err
 }
 
-func (r *orderRepository) GetOrderItems(ctx context.Context, orderID uuid.UUID) ([]*domain.OrderItem, error) {
+func (r *orderRepository) GetOrderItems(ctx context.Context, orderID uuid.UUID, orgID uuid.UUID) ([]*domain.OrderItem, error) {
 	query := `
-		SELECT id, order_id, product_id, quantity, unit_price
+		SELECT id, org_id, order_id, product_id, quantity, unit_price
 		FROM order_items
-		WHERE order_id = $1
+		WHERE order_id = $1 AND org_id = $2
 	`
-	rows, err := r.db.Query(ctx, query, orderID)
+	rows, err := r.db.Query(ctx, query, orderID, orgID)
 	if err != nil {
 		return nil, err
 	}
@@ -182,7 +183,7 @@ func (r *orderRepository) GetOrderItems(ctx context.Context, orderID uuid.UUID) 
 	list := make([]*domain.OrderItem, 0)
 	for rows.Next() {
 		item := &domain.OrderItem{}
-		err := rows.Scan(&item.ID, &item.OrderID, &item.ProductID, &item.Quantity, &item.UnitPrice)
+		err := rows.Scan(&item.ID, &item.OrgID, &item.OrderID, &item.ProductID, &item.Quantity, &item.UnitPrice)
 		if err != nil {
 			return nil, err
 		}

@@ -13,12 +13,12 @@ import (
 
 type InventoryService interface {
 	Create(ctx context.Context, inventory *domain.Inventory, ipAddress string) error
-	GetByID(ctx context.Context, id uuid.UUID) (*domain.Inventory, error)
-	GetByProductID(ctx context.Context, productID uuid.UUID) (*domain.Inventory, error)
+	GetByID(ctx context.Context, id uuid.UUID, orgID uuid.UUID) (*domain.Inventory, error)
+	GetByProductID(ctx context.Context, productID uuid.UUID, orgID uuid.UUID) (*domain.Inventory, error)
 	Update(ctx context.Context, inventory *domain.Inventory) error
-	Delete(ctx context.Context, id uuid.UUID, ipAddress string) error
-	List(ctx context.Context) ([]*domain.Inventory, error)
-	ListLowStock(ctx context.Context) ([]*domain.Inventory, error)
+	Delete(ctx context.Context, id uuid.UUID, orgID uuid.UUID, ipAddress string) error
+	List(ctx context.Context, orgID uuid.UUID) ([]*domain.Inventory, error)
+	ListLowStock(ctx context.Context, orgID uuid.UUID) ([]*domain.Inventory, error)
 }
 
 type inventoryService struct {
@@ -34,7 +34,7 @@ func NewInventoryService(repo repository.InventoryRepository, auditLogRepo repos
 }
 
 func (s *inventoryService) Create(ctx context.Context, inventory *domain.Inventory, ipAddress string) error {
-	existing, err := s.repo.GetByProductID(ctx, inventory.ProductID)
+	existing, err := s.repo.GetByProductID(ctx, inventory.ProductID, inventory.OrgID)
 	if err == nil && existing != nil {
 		return domain.ErrConflict
 	}
@@ -51,6 +51,7 @@ func (s *inventoryService) Create(ctx context.Context, inventory *domain.Invento
 
 	audit := &domain.AuditLog{
 		ID:        uuid.New(),
+		OrgID:     inventory.OrgID,
 		UserID:    nil,
 		Action:    "inventory.created",
 		Entity:    "inventory",
@@ -65,12 +66,12 @@ func (s *inventoryService) Create(ctx context.Context, inventory *domain.Invento
 	return nil
 }
 
-func (s *inventoryService) GetByID(ctx context.Context, id uuid.UUID) (*domain.Inventory, error) {
-	return s.repo.GetByID(ctx, id)
+func (s *inventoryService) GetByID(ctx context.Context, id uuid.UUID, orgID uuid.UUID) (*domain.Inventory, error) {
+	return s.repo.GetByID(ctx, id, orgID)
 }
 
-func (s *inventoryService) GetByProductID(ctx context.Context, productID uuid.UUID) (*domain.Inventory, error) {
-	return s.repo.GetByProductID(ctx, productID)
+func (s *inventoryService) GetByProductID(ctx context.Context, productID uuid.UUID, orgID uuid.UUID) (*domain.Inventory, error) {
+	return s.repo.GetByProductID(ctx, productID, orgID)
 }
 
 func (s *inventoryService) Update(ctx context.Context, inventory *domain.Inventory) error {
@@ -78,13 +79,14 @@ func (s *inventoryService) Update(ctx context.Context, inventory *domain.Invento
 	return s.repo.Update(ctx, inventory)
 }
 
-func (s *inventoryService) Delete(ctx context.Context, id uuid.UUID, ipAddress string) error {
-	if err := s.repo.Delete(ctx, id); err != nil {
+func (s *inventoryService) Delete(ctx context.Context, id uuid.UUID, orgID uuid.UUID, ipAddress string) error {
+	if err := s.repo.Delete(ctx, id, orgID); err != nil {
 		return err
 	}
 
 	audit := &domain.AuditLog{
 		ID:        uuid.New(),
+		OrgID:     orgID,
 		UserID:    nil,
 		Action:    "inventory.deleted",
 		Entity:    "inventory",
@@ -99,10 +101,10 @@ func (s *inventoryService) Delete(ctx context.Context, id uuid.UUID, ipAddress s
 	return nil
 }
 
-func (s *inventoryService) List(ctx context.Context) ([]*domain.Inventory, error) {
-	return s.repo.List(ctx)
+func (s *inventoryService) List(ctx context.Context, orgID uuid.UUID) ([]*domain.Inventory, error) {
+	return s.repo.List(ctx, orgID)
 }
 
-func (s *inventoryService) ListLowStock(ctx context.Context) ([]*domain.Inventory, error) {
-	return s.repo.ListLowStock(ctx)
+func (s *inventoryService) ListLowStock(ctx context.Context, orgID uuid.UUID) ([]*domain.Inventory, error) {
+	return s.repo.ListLowStock(ctx, orgID)
 }

@@ -7,6 +7,7 @@ import (
 
 	"github.com/TarunVishwakarma1/ims/backend/internal/domain"
 	"github.com/TarunVishwakarma1/ims/backend/internal/service"
+	"github.com/TarunVishwakarma1/ims/backend/pkg/middleware"
 	"github.com/TarunVishwakarma1/ims/backend/pkg/utils"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-playground/validator/v10"
@@ -43,6 +44,12 @@ type UpdateProductRequest struct {
 }
 
 func (h *ProductHandler) CreateProduct(w http.ResponseWriter, r *http.Request) {
+	orgID, ok := middleware.GetOrgIDFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "organization not found in context")
+		return
+	}
+
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1MB
 	var req CreateProductRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -58,6 +65,7 @@ func (h *ProductHandler) CreateProduct(w http.ResponseWriter, r *http.Request) {
 	ipAddress := utils.GetClientIP(r)
 
 	product := &domain.Product{
+		OrgID:       orgID,
 		CategoryID:  req.CategoryID,
 		Name:        req.Name,
 		Description: req.Description,
@@ -79,10 +87,16 @@ func (h *ProductHandler) CreateProduct(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *ProductHandler) GetProduct(w http.ResponseWriter, r *http.Request) {
+	orgID, ok := middleware.GetOrgIDFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "organization not found in context")
+		return
+	}
+
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
 	if err != nil {
-		product, err := h.service.GetBySKU(r.Context(), idStr)
+		product, err := h.service.GetBySKU(r.Context(), idStr, orgID)
 		if err != nil {
 			if errors.Is(err, domain.ErrNotFound) {
 				writeError(w, http.StatusNotFound, "product not found")
@@ -96,7 +110,7 @@ func (h *ProductHandler) GetProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	product, err := h.service.GetByID(r.Context(), id)
+	product, err := h.service.GetByID(r.Context(), id, orgID)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "product not found")
@@ -111,6 +125,12 @@ func (h *ProductHandler) GetProduct(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *ProductHandler) UpdateProduct(w http.ResponseWriter, r *http.Request) {
+	orgID, ok := middleware.GetOrgIDFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "organization not found in context")
+		return
+	}
+
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
 	if err != nil {
@@ -130,7 +150,7 @@ func (h *ProductHandler) UpdateProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	existing, err := h.service.GetByID(r.Context(), id)
+	existing, err := h.service.GetByID(r.Context(), id, orgID)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "product not found")
@@ -148,7 +168,7 @@ func (h *ProductHandler) UpdateProduct(w http.ResponseWriter, r *http.Request) {
 	existing.Price = req.Price
 
 	if err := h.service.Update(r.Context(), existing); err != nil {
-		zap.L().Error("UpdateProduct Update failed", zap.Error(err))
+		zap.L().Error("UpdateProduct failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
@@ -157,6 +177,12 @@ func (h *ProductHandler) UpdateProduct(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *ProductHandler) DeleteProduct(w http.ResponseWriter, r *http.Request) {
+	orgID, ok := middleware.GetOrgIDFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "organization not found in context")
+		return
+	}
+
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
 	if err != nil {
@@ -166,37 +192,23 @@ func (h *ProductHandler) DeleteProduct(w http.ResponseWriter, r *http.Request) {
 
 	ipAddress := utils.GetClientIP(r)
 
-	if err := h.service.Delete(r.Context(), id, ipAddress); err != nil {
-		if errors.Is(err, domain.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "product not found")
-			return
-		}
+	if err := h.service.Delete(r.Context(), id, orgID, ipAddress); err != nil {
 		zap.L().Error("DeleteProduct failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{"message": "product deleted successfully"})
+	writeJSON(w, http.StatusNoContent, nil)
 }
 
 func (h *ProductHandler) ListProducts(w http.ResponseWriter, r *http.Request) {
-	sku := r.URL.Query().Get("sku")
-	if sku != "" {
-		product, err := h.service.GetBySKU(r.Context(), sku)
-		if err != nil {
-			if errors.Is(err, domain.ErrNotFound) {
-				writeError(w, http.StatusNotFound, "product not found")
-				return
-			}
-			zap.L().Error("ListProducts GetBySKU failed", zap.Error(err))
-			writeError(w, http.StatusInternalServerError, "internal server error")
-			return
-		}
-		writeJSON(w, http.StatusOK, product)
+	orgID, ok := middleware.GetOrgIDFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "organization not found in context")
 		return
 	}
 
-	products, err := h.service.List(r.Context())
+	products, err := h.service.List(r.Context(), orgID)
 	if err != nil {
 		zap.L().Error("ListProducts failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "internal server error")
@@ -207,6 +219,12 @@ func (h *ProductHandler) ListProducts(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *ProductHandler) ListByCategory(w http.ResponseWriter, r *http.Request) {
+	orgID, ok := middleware.GetOrgIDFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "organization not found in context")
+		return
+	}
+
 	categoryIDStr := chi.URLParam(r, "category_id")
 	categoryID, err := uuid.Parse(categoryIDStr)
 	if err != nil {
@@ -214,7 +232,7 @@ func (h *ProductHandler) ListByCategory(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	products, err := h.service.ListByCategory(r.Context(), categoryID)
+	products, err := h.service.ListByCategory(r.Context(), categoryID, orgID)
 	if err != nil {
 		zap.L().Error("ListByCategory failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "internal server error")

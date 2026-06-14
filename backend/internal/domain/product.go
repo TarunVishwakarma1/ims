@@ -8,6 +8,7 @@ import (
 
 type Product struct {
 	ID          uuid.UUID `json:"id" db:"id"`
+	OrgID       uuid.UUID `json:"org_id" db:"org_id"`
 	CategoryID  uuid.UUID `json:"category_id" db:"category_id" validate:"required"`
 	Name        string    `json:"name" db:"name" validate:"required"`
 	Description string    `json:"description" db:"description"`

@@ -11,12 +11,12 @@ import (
 
 type ProductRepository interface {
 	Create(ctx context.Context, product *domain.Product) error
-	GetByID(ctx context.Context, id uuid.UUID) (*domain.Product, error)
-	GetBySKU(ctx context.Context, sku string) (*domain.Product, error)
+	GetByID(ctx context.Context, id uuid.UUID, orgID uuid.UUID) (*domain.Product, error)
+	GetBySKU(ctx context.Context, sku string, orgID uuid.UUID) (*domain.Product, error)
 	Update(ctx context.Context, product *domain.Product) error
-	Delete(ctx context.Context, id uuid.UUID) error
-	List(ctx context.Context) ([]*domain.Product, error)
-	ListByCategory(ctx context.Context, categoryID uuid.UUID) ([]*domain.Product, error)
+	Delete(ctx context.Context, id uuid.UUID, orgID uuid.UUID) error
+	List(ctx context.Context, orgID uuid.UUID) ([]*domain.Product, error)
+	ListByCategory(ctx context.Context, categoryID uuid.UUID, orgID uuid.UUID) ([]*domain.Product, error)
 	WithTx(tx pgx.Tx) ProductRepository
 }
 
@@ -34,21 +34,21 @@ func (r *productRepository) WithTx(tx pgx.Tx) ProductRepository {
 
 func (r *productRepository) Create(ctx context.Context, product *domain.Product) error {
 	query := `
-		INSERT INTO products (id, category_id, name, description, sku, price, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		INSERT INTO products (id, org_id, category_id, name, description, sku, price, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 	`
-	_, err := r.db.Exec(ctx, query, product.ID, product.CategoryID, product.Name, product.Description, product.SKU, product.Price, product.CreatedAt, product.UpdatedAt)
+	_, err := r.db.Exec(ctx, query, product.ID, product.OrgID, product.CategoryID, product.Name, product.Description, product.SKU, product.Price, product.CreatedAt, product.UpdatedAt)
 	return err
 }
 
-func (r *productRepository) GetByID(ctx context.Context, id uuid.UUID) (*domain.Product, error) {
+func (r *productRepository) GetByID(ctx context.Context, id uuid.UUID, orgID uuid.UUID) (*domain.Product, error) {
 	query := `
-		SELECT id, category_id, name, description, sku, price, created_at, updated_at
+		SELECT id, org_id, category_id, name, description, sku, price, created_at, updated_at
 		FROM products
-		WHERE id = $1
+		WHERE id = $1 AND org_id = $2
 	`
 	product := &domain.Product{}
-	err := r.db.QueryRow(ctx, query, id).Scan(&product.ID, &product.CategoryID, &product.Name, &product.Description, &product.SKU, &product.Price, &product.CreatedAt, &product.UpdatedAt)
+	err := r.db.QueryRow(ctx, query, id, orgID).Scan(&product.ID, &product.OrgID, &product.CategoryID, &product.Name, &product.Description, &product.SKU, &product.Price, &product.CreatedAt, &product.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, domain.ErrNotFound
@@ -58,14 +58,14 @@ func (r *productRepository) GetByID(ctx context.Context, id uuid.UUID) (*domain.
 	return product, nil
 }
 
-func (r *productRepository) GetBySKU(ctx context.Context, sku string) (*domain.Product, error) {
+func (r *productRepository) GetBySKU(ctx context.Context, sku string, orgID uuid.UUID) (*domain.Product, error) {
 	query := `
-		SELECT id, category_id, name, description, sku, price, created_at, updated_at
+		SELECT id, org_id, category_id, name, description, sku, price, created_at, updated_at
 		FROM products
-		WHERE sku = $1
+		WHERE sku = $1 AND org_id = $2
 	`
 	product := &domain.Product{}
-	err := r.db.QueryRow(ctx, query, sku).Scan(&product.ID, &product.CategoryID, &product.Name, &product.Description, &product.SKU, &product.Price, &product.CreatedAt, &product.UpdatedAt)
+	err := r.db.QueryRow(ctx, query, sku, orgID).Scan(&product.ID, &product.OrgID, &product.CategoryID, &product.Name, &product.Description, &product.SKU, &product.Price, &product.CreatedAt, &product.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, domain.ErrNotFound
@@ -78,29 +78,30 @@ func (r *productRepository) GetBySKU(ctx context.Context, sku string) (*domain.P
 func (r *productRepository) Update(ctx context.Context, product *domain.Product) error {
 	query := `
 		UPDATE products
-		SET category_id = $2, name = $3, description = $4, sku = $5, price = $6, updated_at = $7
-		WHERE id = $1
+		SET category_id = $3, name = $4, description = $5, sku = $6, price = $7, updated_at = $8
+		WHERE id = $1 AND org_id = $2
 	`
-	_, err := r.db.Exec(ctx, query, product.ID, product.CategoryID, product.Name, product.Description, product.SKU, product.Price, product.UpdatedAt)
+	_, err := r.db.Exec(ctx, query, product.ID, product.OrgID, product.CategoryID, product.Name, product.Description, product.SKU, product.Price, product.UpdatedAt)
 	return err
 }
 
-func (r *productRepository) Delete(ctx context.Context, id uuid.UUID) error {
+func (r *productRepository) Delete(ctx context.Context, id uuid.UUID, orgID uuid.UUID) error {
 	query := `
 		DELETE FROM products
-		WHERE id = $1
+		WHERE id = $1 AND org_id = $2
 	`
-	_, err := r.db.Exec(ctx, query, id)
+	_, err := r.db.Exec(ctx, query, id, orgID)
 	return err
 }
 
-func (r *productRepository) List(ctx context.Context) ([]*domain.Product, error) {
+func (r *productRepository) List(ctx context.Context, orgID uuid.UUID) ([]*domain.Product, error) {
 	query := `
-		SELECT id, category_id, name, description, sku, price, created_at, updated_at
+		SELECT id, org_id, category_id, name, description, sku, price, created_at, updated_at
 		FROM products
+		WHERE org_id = $1
 		ORDER BY created_at DESC
 	`
-	rows, err := r.db.Query(ctx, query)
+	rows, err := r.db.Query(ctx, query, orgID)
 	if err != nil {
 		return nil, err
 	}
@@ -109,7 +110,7 @@ func (r *productRepository) List(ctx context.Context) ([]*domain.Product, error)
 	products := make([]*domain.Product, 0)
 	for rows.Next() {
 		product := &domain.Product{}
-		err := rows.Scan(&product.ID, &product.CategoryID, &product.Name, &product.Description, &product.SKU, &product.Price, &product.CreatedAt, &product.UpdatedAt)
+		err := rows.Scan(&product.ID, &product.OrgID, &product.CategoryID, &product.Name, &product.Description, &product.SKU, &product.Price, &product.CreatedAt, &product.UpdatedAt)
 		if err != nil {
 			return nil, err
 		}
@@ -123,14 +124,14 @@ func (r *productRepository) List(ctx context.Context) ([]*domain.Product, error)
 	return products, nil
 }
 
-func (r *productRepository) ListByCategory(ctx context.Context, categoryID uuid.UUID) ([]*domain.Product, error) {
+func (r *productRepository) ListByCategory(ctx context.Context, categoryID uuid.UUID, orgID uuid.UUID) ([]*domain.Product, error) {
 	query := `
-		SELECT id, category_id, name, description, sku, price, created_at, updated_at
+		SELECT id, org_id, category_id, name, description, sku, price, created_at, updated_at
 		FROM products
-		WHERE category_id = $1
+		WHERE category_id = $1 AND org_id = $2
 		ORDER BY created_at DESC
 	`
-	rows, err := r.db.Query(ctx, query, categoryID)
+	rows, err := r.db.Query(ctx, query, categoryID, orgID)
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +140,7 @@ func (r *productRepository) ListByCategory(ctx context.Context, categoryID uuid.
 	products := make([]*domain.Product, 0)
 	for rows.Next() {
 		product := &domain.Product{}
-		err := rows.Scan(&product.ID, &product.CategoryID, &product.Name, &product.Description, &product.SKU, &product.Price, &product.CreatedAt, &product.UpdatedAt)
+		err := rows.Scan(&product.ID, &product.OrgID, &product.CategoryID, &product.Name, &product.Description, &product.SKU, &product.Price, &product.CreatedAt, &product.UpdatedAt)
 		if err != nil {
 			return nil, err
 		}

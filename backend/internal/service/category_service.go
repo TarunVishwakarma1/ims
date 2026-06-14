@@ -12,10 +12,10 @@ import (
 
 type CategoryService interface {
 	Create(ctx context.Context, category *domain.Category, ipAddress string) error
-	GetByID(ctx context.Context, id uuid.UUID) (*domain.Category, error)
+	GetByID(ctx context.Context, id uuid.UUID, orgID uuid.UUID) (*domain.Category, error)
 	Update(ctx context.Context, category *domain.Category) error
-	Delete(ctx context.Context, id uuid.UUID, ipAddress string) error
-	List(ctx context.Context) ([]*domain.Category, error)
+	Delete(ctx context.Context, id uuid.UUID, orgID uuid.UUID, ipAddress string) error
+	List(ctx context.Context, orgID uuid.UUID) ([]*domain.Category, error)
 }
 
 type categoryService struct {
@@ -42,6 +42,7 @@ func (s *categoryService) Create(ctx context.Context, category *domain.Category,
 
 	audit := &domain.AuditLog{
 		ID:        uuid.New(),
+		OrgID:     category.OrgID,
 		UserID:    nil,
 		Action:    "category.created",
 		Entity:    "categories",
@@ -56,8 +57,8 @@ func (s *categoryService) Create(ctx context.Context, category *domain.Category,
 	return nil
 }
 
-func (s *categoryService) GetByID(ctx context.Context, id uuid.UUID) (*domain.Category, error) {
-	return s.repo.GetByID(ctx, id)
+func (s *categoryService) GetByID(ctx context.Context, id uuid.UUID, orgID uuid.UUID) (*domain.Category, error) {
+	return s.repo.GetByID(ctx, id, orgID)
 }
 
 func (s *categoryService) Update(ctx context.Context, category *domain.Category) error {
@@ -65,13 +66,14 @@ func (s *categoryService) Update(ctx context.Context, category *domain.Category)
 	return s.repo.Update(ctx, category)
 }
 
-func (s *categoryService) Delete(ctx context.Context, id uuid.UUID, ipAddress string) error {
-	if err := s.repo.Delete(ctx, id); err != nil {
+func (s *categoryService) Delete(ctx context.Context, id uuid.UUID, orgID uuid.UUID, ipAddress string) error {
+	if err := s.repo.Delete(ctx, id, orgID); err != nil {
 		return err
 	}
 
 	audit := &domain.AuditLog{
 		ID:        uuid.New(),
+		OrgID:     orgID,
 		UserID:    nil,
 		Action:    "category.deleted",
 		Entity:    "categories",
@@ -86,6 +88,6 @@ func (s *categoryService) Delete(ctx context.Context, id uuid.UUID, ipAddress st
 	return nil
 }
 
-func (s *categoryService) List(ctx context.Context) ([]*domain.Category, error) {
-	return s.repo.List(ctx)
+func (s *categoryService) List(ctx context.Context, orgID uuid.UUID) ([]*domain.Category, error) {
+	return s.repo.List(ctx, orgID)
 }

@@ -35,7 +35,7 @@ func NewRouter(
 
 	// Public routes (no auth)
 	r.Get("/health", handler.HealthCheck(pool))
-	r.Post("/api/auth/register", userH.CreateUser)
+	r.Post("/api/auth/register", authH.Signup)
 	r.Post("/api/auth/login", authH.Login)
 	r.Post("/api/auth/refresh", authH.RefreshToken)
 
@@ -45,6 +45,7 @@ func NewRouter(
 
 		// Users
 		r.With(middleware.RequirePermission(rbac.UsersView)).Get("/api/users", userH.ListUsers)
+		r.With(middleware.RequirePermission(rbac.UsersCreate)).Post("/api/users", userH.CreateUser)
 		r.With(middleware.RequirePermission(rbac.UsersView)).Get("/api/users/{id}", userH.GetUser)
 		r.With(middleware.RequirePermission(rbac.UsersEdit)).Put("/api/users/{id}", userH.UpdateUser)
 		r.With(middleware.RequirePermission(rbac.UsersDelete)).Delete("/api/users/{id}", userH.DeleteUser)

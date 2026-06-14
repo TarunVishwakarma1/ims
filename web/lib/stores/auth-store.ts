@@ -1,10 +1,11 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { User, LoginResponse } from '@/types/api';
+import type { User, LoginResponse, Organization } from '@/types/api';
 import { setTokens, clearTokens, getAccessToken } from '@/lib/api/client';
 
 interface AuthState {
   user: User | null;
+  organization: Organization | null;
   accessToken: string | null;
   isAuthenticated: boolean;
 
@@ -18,6 +19,7 @@ export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({
       user: null,
+      organization: null,
       accessToken: null,
       isAuthenticated: false,
 
@@ -25,6 +27,7 @@ export const useAuthStore = create<AuthState>()(
         setTokens(response.access_token, response.refresh_token);
         set({
           user: response.user,
+          organization: response.organization,
           accessToken: response.access_token,
           isAuthenticated: true,
         });
@@ -34,6 +37,7 @@ export const useAuthStore = create<AuthState>()(
         clearTokens();
         set({
           user: null,
+          organization: null,
           accessToken: null,
           isAuthenticated: false,
         });
@@ -48,9 +52,10 @@ export const useAuthStore = create<AuthState>()(
     }),
     {
       name: 'ims_auth',
-      // Persist only the user state, not tokens (tokens are handled separately in client.ts localStorage helpers)
+      // Persist only the user and org state, not tokens (tokens are handled separately in client.ts localStorage helpers)
       partialize: (state) => ({
         user: state.user,
+        organization: state.organization,
       }),
       // Rehydrate client token and authenticated state on store loading/hydration
       onRehydrateStorage: () => (state) => {

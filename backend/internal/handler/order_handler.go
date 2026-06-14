@@ -43,6 +43,12 @@ type UpdateOrderStatusRequest struct {
 }
 
 func (h *OrderHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
+	orgID, ok := middleware.GetOrgIDFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "organization not found in context")
+		return
+	}
+
 	userIDStr, ok := middleware.GetUserIDFromContext(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "unauthorized")
@@ -69,13 +75,14 @@ func (h *OrderHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 	ipAddress := utils.GetClientIP(r)
 
 	order := &domain.Order{
+		OrgID:  orgID,
 		UserID: userID,
 		Status: domain.OrderStatusPending,
 	}
 
 	var items []*domain.OrderItem
 	for _, item := range req.Items {
-		prod, err := h.productService.GetByID(r.Context(), item.ProductID)
+		prod, err := h.productService.GetByID(r.Context(), item.ProductID, orgID)
 		if err != nil {
 			if errors.Is(err, domain.ErrNotFound) {
 				writeError(w, http.StatusBadRequest, "product not found: "+item.ProductID.String())
@@ -87,6 +94,7 @@ func (h *OrderHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 		}
 
 		items = append(items, &domain.OrderItem{
+			OrgID:     orgID,
 			ProductID: item.ProductID,
 			Quantity:  item.Quantity,
 			UnitPrice: prod.Price,
@@ -111,6 +119,12 @@ func (h *OrderHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *OrderHandler) GetOrder(w http.ResponseWriter, r *http.Request) {
+	orgID, ok := middleware.GetOrgIDFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "organization not found in context")
+		return
+	}
+
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
 	if err != nil {
@@ -118,7 +132,7 @@ func (h *OrderHandler) GetOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	order, err := h.service.GetByID(r.Context(), id)
+	order, err := h.service.GetByID(r.Context(), id, orgID)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "order not found")
@@ -133,6 +147,12 @@ func (h *OrderHandler) GetOrder(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *OrderHandler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
+	orgID, ok := middleware.GetOrgIDFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "organization not found in context")
+		return
+	}
+
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
 	if err != nil {
@@ -154,7 +174,7 @@ func (h *OrderHandler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
 
 	ipAddress := utils.GetClientIP(r)
 
-	if err := h.service.UpdateStatus(r.Context(), id, req.Status, ipAddress); err != nil {
+	if err := h.service.UpdateStatus(r.Context(), id, req.Status, orgID, ipAddress); err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "order not found")
 			return
@@ -168,6 +188,12 @@ func (h *OrderHandler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *OrderHandler) DeleteOrder(w http.ResponseWriter, r *http.Request) {
+	orgID, ok := middleware.GetOrgIDFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "organization not found in context")
+		return
+	}
+
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
 	if err != nil {
@@ -177,7 +203,7 @@ func (h *OrderHandler) DeleteOrder(w http.ResponseWriter, r *http.Request) {
 
 	ipAddress := utils.GetClientIP(r)
 
-	if err := h.service.Delete(r.Context(), id, ipAddress); err != nil {
+	if err := h.service.Delete(r.Context(), id, orgID, ipAddress); err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "order not found")
 			return
@@ -191,7 +217,13 @@ func (h *OrderHandler) DeleteOrder(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *OrderHandler) ListOrders(w http.ResponseWriter, r *http.Request) {
-	orders, err := h.service.List(r.Context())
+	orgID, ok := middleware.GetOrgIDFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "organization not found in context")
+		return
+	}
+
+	orders, err := h.service.List(r.Context(), orgID)
 	if err != nil {
 		zap.L().Error("ListOrders failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "internal server error")
@@ -202,6 +234,12 @@ func (h *OrderHandler) ListOrders(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *OrderHandler) ListUserOrders(w http.ResponseWriter, r *http.Request) {
+	orgID, ok := middleware.GetOrgIDFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "organization not found in context")
+		return
+	}
+
 	userIDStr := chi.URLParam(r, "user_id")
 	userID, err := uuid.Parse(userIDStr)
 	if err != nil {
@@ -219,7 +257,7 @@ func (h *OrderHandler) ListUserOrders(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	orders, err := h.service.ListByUser(r.Context(), userID)
+	orders, err := h.service.ListByUser(r.Context(), userID, orgID)
 	if err != nil {
 		zap.L().Error("ListUserOrders failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "internal server error")
@@ -230,6 +268,12 @@ func (h *OrderHandler) ListUserOrders(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *OrderHandler) GetOrderItems(w http.ResponseWriter, r *http.Request) {
+	orgID, ok := middleware.GetOrgIDFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "organization not found in context")
+		return
+	}
+
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
 	if err != nil {
@@ -237,7 +281,7 @@ func (h *OrderHandler) GetOrderItems(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	items, err := h.service.GetOrderItems(r.Context(), id)
+	items, err := h.service.GetOrderItems(r.Context(), id, orgID)
 	if err != nil {
 		zap.L().Error("GetOrderItems failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "internal server error")

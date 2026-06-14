@@ -13,12 +13,12 @@ import (
 
 type ProductService interface {
 	Create(ctx context.Context, product *domain.Product, ipAddress string) error
-	GetByID(ctx context.Context, id uuid.UUID) (*domain.Product, error)
-	GetBySKU(ctx context.Context, sku string) (*domain.Product, error)
+	GetByID(ctx context.Context, id uuid.UUID, orgID uuid.UUID) (*domain.Product, error)
+	GetBySKU(ctx context.Context, sku string, orgID uuid.UUID) (*domain.Product, error)
 	Update(ctx context.Context, product *domain.Product) error
-	Delete(ctx context.Context, id uuid.UUID, ipAddress string) error
-	List(ctx context.Context) ([]*domain.Product, error)
-	ListByCategory(ctx context.Context, categoryID uuid.UUID) ([]*domain.Product, error)
+	Delete(ctx context.Context, id uuid.UUID, orgID uuid.UUID, ipAddress string) error
+	List(ctx context.Context, orgID uuid.UUID) ([]*domain.Product, error)
+	ListByCategory(ctx context.Context, categoryID uuid.UUID, orgID uuid.UUID) ([]*domain.Product, error)
 }
 
 type productService struct {
@@ -36,7 +36,7 @@ func NewProductService(repo repository.ProductRepository, inventoryRepo reposito
 }
 
 func (s *productService) Create(ctx context.Context, product *domain.Product, ipAddress string) error {
-	existing, err := s.repo.GetBySKU(ctx, product.SKU)
+	existing, err := s.repo.GetBySKU(ctx, product.SKU, product.OrgID)
 	if err == nil && existing != nil {
 		return domain.ErrConflict
 	}
@@ -55,6 +55,7 @@ func (s *productService) Create(ctx context.Context, product *domain.Product, ip
 
 	inv := &domain.Inventory{
 		ID:                uuid.New(),
+		OrgID:             product.OrgID,
 		ProductID:         product.ID,
 		Quantity:          0,
 		LowStockThreshold: 10,
@@ -66,6 +67,7 @@ func (s *productService) Create(ctx context.Context, product *domain.Product, ip
 
 	audit := &domain.AuditLog{
 		ID:        uuid.New(),
+		OrgID:     product.OrgID,
 		UserID:    nil,
 		Action:    "product.created",
 		Entity:    "products",
@@ -80,12 +82,12 @@ func (s *productService) Create(ctx context.Context, product *domain.Product, ip
 	return nil
 }
 
-func (s *productService) GetByID(ctx context.Context, id uuid.UUID) (*domain.Product, error) {
-	return s.repo.GetByID(ctx, id)
+func (s *productService) GetByID(ctx context.Context, id uuid.UUID, orgID uuid.UUID) (*domain.Product, error) {
+	return s.repo.GetByID(ctx, id, orgID)
 }
 
-func (s *productService) GetBySKU(ctx context.Context, sku string) (*domain.Product, error) {
-	return s.repo.GetBySKU(ctx, sku)
+func (s *productService) GetBySKU(ctx context.Context, sku string, orgID uuid.UUID) (*domain.Product, error) {
+	return s.repo.GetBySKU(ctx, sku, orgID)
 }
 
 func (s *productService) Update(ctx context.Context, product *domain.Product) error {
@@ -93,13 +95,14 @@ func (s *productService) Update(ctx context.Context, product *domain.Product) er
 	return s.repo.Update(ctx, product)
 }
 
-func (s *productService) Delete(ctx context.Context, id uuid.UUID, ipAddress string) error {
-	if err := s.repo.Delete(ctx, id); err != nil {
+func (s *productService) Delete(ctx context.Context, id uuid.UUID, orgID uuid.UUID, ipAddress string) error {
+	if err := s.repo.Delete(ctx, id, orgID); err != nil {
 		return err
 	}
 
 	audit := &domain.AuditLog{
 		ID:        uuid.New(),
+		OrgID:     orgID,
 		UserID:    nil,
 		Action:    "product.deleted",
 		Entity:    "products",
@@ -114,10 +117,10 @@ func (s *productService) Delete(ctx context.Context, id uuid.UUID, ipAddress str
 	return nil
 }
 
-func (s *productService) List(ctx context.Context) ([]*domain.Product, error) {
-	return s.repo.List(ctx)
+func (s *productService) List(ctx context.Context, orgID uuid.UUID) ([]*domain.Product, error) {
+	return s.repo.List(ctx, orgID)
 }
 
-func (s *productService) ListByCategory(ctx context.Context, categoryID uuid.UUID) ([]*domain.Product, error) {
-	return s.repo.ListByCategory(ctx, categoryID)
+func (s *productService) ListByCategory(ctx context.Context, categoryID uuid.UUID, orgID uuid.UUID) ([]*domain.Product, error) {
+	return s.repo.ListByCategory(ctx, categoryID, orgID)
 }

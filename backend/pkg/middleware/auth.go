@@ -6,17 +6,20 @@ import (
 	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 )
 
 type contextKey string
 
 const (
 	ContextKeyUserID contextKey = "userID"
+	ContextKeyOrgID  contextKey = "orgID"
 	ContextKeyRole   contextKey = "role"
 )
 
 type Claims struct {
 	UserID string `json:"user_id"`
+	OrgID  string `json:"org_id"`
 	Role   string `json:"role"`
 	jwt.RegisteredClaims
 }
@@ -60,6 +63,7 @@ func Auth(jwtSecret string) func(http.Handler) http.Handler {
 			}
 
 			ctx := context.WithValue(r.Context(), ContextKeyUserID, claims.UserID)
+			ctx = context.WithValue(ctx, ContextKeyOrgID, claims.OrgID)
 			ctx = context.WithValue(ctx, ContextKeyRole, claims.Role)
 
 			next.ServeHTTP(w, r.WithContext(ctx))
@@ -70,6 +74,18 @@ func Auth(jwtSecret string) func(http.Handler) http.Handler {
 func GetUserIDFromContext(ctx context.Context) (string, bool) {
 	userID, ok := ctx.Value(ContextKeyUserID).(string)
 	return userID, ok
+}
+
+func GetOrgIDFromContext(ctx context.Context) (uuid.UUID, bool) {
+	orgIDStr, ok := ctx.Value(ContextKeyOrgID).(string)
+	if !ok || orgIDStr == "" {
+		return uuid.Nil, false
+	}
+	orgID, err := uuid.Parse(orgIDStr)
+	if err != nil {
+		return uuid.Nil, false
+	}
+	return orgID, true
 }
 
 func GetRoleFromContext(ctx context.Context) (string, bool) {

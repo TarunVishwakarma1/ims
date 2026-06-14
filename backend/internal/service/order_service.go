@@ -12,13 +12,13 @@ import (
 
 type OrderService interface {
 	Create(ctx context.Context, order *domain.Order, items []*domain.OrderItem, ipAddress string) error
-	GetByID(ctx context.Context, id uuid.UUID) (*domain.Order, error)
+	GetByID(ctx context.Context, id uuid.UUID, orgID uuid.UUID) (*domain.Order, error)
 	Update(ctx context.Context, order *domain.Order) error
-	Delete(ctx context.Context, id uuid.UUID, ipAddress string) error
-	List(ctx context.Context) ([]*domain.Order, error)
-	UpdateStatus(ctx context.Context, id uuid.UUID, status domain.OrderStatus, ipAddress string) error
-	ListByUser(ctx context.Context, userID uuid.UUID) ([]*domain.Order, error)
-	GetOrderItems(ctx context.Context, orderID uuid.UUID) ([]*domain.OrderItem, error)
+	Delete(ctx context.Context, id uuid.UUID, orgID uuid.UUID, ipAddress string) error
+	List(ctx context.Context, orgID uuid.UUID) ([]*domain.Order, error)
+	UpdateStatus(ctx context.Context, id uuid.UUID, status domain.OrderStatus, orgID uuid.UUID, ipAddress string) error
+	ListByUser(ctx context.Context, userID uuid.UUID, orgID uuid.UUID) ([]*domain.Order, error)
+	GetOrderItems(ctx context.Context, orderID uuid.UUID, orgID uuid.UUID) ([]*domain.OrderItem, error)
 }
 
 type orderService struct {
@@ -52,7 +52,7 @@ func (s *orderService) Create(ctx context.Context, order *domain.Order, items []
 
 	var totalAmount int64
 	for _, item := range items {
-		inv, err := txInventoryRepo.GetByProductID(ctx, item.ProductID)
+		inv, err := txInventoryRepo.GetByProductID(ctx, item.ProductID, order.OrgID)
 		if err != nil {
 			return err
 		}
@@ -78,6 +78,7 @@ func (s *orderService) Create(ctx context.Context, order *domain.Order, items []
 	for _, item := range items {
 		item.ID = uuid.New()
 		item.OrderID = order.ID
+		item.OrgID = order.OrgID
 		if err := txOrderRepo.CreateOrderItem(ctx, item); err != nil {
 			return err
 		}
@@ -89,6 +90,7 @@ func (s *orderService) Create(ctx context.Context, order *domain.Order, items []
 
 	audit := &domain.AuditLog{
 		ID:        uuid.New(),
+		OrgID:     order.OrgID,
 		UserID:    &order.UserID,
 		Action:    "order.created",
 		Entity:    "orders",
@@ -103,8 +105,8 @@ func (s *orderService) Create(ctx context.Context, order *domain.Order, items []
 	return nil
 }
 
-func (s *orderService) GetByID(ctx context.Context, id uuid.UUID) (*domain.Order, error) {
-	return s.repo.GetByID(ctx, id)
+func (s *orderService) GetByID(ctx context.Context, id uuid.UUID, orgID uuid.UUID) (*domain.Order, error) {
+	return s.repo.GetByID(ctx, id, orgID)
 }
 
 func (s *orderService) Update(ctx context.Context, order *domain.Order) error {
@@ -112,13 +114,14 @@ func (s *orderService) Update(ctx context.Context, order *domain.Order) error {
 	return s.repo.Update(ctx, order)
 }
 
-func (s *orderService) Delete(ctx context.Context, id uuid.UUID, ipAddress string) error {
-	if err := s.repo.Delete(ctx, id); err != nil {
+func (s *orderService) Delete(ctx context.Context, id uuid.UUID, orgID uuid.UUID, ipAddress string) error {
+	if err := s.repo.Delete(ctx, id, orgID); err != nil {
 		return err
 	}
 
 	audit := &domain.AuditLog{
 		ID:        uuid.New(),
+		OrgID:     orgID,
 		UserID:    nil,
 		Action:    "order.deleted",
 		Entity:    "orders",
@@ -133,17 +136,18 @@ func (s *orderService) Delete(ctx context.Context, id uuid.UUID, ipAddress strin
 	return nil
 }
 
-func (s *orderService) List(ctx context.Context) ([]*domain.Order, error) {
-	return s.repo.List(ctx)
+func (s *orderService) List(ctx context.Context, orgID uuid.UUID) ([]*domain.Order, error) {
+	return s.repo.List(ctx, orgID)
 }
 
-func (s *orderService) UpdateStatus(ctx context.Context, id uuid.UUID, status domain.OrderStatus, ipAddress string) error {
-	if err := s.repo.UpdateStatus(ctx, id, status); err != nil {
+func (s *orderService) UpdateStatus(ctx context.Context, id uuid.UUID, status domain.OrderStatus, orgID uuid.UUID, ipAddress string) error {
+	if err := s.repo.UpdateStatus(ctx, id, status, orgID); err != nil {
 		return err
 	}
 
 	audit := &domain.AuditLog{
 		ID:        uuid.New(),
+		OrgID:     orgID,
 		UserID:    nil,
 		Action:    "order.status_updated",
 		Entity:    "orders",
@@ -158,10 +162,10 @@ func (s *orderService) UpdateStatus(ctx context.Context, id uuid.UUID, status do
 	return nil
 }
 
-func (s *orderService) ListByUser(ctx context.Context, userID uuid.UUID) ([]*domain.Order, error) {
-	return s.repo.ListByUser(ctx, userID)
+func (s *orderService) ListByUser(ctx context.Context, userID uuid.UUID, orgID uuid.UUID) ([]*domain.Order, error) {
+	return s.repo.ListByUser(ctx, userID, orgID)
 }
 
-func (s *orderService) GetOrderItems(ctx context.Context, orderID uuid.UUID) ([]*domain.OrderItem, error) {
-	return s.repo.GetOrderItems(ctx, orderID)
+func (s *orderService) GetOrderItems(ctx context.Context, orderID uuid.UUID, orgID uuid.UUID) ([]*domain.OrderItem, error) {
+	return s.repo.GetOrderItems(ctx, orderID, orgID)
 }

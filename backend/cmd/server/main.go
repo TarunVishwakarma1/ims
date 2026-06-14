@@ -79,6 +79,7 @@ func main() {
 	defer pool.Close()
 
 	auditLogRepo := repository.NewAuditLogRepository(pool)
+	orgRepo := repository.NewOrganizationRepository(pool)
 	userRepo := repository.NewUserRepository(pool)
 	categoryRepo := repository.NewCategoryRepository(pool)
 	productRepo := repository.NewProductRepository(pool)
@@ -99,7 +100,7 @@ func main() {
 	productService := service.NewProductService(productRepo, inventoryRepo, auditLogRepo)
 	inventoryService := service.NewInventoryService(inventoryRepo, auditLogRepo)
 	orderService := service.NewOrderService(orderRepo, inventoryRepo, auditLogRepo)
-	authService := service.NewAuthService(userRepo, cfg.JWTSecret, cfg.JWTAccessExpiry, cfg.JWTRefreshExpiry)
+	authService := service.NewAuthService(userRepo, orgRepo, auditLogRepo, pool, cfg.JWTSecret, cfg.JWTAccessExpiry, cfg.JWTRefreshExpiry)
 	roleService := service.NewRoleService(roleRepo)
 
 	userH := handler.NewUserHandler(userService)

@@ -16,6 +16,7 @@ const (
 
 type Order struct {
 	ID          uuid.UUID   `json:"id" db:"id"`
+	OrgID       uuid.UUID   `json:"org_id" db:"org_id"`
 	UserID      uuid.UUID   `json:"user_id" db:"user_id" validate:"required"`
 	Status      OrderStatus `json:"status" db:"status" validate:"required,oneof=pending confirmed cancelled"`
 	TotalAmount int64       `json:"total_amount" db:"total_amount"`
@@ -25,6 +26,7 @@ type Order struct {
 
 type OrderItem struct {
 	ID        uuid.UUID `json:"id" db:"id"`
+	OrgID     uuid.UUID `json:"org_id" db:"org_id"`
 	OrderID   uuid.UUID `json:"order_id" db:"order_id" validate:"required"`
 	ProductID uuid.UUID `json:"product_id" db:"product_id" validate:"required"`
 	Quantity  int       `json:"quantity" db:"quantity" validate:"min=1"`

@@ -4,8 +4,19 @@ export type ISODate = string;
 export type Role = "admin" | "manager" | "staff";
 export type OrderStatus = "pending" | "confirmed" | "cancelled";
 
+export interface Organization {
+  id: UUID;
+  name: string;
+  slug: string;
+  plan_type: string;
+  is_active: boolean;
+  created_at: ISODate;
+  updated_at: ISODate;
+}
+
 export interface User {
   id: UUID;
+  org_id: UUID;
   name: string;
   email: string;
   role: Role;
@@ -72,6 +83,7 @@ export interface LoginResponse {
   access_token: string;
   refresh_token: string;
   user: User;
+  organization: Organization;
 }
 
 export interface LoginRequest {
@@ -84,6 +96,14 @@ export interface CreateUserRequest {
   email: string;
   password: string;
   role: Role;
+}
+
+export interface SignupRequest {
+  org_name: string;
+  org_slug: string;
+  user_name: string;
+  email: string;
+  password: string;
 }
 
 export interface UpdateUserRequest {
