@@ -12,6 +12,8 @@ export const PERMISSIONS = {
   ORDERS_VIEW: 'orders:view',
   ORDERS_CREATE: 'orders:create',
   ORDERS_MANAGE: 'orders:manage',
+
+  ROLES_MANAGE: 'roles:manage',
 } as const
 
 export type Permission = typeof PERMISSIONS[keyof typeof PERMISSIONS]

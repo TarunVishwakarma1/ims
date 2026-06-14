@@ -213,8 +213,8 @@ func (h *OrderHandler) ListUserOrders(w http.ResponseWriter, r *http.Request) {
 	role, _ := middleware.GetRoleFromContext(r.Context())
 
 	if requestingUserID != userIDStr &&
-		role != string(domain.Admin) &&
-		role != string(domain.Manager) {
+		role != "admin" &&
+		role != "manager" {
 		writeError(w, http.StatusForbidden, "forbidden")
 		return
 	}

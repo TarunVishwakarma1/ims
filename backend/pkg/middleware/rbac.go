@@ -3,7 +3,6 @@ package middleware
 import (
 	"net/http"
 
-	"github.com/TarunVishwakarma1/ims/backend/internal/domain"
 	"github.com/TarunVishwakarma1/ims/backend/pkg/rbac"
 )
 
@@ -16,8 +15,7 @@ func RequirePermission(perm rbac.Permission) func(http.Handler) http.Handler {
 				return
 			}
 
-			userRole := domain.Role(roleStr)
-			if !rbac.HasPermission(userRole, perm) {
+			if !rbac.Cache.HasPermission(roleStr, perm) {
 				http.Error(w, "Forbidden", http.StatusForbidden)
 				return
 			}

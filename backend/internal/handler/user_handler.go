@@ -30,13 +30,13 @@ type CreateUserRequest struct {
 	Name     string      `json:"name" validate:"required"`
 	Email    string      `json:"email" validate:"required,email"`
 	Password string      `json:"password" validate:"required,min=8"`
-	Role     domain.Role `json:"role" validate:"required,oneof=admin manager staff"`
+	Role     string      `json:"role" validate:"required"`
 }
 
 type UpdateUserRequest struct {
 	Name     string      `json:"name" validate:"required"`
 	Email    string      `json:"email" validate:"required,email"`
-	Role     domain.Role `json:"role" validate:"required,oneof=admin manager staff"`
+	Role     string      `json:"role" validate:"required"`
 	IsActive bool        `json:"is_active"`
 }
 

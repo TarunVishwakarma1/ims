@@ -1,10 +1,6 @@
 package rbac
 
-import (
-	"slices"
 
-	"github.com/TarunVishwakarma1/ims/backend/internal/domain"
-)
 
 type Permission string
 
@@ -26,31 +22,8 @@ const (
 	OrdersView   Permission = "orders:view"
 	OrdersCreate Permission = "orders:create"
 	OrdersManage Permission = "orders:manage"
+
+	RolesManage Permission = "roles:manage"
 )
 
-var RolePermissions = map[domain.Role][]Permission{
-	domain.Admin: {
-		UsersView, UsersCreate, UsersEdit, UsersDelete,
-		ProductsView, ProductsManage,
-		CategoriesView, CategoriesManage,
-		InventoryView, InventoryManage,
-		OrdersView, OrdersCreate, OrdersManage,
-	},
-	domain.Manager: {
-		UsersView, UsersCreate,
-		ProductsView, ProductsManage,
-		CategoriesView, CategoriesManage,
-		InventoryView, InventoryManage,
-		OrdersView, OrdersCreate, OrdersManage,
-	},
-	domain.Staff: {
-		ProductsView,
-		CategoriesView,
-		InventoryView,
-		OrdersView, OrdersCreate,
-	},
-}
 
-func HasPermission(role domain.Role, perm Permission) bool {
-	return slices.Contains(RolePermissions[role], perm)
-}

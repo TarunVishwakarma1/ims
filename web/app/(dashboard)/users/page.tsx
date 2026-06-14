@@ -9,7 +9,6 @@ import { Edit, Loader2, Trash2, Shield, User as UserIcon, Plus } from 'lucide-re
 
 import { usersApi } from '@/lib/api/users'
 import { authApi } from '@/lib/api/auth'
-import { useAuthStore } from '@/lib/stores/auth-store'
 import { usePermission } from '@/hooks/usePermission'
 import { PERMISSIONS } from '@/lib/rbac'
 import type { User, Role } from '@/types/api'
@@ -72,14 +71,6 @@ export default function UsersPage() {
     queryFn: usersApi.list,
     enabled: can(PERMISSIONS.USERS_VIEW),
   })
-
-  if (!can(PERMISSIONS.USERS_VIEW)) {
-    return (
-      <div className="flex h-full items-center justify-center p-8">
-        <p className="text-muted-foreground">You do not have permission to view this page.</p>
-      </div>
-    )
-  }
 
   const users = rawUsers ?? []
 
@@ -152,6 +143,14 @@ export default function UsersPage() {
       case 'staff':
         return <Badge variant="secondary"><UserIcon className="w-3 h-3 mr-1" /> Staff</Badge>
     }
+  }
+
+  if (!can(PERMISSIONS.USERS_VIEW)) {
+    return (
+      <div className="flex h-full items-center justify-center p-8">
+        <p className="text-muted-foreground">You do not have permission to view this page.</p>
+      </div>
+    )
   }
 
   return (

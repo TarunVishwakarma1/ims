@@ -14,9 +14,10 @@ import (
 	"github.com/TarunVishwakarma1/ims/backend/internal/handler"
 	"github.com/TarunVishwakarma1/ims/backend/internal/repository"
 	"github.com/TarunVishwakarma1/ims/backend/internal/service"
-	"github.com/TarunVishwakarma1/ims/backend/pkg/logger"
 	"github.com/TarunVishwakarma1/ims/backend/migrations"
-	
+	"github.com/TarunVishwakarma1/ims/backend/pkg/logger"
+	"github.com/TarunVishwakarma1/ims/backend/pkg/rbac"
+
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/pgx/v5"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
@@ -83,6 +84,15 @@ func main() {
 	productRepo := repository.NewProductRepository(pool)
 	inventoryRepo := repository.NewInventoryRepository(pool)
 	orderRepo := repository.NewOrderRepository(pool)
+	roleRepo := repository.NewRoleRepository(pool)
+
+	// Load permissions cache on startup
+	rolePerms, err := roleRepo.LoadRolePermissions(ctx)
+	if err != nil {
+		zap.L().Fatal("failed to load permissions", zap.Error(err))
+	}
+	rbac.Cache.Load(rolePerms)
+	zap.L().Info("permission cache loaded")
 
 	userService := service.NewUserService(userRepo, auditLogRepo)
 	categoryService := service.NewCategoryService(categoryRepo, auditLogRepo)
@@ -90,6 +100,7 @@ func main() {
 	inventoryService := service.NewInventoryService(inventoryRepo, auditLogRepo)
 	orderService := service.NewOrderService(orderRepo, inventoryRepo, auditLogRepo)
 	authService := service.NewAuthService(userRepo, cfg.JWTSecret, cfg.JWTAccessExpiry, cfg.JWTRefreshExpiry)
+	roleService := service.NewRoleService(roleRepo)
 
 	userH := handler.NewUserHandler(userService)
 	categoryH := handler.NewCategoryHandler(categoryService)
@@ -97,8 +108,9 @@ func main() {
 	inventoryH := handler.NewInventoryHandler(inventoryService)
 	orderH := handler.NewOrderHandler(orderService, productService)
 	authH := handler.NewAuthHandler(authService)
+	roleH := handler.NewRoleHandler(roleService)
 
-	router := NewRouter(authH, userH, categoryH, productH, inventoryH, orderH, cfg, pool)
+	router := NewRouter(authH, userH, categoryH, productH, inventoryH, orderH, roleH, cfg, pool)
 
 	server := &http.Server{
 		Addr:         ":" + cfg.Port,

@@ -19,6 +19,7 @@ func NewRouter(
 	productH *handler.ProductHandler,
 	inventoryH *handler.InventoryHandler,
 	orderH *handler.OrderHandler,
+	roleH *handler.RoleHandler,
 	cfg *config.Config,
 	pool *pgxpool.Pool,
 ) http.Handler {
@@ -78,6 +79,12 @@ func NewRouter(
 		r.With(middleware.RequirePermission(rbac.OrdersManage)).Delete("/api/orders/{id}", orderH.DeleteOrder)
 		r.Get("/api/orders/{id}/items", orderH.GetOrderItems)
 		r.Get("/api/users/{user_id}/orders", orderH.ListUserOrders)
+		// Roles & Permissions
+		r.With(middleware.RequirePermission(rbac.RolesManage)).Get("/api/roles", roleH.ListRoles)
+		r.With(middleware.RequirePermission(rbac.RolesManage)).Post("/api/roles", roleH.CreateRole)
+		r.With(middleware.RequirePermission(rbac.RolesManage)).Get("/api/permissions", roleH.ListPermissions)
+		r.With(middleware.RequirePermission(rbac.RolesManage)).Put("/api/roles/{id}/permissions", roleH.UpdateRolePermissions)
+		r.With(middleware.RequirePermission(rbac.RolesManage)).Post("/api/roles/reload", roleH.ReloadPermissions)
 	})
 
 	return r

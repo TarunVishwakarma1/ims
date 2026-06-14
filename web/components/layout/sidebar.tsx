@@ -9,6 +9,7 @@ import {
   Boxes,
   ShoppingCart,
   Users,
+  Shield,
   LogOut
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -29,6 +30,7 @@ export function Sidebar() {
     { href: '/inventory', label: 'Inventory', icon: Boxes,           permission: PERMISSIONS.INVENTORY_VIEW },
     { href: '/orders',    label: 'Orders',    icon: ShoppingCart,    permission: PERMISSIONS.ORDERS_VIEW },
     { href: '/users',     label: 'Users',     icon: Users,           permission: PERMISSIONS.USERS_VIEW },
+    { href: '/roles',     label: 'Roles',     icon: Shield,          permission: PERMISSIONS.ROLES_MANAGE },
   ].filter(item => item.permission === null || can(item.permission))
 
   return (
