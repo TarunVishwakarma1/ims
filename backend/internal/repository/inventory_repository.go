@@ -106,7 +106,7 @@ func (r *inventoryRepository) List(ctx context.Context) ([]*domain.Inventory, er
 	}
 	defer rows.Close()
 
-	var list []*domain.Inventory
+	list := make([]*domain.Inventory, 0)
 	for rows.Next() {
 		inv := &domain.Inventory{}
 		err := rows.Scan(&inv.ID, &inv.ProductID, &inv.Quantity, &inv.LowStockThreshold, &inv.UpdatedAt)
@@ -136,7 +136,7 @@ func (r *inventoryRepository) ListLowStock(ctx context.Context) ([]*domain.Inven
 	}
 	defer rows.Close()
 
-	var list []*domain.Inventory
+	list := make([]*domain.Inventory, 0)
 	for rows.Next() {
 		inv := &domain.Inventory{}
 		err := rows.Scan(&inv.ID, &inv.ProductID, &inv.Quantity, &inv.LowStockThreshold, &inv.UpdatedAt)

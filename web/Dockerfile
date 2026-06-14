@@ -13,6 +13,7 @@ COPY . .
 
 ENV NEXT_TELEMETRY_DISABLED=1
 
+COPY .env.docker .env.production
 RUN bun run build
 
 FROM node:26-alpine AS runner

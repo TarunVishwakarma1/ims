@@ -106,7 +106,7 @@ func (r *productRepository) List(ctx context.Context) ([]*domain.Product, error)
 	}
 	defer rows.Close()
 
-	var products []*domain.Product
+	products := make([]*domain.Product, 0)
 	for rows.Next() {
 		product := &domain.Product{}
 		err := rows.Scan(&product.ID, &product.CategoryID, &product.Name, &product.Description, &product.SKU, &product.Price, &product.CreatedAt, &product.UpdatedAt)
@@ -136,7 +136,7 @@ func (r *productRepository) ListByCategory(ctx context.Context, categoryID uuid.
 	}
 	defer rows.Close()
 
-	var products []*domain.Product
+	products := make([]*domain.Product, 0)
 	for rows.Next() {
 		product := &domain.Product{}
 		err := rows.Scan(&product.ID, &product.CategoryID, &product.Name, &product.Description, &product.SKU, &product.Price, &product.CreatedAt, &product.UpdatedAt)

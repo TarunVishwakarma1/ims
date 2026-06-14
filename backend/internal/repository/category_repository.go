@@ -87,7 +87,7 @@ func (r *categoryRepository) List(ctx context.Context) ([]*domain.Category, erro
 	}
 	defer rows.Close()
 
-	var categories []*domain.Category
+	categories := make([]*domain.Category, 0)
 	for rows.Next() {
 		category := &domain.Category{}
 		err := rows.Scan(&category.ID, &category.Name, &category.Description, &category.CreatedAt, &category.UpdatedAt)

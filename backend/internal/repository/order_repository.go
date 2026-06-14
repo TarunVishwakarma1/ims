@@ -101,7 +101,7 @@ func (r *orderRepository) List(ctx context.Context) ([]*domain.Order, error) {
 	}
 	defer rows.Close()
 
-	var list []*domain.Order
+	list := make([]*domain.Order, 0)
 	for rows.Next() {
 		order := &domain.Order{}
 		err := rows.Scan(&order.ID, &order.UserID, &order.Status, &order.TotalAmount, &order.CreatedAt, &order.UpdatedAt)
@@ -141,7 +141,7 @@ func (r *orderRepository) ListByUser(ctx context.Context, userID uuid.UUID) ([]*
 	}
 	defer rows.Close()
 
-	var list []*domain.Order
+	list := make([]*domain.Order, 0)
 	for rows.Next() {
 		order := &domain.Order{}
 		err := rows.Scan(&order.ID, &order.UserID, &order.Status, &order.TotalAmount, &order.CreatedAt, &order.UpdatedAt)
@@ -179,7 +179,7 @@ func (r *orderRepository) GetOrderItems(ctx context.Context, orderID uuid.UUID) 
 	}
 	defer rows.Close()
 
-	var list []*domain.OrderItem
+	list := make([]*domain.OrderItem, 0)
 	for rows.Next() {
 		item := &domain.OrderItem{}
 		err := rows.Scan(&item.ID, &item.OrderID, &item.ProductID, &item.Quantity, &item.UnitPrice)
