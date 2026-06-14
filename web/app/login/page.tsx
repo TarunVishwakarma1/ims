@@ -48,7 +48,7 @@ export default function LoginPage() {
       const response = await api.post('auth/login', { json: data }).json<LoginResponse>()
       useAuthStore.getState().login(response)
       router.push('/dashboard')
-    } catch (err: any) {
+    } catch (err) {
       if (err instanceof HTTPError) {
         try {
           const errorData = await err.response.json() as ApiError
@@ -57,7 +57,7 @@ export default function LoginPage() {
           setError('An unexpected error occurred.')
         }
       } else {
-        setError(err.message || 'Network error. Please try again later.')
+        setError(err instanceof Error ? err.message : 'Network error. Please try again later.')
       }
     }
   }
