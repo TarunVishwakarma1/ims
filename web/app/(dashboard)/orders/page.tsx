@@ -16,6 +16,7 @@ import { formatPrice } from '@/lib/utils'
 import { usePermission } from '@/hooks/usePermission'
 import { useAuthStore } from '@/lib/stores/auth-store'
 import { PERMISSIONS } from '@/lib/rbac'
+import { useEventStream } from '@/hooks/useEventStream'
 import type { Order, OrderStatus, OrderItem } from '@/types/api'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -109,7 +110,17 @@ export default function OrdersPage() {
   const router = useRouter()
   const { can } = usePermission()
   const { user } = useAuthStore()
-  
+
+  // Real-time: refetch when any order event fires, toast new orders.
+  useEventStream(['order'], (evt) => {
+    queryClient.invalidateQueries({ queryKey: ['orders'] })
+    if (evt.type === 'order.created') {
+      toast.success('New order received')
+    } else if (evt.type === 'order.status_changed') {
+      toast.info('Order status updated')
+    }
+  })
+
   const [isStatusDialogOpen, setIsStatusDialogOpen] = useState(false)
   const [isItemsDialogOpen, setIsItemsDialogOpen] = useState(false)
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)

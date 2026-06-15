@@ -8,6 +8,7 @@ import (
 	"github.com/TarunVishwakarma1/ims/backend/internal/domain"
 	"github.com/TarunVishwakarma1/ims/backend/internal/repository"
 	"github.com/TarunVishwakarma1/ims/backend/pkg/cache"
+	"github.com/TarunVishwakarma1/ims/backend/pkg/events"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
@@ -26,13 +27,32 @@ type inventoryService struct {
 	repo         repository.InventoryRepository
 	auditLogRepo repository.AuditLogRepository
 	cache        cache.Cache
+	bus          events.Bus
 }
 
-func NewInventoryService(repo repository.InventoryRepository, auditLogRepo repository.AuditLogRepository, c cache.Cache) InventoryService {
+func NewInventoryService(repo repository.InventoryRepository, auditLogRepo repository.AuditLogRepository, c cache.Cache, bus events.Bus) InventoryService {
 	return &inventoryService{
 		repo:         repo,
 		auditLogRepo: auditLogRepo,
 		cache:        c,
+		bus:          bus,
+	}
+}
+
+func (s *inventoryService) emit(ctx context.Context, inv *domain.Inventory) {
+	_ = s.bus.Publish(ctx, events.NewEvent(events.TopicInventoryUpdated, inv.OrgID.String(), "", map[string]any{
+		"id":                  inv.ID,
+		"product_id":          inv.ProductID,
+		"quantity":            inv.Quantity,
+		"low_stock_threshold": inv.LowStockThreshold,
+	}))
+	// Low-stock alert if we just crossed the threshold
+	if inv.Quantity <= inv.LowStockThreshold {
+		_ = s.bus.Publish(ctx, events.NewEvent(events.TopicLowStockAlert, inv.OrgID.String(), "", map[string]any{
+			"product_id": inv.ProductID,
+			"quantity":   inv.Quantity,
+			"threshold":  inv.LowStockThreshold,
+		}))
 	}
 }
 
@@ -72,6 +92,7 @@ func (s *inventoryService) Create(ctx context.Context, inventory *domain.Invento
 	}
 
 	s.invalidate(ctx)
+	s.emit(ctx, inventory)
 	return nil
 }
 
@@ -89,6 +110,7 @@ func (s *inventoryService) Update(ctx context.Context, inventory *domain.Invento
 		return err
 	}
 	s.invalidate(ctx)
+	s.emit(ctx, inventory)
 	return nil
 }
 

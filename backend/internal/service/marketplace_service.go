@@ -9,6 +9,7 @@ import (
 	"github.com/TarunVishwakarma1/ims/backend/internal/domain"
 	"github.com/TarunVishwakarma1/ims/backend/internal/repository"
 	"github.com/TarunVishwakarma1/ims/backend/pkg/cache"
+	"github.com/TarunVishwakarma1/ims/backend/pkg/events"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -39,6 +40,7 @@ type marketplaceService struct {
 	productRepo  repository.ProductRepository
 	locationRepo repository.LocationRepository
 	cache        cache.Cache
+	bus          events.Bus
 	pool         *pgxpool.Pool
 }
 
@@ -49,6 +51,7 @@ func NewMarketplaceService(
 	productRepo repository.ProductRepository,
 	locationRepo repository.LocationRepository,
 	c cache.Cache,
+	bus events.Bus,
 	pool *pgxpool.Pool,
 ) MarketplaceService {
 	return &marketplaceService{
@@ -58,6 +61,7 @@ func NewMarketplaceService(
 		productRepo:  productRepo,
 		locationRepo: locationRepo,
 		cache:        c,
+		bus:          bus,
 		pool:         pool,
 	}
 }
@@ -109,6 +113,11 @@ func (s *marketplaceService) CreateListing(ctx context.Context, listing *domain.
 		return err
 	}
 	s.invalidate(ctx, orgID)
+	_ = s.bus.Publish(ctx, events.NewEvent(events.TopicListingCreated, orgID.String(), "", map[string]any{
+		"id":            listing.ID,
+		"product_id":    listing.ProductID,
+		"listing_price": listing.ListingPrice,
+	}))
 	return nil
 }
 
@@ -119,6 +128,9 @@ func (s *marketplaceService) UpdateListing(ctx context.Context, listing *domain.
 		return err
 	}
 	s.invalidate(ctx, orgID)
+	_ = s.bus.Publish(ctx, events.NewEvent(events.TopicListingUpdated, orgID.String(), "", map[string]any{
+		"id": listing.ID,
+	}))
 	return nil
 }
 
@@ -127,6 +139,9 @@ func (s *marketplaceService) DeleteListing(ctx context.Context, id uuid.UUID, or
 		return err
 	}
 	s.invalidate(ctx, orgID)
+	_ = s.bus.Publish(ctx, events.NewEvent(events.TopicListingDeleted, orgID.String(), "", map[string]any{
+		"id": id,
+	}))
 	return nil
 }
 

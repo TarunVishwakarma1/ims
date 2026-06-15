@@ -260,3 +260,30 @@ export interface CreateLocationRequest {
   lng?: number;
   is_primary?: boolean;
 }
+
+// Payments
+export type PaymentStatus = 'created' | 'authorized' | 'captured' | 'failed' | 'refunded';
+
+export interface Payment {
+  id: UUID;
+  org_id: UUID;
+  order_id: UUID | null;
+  razorpay_order_id: string;
+  razorpay_payment_id?: string | null;
+  amount: number; // paise
+  currency: string;
+  status: PaymentStatus;
+  method?: string | null;
+  failure_reason?: string | null;
+  is_mock: boolean;
+  created_at: ISODate;
+  updated_at: ISODate;
+}
+
+export interface CreatePaymentOrderResponse {
+  payment: Payment;
+  razorpay_order_id: string;
+  amount: number;
+  currency: string;
+  mock: boolean;
+}

@@ -206,7 +206,8 @@ func (r *marketplaceRepository) Search(ctx context.Context, query string, lat, l
 			))`, argCount, argCount+1, argCount)
 		
 		selectClause += fmt.Sprintf(", %s as distance_km", distSql)
-		whereClauses = append(whereClauses, fmt.Sprintf("%s <= $%d", distSql, argCount+2))
+		// Include global listings (no location) when searching by radius
+		whereClauses = append(whereClauses, fmt.Sprintf("(%s <= $%d OR l.id IS NULL)", distSql, argCount+2))
 		
 		args = append(args, *lat, *lng, *radiusKM)
 		argCount += 3

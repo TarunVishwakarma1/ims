@@ -8,6 +8,7 @@ import (
 	"github.com/TarunVishwakarma1/ims/backend/internal/domain"
 	"github.com/TarunVishwakarma1/ims/backend/internal/repository"
 	"github.com/TarunVishwakarma1/ims/backend/pkg/cache"
+	"github.com/TarunVishwakarma1/ims/backend/pkg/events"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
@@ -27,14 +28,16 @@ type productService struct {
 	inventoryRepo repository.InventoryRepository
 	auditLogRepo  repository.AuditLogRepository
 	cache         cache.Cache
+	bus           events.Bus
 }
 
-func NewProductService(repo repository.ProductRepository, inventoryRepo repository.InventoryRepository, auditLogRepo repository.AuditLogRepository, c cache.Cache) ProductService {
+func NewProductService(repo repository.ProductRepository, inventoryRepo repository.InventoryRepository, auditLogRepo repository.AuditLogRepository, c cache.Cache, bus events.Bus) ProductService {
 	return &productService{
 		repo:          repo,
 		inventoryRepo: inventoryRepo,
 		auditLogRepo:  auditLogRepo,
 		cache:         c,
+		bus:           bus,
 	}
 }
 
@@ -88,6 +91,11 @@ func (s *productService) Create(ctx context.Context, product *domain.Product, ip
 	}
 
 	s.invalidate(ctx, product.OrgID)
+	_ = s.bus.Publish(ctx, events.NewEvent(events.TopicProductCreated, product.OrgID.String(), "", map[string]any{
+		"id":   product.ID,
+		"name": product.Name,
+		"sku":  product.SKU,
+	}))
 	return nil
 }
 
@@ -104,6 +112,10 @@ func (s *productService) Update(ctx context.Context, product *domain.Product) er
 	if err := s.repo.Update(ctx, product); err != nil {
 		return err
 	}
+	_ = s.bus.Publish(ctx, events.NewEvent(events.TopicProductUpdated, product.OrgID.String(), "", map[string]any{
+		"id":   product.ID,
+		"name": product.Name,
+	}))
 	s.invalidate(ctx, product.OrgID)
 	return nil
 }
@@ -128,6 +140,9 @@ func (s *productService) Delete(ctx context.Context, id uuid.UUID, orgID uuid.UU
 	}
 
 	s.invalidate(ctx, orgID)
+	_ = s.bus.Publish(ctx, events.NewEvent(events.TopicProductDeleted, orgID.String(), "", map[string]any{
+		"id": id,
+	}))
 	return nil
 }
 

@@ -27,18 +27,28 @@ type Claims struct {
 func Auth(jwtSecret string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			authHeader := r.Header.Get("Authorization")
-			if authHeader == "" {
-				http.Error(w, "Unauthorized: missing authorization header", http.StatusUnauthorized)
-				return
+			tokenStr := ""
+
+			// Preferred: Authorization: Bearer <token>
+			if h := r.Header.Get("Authorization"); h != "" {
+				if len(h) < 7 || strings.ToLower(h[:7]) != "bearer " {
+					http.Error(w, "Unauthorized: invalid authorization header format", http.StatusUnauthorized)
+					return
+				}
+				tokenStr = h[7:]
 			}
 
-			if len(authHeader) < 7 || strings.ToLower(authHeader[:7]) != "bearer " {
-				http.Error(w, "Unauthorized: invalid authorization header format", http.StatusUnauthorized)
-				return
+			// Fallback: cookie (for SSE — EventSource can't set headers)
+			if tokenStr == "" {
+				if c, err := r.Cookie("ims_access_token"); err == nil && c.Value != "" {
+					tokenStr = c.Value
+				}
 			}
 
-			tokenStr := authHeader[7:]
+			if tokenStr == "" {
+				http.Error(w, "Unauthorized: missing authorization", http.StatusUnauthorized)
+				return
+			}
 			claims := &Claims{}
 			token, err := jwt.ParseWithClaims(tokenStr, claims, func(token *jwt.Token) (interface{}, error) {
 				if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {

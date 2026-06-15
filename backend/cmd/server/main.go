@@ -17,6 +17,8 @@ import (
 	"github.com/TarunVishwakarma1/ims/backend/migrations"
 	"github.com/TarunVishwakarma1/ims/backend/pkg/logger"
 	"github.com/TarunVishwakarma1/ims/backend/pkg/cache"
+	"github.com/TarunVishwakarma1/ims/backend/pkg/crypto"
+	"github.com/TarunVishwakarma1/ims/backend/pkg/events"
 	"github.com/TarunVishwakarma1/ims/backend/pkg/jobs"
 	"github.com/TarunVishwakarma1/ims/backend/pkg/rbac"
 
@@ -101,8 +103,10 @@ func main() {
 
 	authRepo := repository.NewAuthRepository(pool)
 
-	// Valkey cache — falls back to no-op if unavailable
+	// Valkey cache + event bus — both fall back to no-op if unavailable
 	cacheClient := cache.MustNew(cfg.ValkeyURL)
+	eventBus := events.MustNew(cfg.ValkeyURL)
+	defer eventBus.Close()
 
 	// Start background jobs
 	jobs.StartReservationExpiry(ctx, marketRepo, 1*time.Minute)
@@ -110,13 +114,27 @@ func main() {
 
 	userService := service.NewUserService(userRepo, auditLogRepo)
 	categoryService := service.NewCategoryService(categoryRepo, auditLogRepo, cacheClient)
-	productService := service.NewProductService(productRepo, inventoryRepo, auditLogRepo, cacheClient)
-	inventoryService := service.NewInventoryService(inventoryRepo, auditLogRepo, cacheClient)
-	orderService := service.NewOrderService(orderRepo, inventoryRepo, auditLogRepo)
+	productService := service.NewProductService(productRepo, inventoryRepo, auditLogRepo, cacheClient, eventBus)
+	inventoryService := service.NewInventoryService(inventoryRepo, auditLogRepo, cacheClient, eventBus)
+	orderService := service.NewOrderService(orderRepo, inventoryRepo, auditLogRepo, eventBus)
 	authService := service.NewAuthService(userRepo, orgRepo, auditLogRepo, authRepo, pool, cfg.JWTSecret, cfg.JWTAccessExpiry, cfg.JWTRefreshExpiry)
 	roleService := service.NewRoleService(roleRepo)
 	locationService := service.NewLocationService(locationRepo, cacheClient)
-	marketService := service.NewMarketplaceService(marketRepo, inventoryRepo, orderRepo, productRepo, locationRepo, cacheClient, pool)
+	marketService := service.NewMarketplaceService(marketRepo, inventoryRepo, orderRepo, productRepo, locationRepo, cacheClient, eventBus, pool)
+
+	// Encryption for payment payloads / webhook bodies (PII protection).
+	encryptor, err := crypto.New(cfg.PayloadEncryptionKey)
+	if err != nil {
+		zap.L().Fatal("failed to init encryptor", zap.Error(err))
+	}
+	if encryptor.Enabled() {
+		zap.L().Info("payload encryption enabled (AES-256-GCM)")
+	}
+
+	paymentRepo := repository.NewPaymentRepository(pool, encryptor)
+	webhookRepo := repository.NewWebhookRepository(pool, encryptor)
+	paymentService := service.NewPaymentService(paymentRepo, webhookRepo, orderRepo, eventBus,
+		cfg.RazorpayKeyID, cfg.RazorpayKeySecret, cfg.RazorpayWebhookSecret, cfg.RazorpayWebhookSecretPrev, cfg.RazorpayMockMode)
 
 	userH := handler.NewUserHandler(userService)
 	categoryH := handler.NewCategoryHandler(categoryService)
@@ -127,8 +145,11 @@ func main() {
 	roleH := handler.NewRoleHandler(roleService)
 	locationH := handler.NewLocationHandler(locationService)
 	marketH := handler.NewMarketplaceHandler(marketService)
+	paymentH := handler.NewPaymentHandler(paymentService, cfg.RazorpayMockMode, cfg.RazorpayKeyID)
+	webhookH := handler.NewWebhookHandler(paymentService)
+	eventsH := handler.NewEventsHandler(eventBus)
 
-	router := NewRouter(authH, userH, categoryH, productH, inventoryH, orderH, roleH, locationH, marketH, cfg, pool, cacheClient)
+	router := NewRouter(authH, userH, categoryH, productH, inventoryH, orderH, roleH, locationH, marketH, eventsH, paymentH, webhookH, cfg, pool, cacheClient)
 
 	server := &http.Server{
 		Addr:         ":" + cfg.Port,

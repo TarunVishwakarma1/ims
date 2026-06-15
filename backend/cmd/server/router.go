@@ -6,6 +6,7 @@ import (
 	"github.com/TarunVishwakarma1/ims/backend/config"
 	"github.com/TarunVishwakarma1/ims/backend/internal/handler"
 	"github.com/TarunVishwakarma1/ims/backend/pkg/cache"
+	"github.com/TarunVishwakarma1/ims/backend/pkg/metrics"
 	"github.com/TarunVishwakarma1/ims/backend/pkg/middleware"
 	"github.com/TarunVishwakarma1/ims/backend/pkg/rbac"
 	"github.com/go-chi/chi/v5"
@@ -23,6 +24,9 @@ func NewRouter(
 	roleH *handler.RoleHandler,
 	locationH *handler.LocationHandler,
 	marketH *handler.MarketplaceHandler,
+	eventsH *handler.EventsHandler,
+	paymentH *handler.PaymentHandler,
+	webhookH *handler.WebhookHandler,
 	cfg *config.Config,
 	pool *pgxpool.Pool,
 	cacheClient cache.Cache,
@@ -35,11 +39,17 @@ func NewRouter(
 	r.Use(chiMiddleware.Logger)
 	r.Use(chiMiddleware.Recoverer)
 	r.Use(middleware.SecurityHeaders())
+	r.Use(metrics.HTTPMiddleware) // record request count + latency
 	r.Use(middleware.RateLimiter())
 	r.Use(middleware.CORS(cfg.AllowedOrigins))
 
 	// Public routes (no auth)
 	r.Get("/health", handler.HealthCheck(pool, cacheClient))
+
+	// Prometheus metrics — optional bearer-token auth
+	if cfg.MetricsEnabled {
+		r.Handle("/metrics", metrics.Handler(cfg.MetricsToken))
+	}
 
 	// Auth routes — stricter rate limit (anti brute-force)
 	r.Group(func(r chi.Router) {
@@ -53,9 +63,26 @@ func NewRouter(
 	// Marketplace Search (Public)
 	r.Get("/api/marketplace/search", marketH.Search)
 
+	// Webhook receivers (public — HMAC-verified)
+	r.Post("/api/webhooks/razorpay", webhookH.RazorpayWebhook)
+
 	// Protected routes
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.Auth(cfg.JWTSecret))
+
+		// Real-time event stream (SSE)
+		r.Get("/api/events", eventsH.Stream)
+
+		// Payments
+		r.Get("/api/payments/config", paymentH.Config)
+		r.Post("/api/payments/orders", paymentH.CreateOrder)
+		r.Get("/api/payments", paymentH.ListPayments)
+		r.Get("/api/payments/{id}", paymentH.GetPayment)
+		// Mock-only endpoints — service rejects when mockMode = false
+		r.Post("/api/payments/mock/capture", paymentH.MockCapture)
+		r.Post("/api/payments/mock/fail", paymentH.MockFail)
+		// DLQ inspection (admin)
+		r.With(middleware.RequirePermission(rbac.UsersDelete)).Get("/api/payments/webhooks/dlq", paymentH.ListDLQ)
 
 		// Email verification (authenticated user only)
 		r.Post("/api/auth/verify-email", authH.VerifyEmail)

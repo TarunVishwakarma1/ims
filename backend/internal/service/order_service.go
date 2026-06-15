@@ -6,6 +6,7 @@ import (
 
 	"github.com/TarunVishwakarma1/ims/backend/internal/domain"
 	"github.com/TarunVishwakarma1/ims/backend/internal/repository"
+	"github.com/TarunVishwakarma1/ims/backend/pkg/events"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
@@ -25,13 +26,15 @@ type orderService struct {
 	repo          repository.OrderRepository
 	inventoryRepo repository.InventoryRepository
 	auditLogRepo  repository.AuditLogRepository
+	bus           events.Bus
 }
 
-func NewOrderService(repo repository.OrderRepository, inventoryRepo repository.InventoryRepository, auditLogRepo repository.AuditLogRepository) OrderService {
+func NewOrderService(repo repository.OrderRepository, inventoryRepo repository.InventoryRepository, auditLogRepo repository.AuditLogRepository, bus events.Bus) OrderService {
 	return &orderService{
 		repo:          repo,
 		inventoryRepo: inventoryRepo,
 		auditLogRepo:  auditLogRepo,
+		bus:           bus,
 	}
 }
 
@@ -102,6 +105,11 @@ func (s *orderService) Create(ctx context.Context, order *domain.Order, items []
 		zap.L().Error("audit log failed", zap.Error(err))
 	}
 
+	_ = s.bus.Publish(ctx, events.NewEvent(events.TopicOrderCreated, order.OrgID.String(), order.UserID.String(), map[string]any{
+		"id":           order.ID,
+		"status":       order.Status,
+		"total_amount": order.TotalAmount,
+	}))
 	return nil
 }
 
@@ -186,6 +194,10 @@ func (s *orderService) UpdateStatus(ctx context.Context, id uuid.UUID, status do
 		zap.L().Error("audit log failed", zap.Error(err))
 	}
 
+	_ = s.bus.Publish(ctx, events.NewEvent(events.TopicOrderStatusChanged, orgID.String(), "", map[string]any{
+		"id":     id,
+		"status": status,
+	}))
 	return nil
 }
 

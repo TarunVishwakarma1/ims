@@ -12,6 +12,8 @@ import { inventoryApi } from '@/lib/api/inventory'
 import { productsApi } from '@/lib/api/products'
 import { usePermission } from '@/hooks/usePermission'
 import { PERMISSIONS } from '@/lib/rbac'
+import { useEventStream } from '@/hooks/useEventStream'
+import { toast } from 'sonner'
 import type { Inventory, Product } from '@/types/api'
 
 import { Button } from '@/components/ui/button'
@@ -50,7 +52,18 @@ type InventoryCreateFormValues = z.infer<typeof inventoryCreateSchema>
 export default function InventoryPage() {
   const queryClient = useQueryClient()
   const { can } = usePermission()
-  
+
+  // Live updates: invalidate the inventory query whenever the backend
+  // emits an inventory.updated event. Also surface low-stock alerts via toast.
+  useEventStream(['inventory'], (evt) => {
+    if (evt.type === 'inventory.updated') {
+      queryClient.invalidateQueries({ queryKey: ['inventory'] })
+    } else if (evt.type === 'inventory.low_stock') {
+      const data = evt.data as { quantity?: number; threshold?: number } | undefined
+      toast.warning(`Low stock alert: ${data?.quantity ?? 0} units left`)
+    }
+  })
+
   const [isUpdateDialogOpen, setIsUpdateDialogOpen] = useState(false)
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [selectedItem, setSelectedItem] = useState<Inventory | null>(null)

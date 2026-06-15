@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Trash2, Loader2, Minus, Plus, ShoppingBag } from 'lucide-react'
 import { toast } from 'sonner'
@@ -7,7 +8,11 @@ import { useRouter } from 'next/navigation'
 import { HTTPError } from 'ky'
 
 import { marketplaceApi } from '@/lib/api/marketplace'
+import { paymentsApi } from '@/lib/api/payments'
 import { formatPrice } from '@/lib/utils'
+import { MockCheckoutDialog } from '@/components/payments/mock-checkout-dialog'
+import { openRealCheckout, useRazorpayPreload } from '@/components/payments/real-checkout'
+import { useAuthStore } from '@/lib/stores/auth-store'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -23,6 +28,17 @@ import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/componen
 export default function CartPage() {
   const queryClient = useQueryClient()
   const router = useRouter()
+  const { user } = useAuthStore()
+
+  // Fetch payment config once — decides mock vs real RazorPay path
+  const { data: payConfig } = useQuery({
+    queryKey: ['payment-config'],
+    queryFn: paymentsApi.getConfig,
+    staleTime: 60 * 60 * 1000, // 1h — config rarely changes
+  })
+
+  // Preload real RazorPay script when we'll need it
+  useRazorpayPreload(payConfig?.mock === false)
 
   const { data: cart, isLoading } = useQuery({
     queryKey: ['cart'],
@@ -54,13 +70,70 @@ export default function CartPage() {
     },
   })
 
+  const [paymentDialog, setPaymentDialog] = useState<{
+    open: boolean
+    razorpayOrderID: string
+    amount: number
+    orderIDs: string[]
+  }>({ open: false, razorpayOrderID: '', amount: 0, orderIDs: [] })
+
   const checkoutMutation = useMutation({
-    mutationFn: () => marketplaceApi.checkout(),
-    onSuccess: (orders) => {
+    mutationFn: async () => {
+      const orders = await marketplaceApi.checkout()
+      if (!orders || orders.length === 0) {
+        throw new Error('No orders created')
+      }
+
+      // Sum up the total across all created orders
+      const totalAmount = orders.reduce((sum, o) => sum + (o.total_amount || 0), 0)
+
+      // Create one payment record for the combined total, link to the first order.
+      // (Real flow: one payment per order; mock keeps it simple.)
+      const paymentOrder = await paymentsApi.createOrder({
+        order_id: orders[0].id,
+        amount: totalAmount,
+      })
+
+      return {
+        orders,
+        razorpayOrderID: paymentOrder.razorpay_order_id,
+        amount: paymentOrder.amount,
+      }
+    },
+    onSuccess: ({ orders, razorpayOrderID, amount }) => {
       queryClient.invalidateQueries({ queryKey: ['cart'] })
       queryClient.invalidateQueries({ queryKey: ['orders'] })
-      toast.success(`Checkout successful! Created ${orders.length} orders.`)
-      router.push('/orders')
+
+      const orderIDs = orders.map((o) => o.id)
+
+      // Real RazorPay: open the official checkout.js widget
+      if (payConfig && !payConfig.mock && payConfig.key_id) {
+        openRealCheckout({
+          keyID: payConfig.key_id,
+          razorpayOrderID,
+          amount,
+          prefill: { name: user?.name, email: user?.email },
+          notes: { internal_order_ids: orderIDs.join(',') },
+          onSuccess: () => {
+            // Webhook will confirm — show progress, redirect to orders
+            toast.success('Payment submitted. Awaiting confirmation...')
+            router.push('/orders')
+          },
+          onDismiss: () => {
+            toast.info('Checkout closed. Orders remain pending.')
+            router.push('/orders')
+          },
+        })
+        return
+      }
+
+      // Mock mode: show our fake checkout dialog
+      setPaymentDialog({
+        open: true,
+        razorpayOrderID,
+        amount,
+        orderIDs,
+      })
     },
     onError: async (err: Error) => {
       if (err instanceof HTTPError) {
@@ -69,7 +142,7 @@ export default function CartPage() {
       } else {
         toast.error(err.message || 'Checkout failed')
       }
-    }
+    },
   })
 
   const items = cart?.items || []
@@ -227,6 +300,21 @@ export default function CartPage() {
           </Card>
         </div>
       </div>
+
+      <MockCheckoutDialog
+        open={paymentDialog.open}
+        onOpenChange={(next) => setPaymentDialog((s) => ({ ...s, open: next }))}
+        razorpayOrderID={paymentDialog.razorpayOrderID}
+        amount={paymentDialog.amount}
+        onSuccess={() => {
+          toast.success(`Payment captured! ${paymentDialog.orderIDs.length} order(s) confirmed.`)
+          router.push('/orders')
+        }}
+        onFailure={() => {
+          toast.info('Orders remain pending. You can retry payment from your orders list.')
+          router.push('/orders')
+        }}
+      />
     </div>
   )
 }
