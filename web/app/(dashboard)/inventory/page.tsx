@@ -14,7 +14,7 @@ import { usePermission } from '@/hooks/usePermission'
 import { PERMISSIONS } from '@/lib/rbac'
 import { useEventStream } from '@/hooks/useEventStream'
 import { toast } from 'sonner'
-import type { Inventory, Product } from '@/types/api'
+import type { Inventory } from '@/types/api'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'

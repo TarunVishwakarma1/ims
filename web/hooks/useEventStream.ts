@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useLayoutEffect } from 'react'
 
 export type ServerEvent = {
   id: string
@@ -26,7 +26,9 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '') ?? ''
  */
 export function useEventStream(topics: string[], onEvent: Handler, enabled = true) {
   const handlerRef = useRef(onEvent)
-  handlerRef.current = onEvent
+  useLayoutEffect(() => {
+    handlerRef.current = onEvent
+  }, [onEvent])
 
   useEffect(() => {
     if (!enabled || typeof window === 'undefined') return
@@ -72,8 +74,6 @@ export function useEventStream(topics: string[], onEvent: Handler, enabled = tru
     }
 
     es.onerror = () => {
-      // EventSource auto-reconnects; we just observe.
-      // eslint-disable-next-line no-console
       console.debug('SSE connection error, browser will retry')
     }
 

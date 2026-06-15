@@ -17,7 +17,7 @@ import { usePermission } from '@/hooks/usePermission'
 import { useAuthStore } from '@/lib/stores/auth-store'
 import { PERMISSIONS } from '@/lib/rbac'
 import { useEventStream } from '@/hooks/useEventStream'
-import type { Order, OrderStatus, OrderItem } from '@/types/api'
+import type { Order, OrderStatus } from '@/types/api'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import {
@@ -161,6 +161,9 @@ export default function OrdersPage() {
       status: 'pending',
     }
   })
+
+  // eslint-disable-next-line react-hooks/incompatible-library
+  const currentStatus = watch('status')
 
   const onSubmitStatus = (data: OrderStatusFormValues) => {
     if (selectedOrder) {
@@ -317,7 +320,7 @@ export default function OrdersPage() {
               <Button type="button" variant="outline" onClick={() => setIsStatusDialogOpen(false)}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={isSubmitting || updateStatusMutation.isPending || !allowedTransitions.includes(watch('status'))}>
+              <Button type="submit" disabled={isSubmitting || updateStatusMutation.isPending || !allowedTransitions.includes(currentStatus)}>
                 {(isSubmitting || updateStatusMutation.isPending) && (
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                 )}
