@@ -60,8 +60,19 @@ func (h *PaymentHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 
 	payment, err := h.service.CreateOrder(r.Context(), orgID, req.OrderID, req.Amount)
 	if err != nil {
-		zap.L().Error("create payment failed", zap.Error(err))
-		writeError(w, http.StatusInternalServerError, "could not create payment")
+		zap.L().Error("create payment failed",
+			zap.String("org_id", orgID.String()),
+			zap.String("order_id", req.OrderID.String()),
+			zap.Int64("amount", req.Amount),
+			zap.Error(err))
+
+		msg := err.Error()
+		// Client-fixable errors → 400 with message
+		if containsAny(msg, "not found", "amount mismatch", "amount must be", "amount exceeds") {
+			writeError(w, http.StatusBadRequest, msg)
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "could not create payment: "+msg)
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{

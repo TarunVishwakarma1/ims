@@ -53,7 +53,7 @@ func NewRouter(
 
 	// Auth routes — stricter rate limit (anti brute-force)
 	r.Group(func(r chi.Router) {
-		r.Use(middleware.AuthRateLimiter())
+		r.Use(middleware.AuthRateLimiter(cfg.ENV))
 		r.Post("/api/auth/register", authH.Signup)
 		r.Post("/api/auth/login", authH.Login)
 		r.Post("/api/auth/refresh", authH.RefreshToken)

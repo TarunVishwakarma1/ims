@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"regexp"
 	"strings"
 	"time"
 
@@ -28,6 +29,10 @@ const (
 	maxOTPAttempts  = 5
 )
 
+// slugPattern matches DNS-safe org slugs: lowercase letters, digits, hyphens.
+// No leading/trailing/consecutive hyphens.
+var slugPattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
+
 type AuthService interface {
 	Signup(ctx context.Context, req *SignupRequest, ipAddress, userAgent string) (*domain.LoginResponse, error)
 	Login(ctx context.Context, email, password, ipAddress, userAgent string) (*domain.LoginResponse, error)
@@ -39,7 +44,7 @@ type AuthService interface {
 
 type SignupRequest struct {
 	OrgName  string `json:"org_name" validate:"required,min=2,max=255"`
-	OrgSlug  string `json:"org_slug" validate:"required,min=2,max=100,alphanum"`
+	OrgSlug  string `json:"org_slug" validate:"required,min=2,max=100"`
 	UserName string `json:"user_name" validate:"required,min=1,max=255"`
 	Email    string `json:"email" validate:"required,email,max=255"`
 	Password string `json:"password" validate:"required,min=8,max=72"`
@@ -90,6 +95,11 @@ type claims struct {
 func (s *authService) Signup(ctx context.Context, req *SignupRequest, ipAddress, userAgent string) (*domain.LoginResponse, error) {
 	email := strings.ToLower(strings.TrimSpace(req.Email))
 	slug := strings.ToLower(strings.TrimSpace(req.OrgSlug))
+
+	// Slug must be URL-friendly: lowercase letters, digits, and hyphens.
+	if !slugPattern.MatchString(slug) {
+		return nil, errors.New("organization slug must contain only lowercase letters, numbers, and hyphens")
+	}
 
 	// Check breach corpora — fail-closed on confirmed breach, fail-open on network err
 	if err := utils.CheckPwnedPassword(ctx, req.Password); err != nil {

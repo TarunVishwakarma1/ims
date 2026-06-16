@@ -316,84 +316,99 @@ func (s *marketplaceService) Checkout(ctx context.Context, cartID uuid.UUID, del
 
 	var createdOrders []*domain.Order
 
-	// 4. Process each supplier group
+	// 4. Process each supplier group.
+	//    Order: validate stock → create Order (placeholder totals) → loop items
+	//    (inventory decrement + reservation + order_item) → update Order with
+	//    final totals. We MUST create the order before reservations/items
+	//    because both have FKs to orders.id.
 	for supplierID, items := range supplierGroups {
-		var subtotal int64
-		orderID := uuid.New()
-		
-		// Determine order type based on whether buyer is org or customer
-		// Note: Signature takes buyerOrgID directly as uuid.UUID per instructions, assuming B2B for now if orgID is passed.
-		// If expanding to B2C, checkout signature would accept customerID instead of or alongside orgID.
 		orderType := "b2b"
+		now := time.Now()
+		orderID := uuid.New()
 
+		// Pre-flight: validate all stock before mutating anything
 		for _, item := range items {
-			// Check inventory
 			inventory, err := txInvRepo.GetByProductID(ctx, item.Listing.ProductID, supplierID)
 			if err != nil {
-				return nil, fmt.Errorf("failed to get inventory for product %s: %w", item.Listing.ProductID, err)
+				return nil, fmt.Errorf("inventory lookup failed for product %s: %w", item.Listing.ProductID, err)
 			}
-			
 			if inventory.Quantity < item.Quantity {
-				return nil, fmt.Errorf("insufficient stock for product %s", item.Listing.ProductName)
+				return nil, fmt.Errorf("insufficient stock for %s: need %d, have %d",
+					item.Listing.ProductName, item.Quantity, inventory.Quantity)
 			}
+		}
 
-			// Deduct inventory (optimistic update since we're in a transaction)
-			inventory.Quantity -= item.Quantity
-			inventory.UpdatedAt = time.Now()
-			if err := txInvRepo.Update(ctx, inventory); err != nil {
+		// Create the Order row first so reservations + order_items have a parent.
+		order := &domain.Order{
+			ID:                orderID,
+			OrgID:             buyerOrgID,
+			UserID:            userID,
+			Status:            domain.OrderStatusPending,
+			TotalAmount:       0,
+			CreatedAt:         now,
+			UpdatedAt:         now,
+			OrderType:         orderType,
+			BuyerOrgID:        &buyerOrgID,
+			SupplierOrgID:     &supplierID,
+			DeliveryAddressID: deliveryAddressID,
+			Subtotal:          0,
+			PaymentStatus:     "unpaid",
+		}
+		if err := txOrderRepo.Create(ctx, order); err != nil {
+			return nil, fmt.Errorf("create order failed: %w", err)
+		}
+
+		var subtotal int64
+		for _, item := range items {
+			inventory, err := txInvRepo.GetByProductID(ctx, item.Listing.ProductID, supplierID)
+			if err != nil {
 				return nil, err
 			}
 
-			// Create inventory reservation
+			// Decrement stock
+			inventory.Quantity -= item.Quantity
+			inventory.UpdatedAt = now
+			if err := txInvRepo.Update(ctx, inventory); err != nil {
+				return nil, fmt.Errorf("inventory update failed: %w", err)
+			}
+
+			// Reservation now has a real Order to point at.
 			reservation := &domain.InventoryReservation{
 				ID:          uuid.New(),
 				InventoryID: inventory.ID,
 				OrderID:     &orderID,
-				OrgID:       supplierID, // The supplier owns the inventory
+				OrgID:       supplierID,
 				Quantity:    item.Quantity,
-				Status:      "committed", // Committing immediately within transaction
-				ReservedAt:  time.Now(),
-				ExpiresAt:   time.Now().Add(30 * time.Minute),
+				Status:      "committed",
+				ReservedAt:  now,
+				ExpiresAt:   now.Add(30 * time.Minute),
 			}
 			if err := txMarketRepo.CreateReservation(ctx, reservation); err != nil {
-				return nil, err
+				return nil, fmt.Errorf("reservation create failed: %w", err)
 			}
 
-			// Create order item
+			// Order item
 			orderItem := &domain.OrderItem{
 				ID:        uuid.New(),
-				OrgID:     buyerOrgID, // Order items usually belong to the buyer in context, or supplier? Using buyerOrgID for standard view.
+				OrgID:     buyerOrgID,
 				OrderID:   orderID,
 				ProductID: item.Listing.ProductID,
 				Quantity:  item.Quantity,
 				UnitPrice: item.Listing.ListingPrice,
 			}
 			if err := txOrderRepo.CreateOrderItem(ctx, orderItem); err != nil {
-				return nil, err
+				return nil, fmt.Errorf("order item create failed: %w", err)
 			}
 
 			subtotal += item.Listing.ListingPrice * int64(item.Quantity)
 		}
 
-		// Create Order
-		order := &domain.Order{
-			ID:                orderID,
-			OrgID:             buyerOrgID,
-			UserID:            userID,
-			Status:            domain.OrderStatusPending,
-			TotalAmount:       subtotal,
-			CreatedAt:         time.Now(),
-			UpdatedAt:         time.Now(),
-			OrderType:         orderType,
-			BuyerOrgID:        &buyerOrgID,
-			SupplierOrgID:     &supplierID,
-			DeliveryAddressID: deliveryAddressID,
-			Subtotal:          subtotal,
-			PaymentStatus:     "unpaid",
-		}
-		
-		if err := txOrderRepo.Create(ctx, order); err != nil {
-			return nil, err
+		// Update the order with the final totals.
+		order.Subtotal = subtotal
+		order.TotalAmount = subtotal
+		order.UpdatedAt = time.Now()
+		if err := txOrderRepo.Update(ctx, order); err != nil {
+			return nil, fmt.Errorf("order total update failed: %w", err)
 		}
 
 		createdOrders = append(createdOrders, order)

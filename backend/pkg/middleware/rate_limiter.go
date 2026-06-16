@@ -91,9 +91,17 @@ func RateLimiter() func(http.Handler) http.Handler {
 	}
 }
 
-// AuthRateLimiter — 5 req/min, burst 5 (anti brute-force)
-func AuthRateLimiter() func(http.Handler) http.Handler {
-	limiter := newIPRateLimiter(rate.Every(12*time.Second), 5)
+// AuthRateLimiter — per-IP brute-force defense on /api/auth/*.
+// Dev:  20 req/min, burst 20 — loose enough for normal browser flows
+// Prod: 5  req/min, burst 5
+func AuthRateLimiter(env string) func(http.Handler) http.Handler {
+	rps := rate.Every(3 * time.Second)
+	burst := 20
+	if env == "production" {
+		rps = rate.Every(12 * time.Second)
+		burst = 5
+	}
+	limiter := newIPRateLimiter(rps, burst)
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

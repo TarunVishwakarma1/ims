@@ -360,8 +360,9 @@ func (h *MarketplaceHandler) Checkout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
-		"message": "checkout successful",
-		"orders":  orders,
-	})
+	// Return bare array so frontend can iterate directly (.reduce/.map).
+	if orders == nil {
+		orders = []*domain.Order{}
+	}
+	writeJSON(w, http.StatusOK, orders)
 }
