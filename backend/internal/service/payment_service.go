@@ -41,7 +41,9 @@ type PaymentService interface {
 
 	// ProcessWebhook is invoked by the public webhook endpoint. Verifies
 	// signature, deduplicates, validates amount/currency, dispatches.
-	ProcessWebhook(ctx context.Context, rawBody []byte, signature string) error
+	// `eventID` is the provider's event id (RazorPay puts it in the
+	// X-Razorpay-Event-Id header, not the body). Empty if not provided.
+	ProcessWebhook(ctx context.Context, rawBody []byte, signature, eventID string) error
 
 	GetByID(ctx context.Context, id, orgID uuid.UUID) (*domain.Payment, error)
 	List(ctx context.Context, orgID uuid.UUID) ([]*domain.Payment, error)
@@ -261,7 +263,8 @@ func (s *paymentService) MockCapture(ctx context.Context, orgID uuid.UUID, rzpOr
 
 	// Sign it with our webhook secret — same path real RazorPay uses.
 	signature := signHMAC(rawBody, s.webhookSecret)
-	return s.ProcessWebhook(ctx, rawBody, signature)
+	// Mock embeds the event id in body (`payload.id`) — pass empty header id.
+	return s.ProcessWebhook(ctx, rawBody, signature, payload.EventID)
 }
 
 func (s *paymentService) MockFail(ctx context.Context, orgID uuid.UUID, rzpOrderID, reason string) error {
@@ -279,12 +282,12 @@ func (s *paymentService) MockFail(ctx context.Context, orgID uuid.UUID, rzpOrder
 	payload := buildFailedPayload(payment, reason)
 	rawBody, _ := json.Marshal(payload)
 	signature := signHMAC(rawBody, s.webhookSecret)
-	return s.ProcessWebhook(ctx, rawBody, signature)
+	return s.ProcessWebhook(ctx, rawBody, signature, payload.EventID)
 }
 
 // ── ProcessWebhook ───────────────────────────────────────────────────────
 
-func (s *paymentService) ProcessWebhook(ctx context.Context, rawBody []byte, signature string) error {
+func (s *paymentService) ProcessWebhook(ctx context.Context, rawBody []byte, signature, headerEventID string) error {
 	// Body size guard — webhook payloads are small. Reject oversize.
 	if len(rawBody) > 1<<19 { // 512 KB
 		return errors.New("payload too large")
@@ -306,6 +309,12 @@ func (s *paymentService) ProcessWebhook(ctx context.Context, rawBody []byte, sig
 	var envelope rzpEnvelope
 	if err := json.Unmarshal(rawBody, &envelope); err != nil {
 		return fmt.Errorf("malformed webhook payload: %w", err)
+	}
+
+	// RazorPay sends event id in the X-Razorpay-Event-Id header, not the body.
+	// Fall back to body `id` field for mock webhooks we generate ourselves.
+	if envelope.EventID == "" {
+		envelope.EventID = headerEventID
 	}
 	if envelope.Event == "" || envelope.EventID == "" {
 		return errors.New("missing event or event_id")

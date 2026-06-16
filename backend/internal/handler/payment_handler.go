@@ -219,8 +219,11 @@ func (h *WebhookHandler) RazorpayWebhook(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "missing signature", http.StatusBadRequest)
 		return
 	}
+	// RazorPay sends the event id in the X-Razorpay-Event-Id header.
+	// (The payload body has no top-level "id" field.)
+	headerEventID := r.Header.Get("X-Razorpay-Event-Id")
 
-	if err := h.service.ProcessWebhook(r.Context(), body, signature); err != nil {
+	if err := h.service.ProcessWebhook(r.Context(), body, signature, headerEventID); err != nil {
 		msg := err.Error()
 		// Permanent errors — do not retry.
 		if msg == "invalid signature" ||

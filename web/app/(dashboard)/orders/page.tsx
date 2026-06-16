@@ -111,13 +111,19 @@ export default function OrdersPage() {
   const { can } = usePermission()
   const { user } = useAuthStore()
 
-  // Real-time: refetch when any order event fires, toast new orders.
-  useEventStream(['order'], (evt) => {
+  // Real-time: refetch on order events AND payment events (capture, refund).
+  useEventStream(['order', 'payment'], (evt) => {
     queryClient.invalidateQueries({ queryKey: ['orders'] })
     if (evt.type === 'order.created') {
       toast.success('New order received')
     } else if (evt.type === 'order.status_changed') {
       toast.info('Order status updated')
+    } else if (evt.type === 'payment.captured') {
+      toast.success('Payment received')
+    } else if (evt.type === 'payment.failed') {
+      toast.error('Payment failed')
+    } else if (evt.type === 'payment.refunded') {
+      toast.info('Payment refunded')
     }
   })
 
@@ -197,6 +203,16 @@ export default function OrdersPage() {
     }
   }
 
+  const getPaymentBadge = (status: string) => {
+    switch(status) {
+      case 'paid':     return <Badge className="bg-emerald-600 hover:bg-emerald-600 text-white">Paid</Badge>
+      case 'unpaid':   return <Badge variant="outline" className="bg-yellow-100 text-yellow-800 border-yellow-200">Unpaid</Badge>
+      case 'partial':  return <Badge variant="outline" className="bg-orange-100 text-orange-800 border-orange-200">Partial</Badge>
+      case 'refunded': return <Badge variant="outline" className="bg-zinc-100 text-zinc-700 border-zinc-200">Refunded</Badge>
+      default:         return <Badge variant="outline">{status || '—'}</Badge>
+    }
+  }
+
   const allowedTransitions = selectedOrder ? getAllowedStatuses(selectedOrder.status) : []
 
   return (
@@ -222,6 +238,7 @@ export default function OrdersPage() {
               <TableHead>Type</TableHead>
               <TableHead>User</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead>Payment</TableHead>
               <TableHead className="text-right">Total</TableHead>
               <TableHead>Date</TableHead>
               <TableHead className="text-right">Actions</TableHead>
@@ -229,7 +246,7 @@ export default function OrdersPage() {
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableSkeleton columns={7} rows={5} />
+              <TableSkeleton columns={8} rows={5} />
             ) : orders.length > 0 ? (
               orders.map((order) => (
                 <TableRow key={order.id}>
@@ -243,6 +260,7 @@ export default function OrdersPage() {
                     )}
                   </TableCell>
                   <TableCell>{getStatusBadge(order.status)}</TableCell>
+                  <TableCell>{getPaymentBadge(order.payment_status)}</TableCell>
                   <TableCell className="text-right">{formatPrice(order.total_amount)}</TableCell>
                   <TableCell>{new Date(order.created_at).toLocaleDateString()}</TableCell>
                   <TableCell>
@@ -275,7 +293,7 @@ export default function OrdersPage() {
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
+                <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
                   No orders found.
                 </TableCell>
               </TableRow>

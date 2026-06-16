@@ -54,12 +54,26 @@ export interface Inventory {
   updated_at: ISODate;
 }
 
+export type PaymentLifecycleStatus = 'unpaid' | 'paid' | 'refunded' | 'partial';
+
 export interface Order {
   id: UUID;
   user_id: UUID;
   status: OrderStatus;
   total_amount: number;
   order_type: string;
+  payment_status: PaymentLifecycleStatus;
+  payment_id?: string | null;
+  subtotal?: number;
+  delivery_fee?: number;
+  discount?: number;
+  buyer_org_id?: UUID | null;
+  supplier_org_id?: UUID | null;
+  accepted_at?: ISODate | null;
+  shipped_at?: ISODate | null;
+  delivered_at?: ISODate | null;
+  completed_at?: ISODate | null;
+  cancelled_at?: ISODate | null;
   created_at: ISODate;
   updated_at: ISODate;
 }
