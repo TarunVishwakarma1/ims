@@ -27,6 +27,8 @@ func NewRouter(
 	eventsH *handler.EventsHandler,
 	paymentH *handler.PaymentHandler,
 	webhookH *handler.WebhookHandler,
+	partnerH *handler.PartnerHandler,
+	returnH *handler.ReturnHandler,
 	cfg *config.Config,
 	pool *pgxpool.Pool,
 	cacheClient cache.Cache,
@@ -78,11 +80,13 @@ func NewRouter(
 		r.Post("/api/payments/orders", paymentH.CreateOrder)
 		r.Get("/api/payments", paymentH.ListPayments)
 		r.Get("/api/payments/{id}", paymentH.GetPayment)
+		r.With(middleware.RequirePermission(rbac.OrdersManage)).Post("/api/payments/{id}/refund", paymentH.RefundPayment)
 		// Mock-only endpoints — service rejects when mockMode = false
 		r.Post("/api/payments/mock/capture", paymentH.MockCapture)
 		r.Post("/api/payments/mock/fail", paymentH.MockFail)
 		// DLQ inspection (admin)
 		r.With(middleware.RequirePermission(rbac.UsersDelete)).Get("/api/payments/webhooks/dlq", paymentH.ListDLQ)
+		r.With(middleware.RequirePermission(rbac.UsersDelete)).Post("/api/payments/webhooks/dlq/{id}/replay", paymentH.ReplayDLQ)
 
 		// Email verification (authenticated user only)
 		r.Post("/api/auth/verify-email", authH.VerifyEmail)
@@ -115,15 +119,23 @@ func NewRouter(
 		r.Get("/api/inventory", inventoryH.ListInventory)
 		r.Get("/api/inventory/low-stock", inventoryH.ListLowStock)
 		r.Get("/api/inventory/product/{product_id}", inventoryH.GetInventoryByProduct)
+		r.Get("/api/inventory/{id}", inventoryH.GetByID)
+		r.Get("/api/inventory/{id}/timeline", inventoryH.Timeline)
 		r.With(middleware.RequirePermission(rbac.InventoryManage)).Put("/api/inventory/{id}", inventoryH.UpdateInventory)
 
 		// Orders
 		r.Post("/api/orders", orderH.CreateOrder)
 		r.Get("/api/orders", orderH.ListOrders)
+		r.Get("/api/orders/export", orderH.ExportOrders)
 		r.Get("/api/orders/{id}", orderH.GetOrder)
 		r.With(middleware.RequirePermission(rbac.OrdersManage)).Put("/api/orders/{id}/status", orderH.UpdateStatus)
+		r.With(middleware.RequirePermission(rbac.OrdersManage)).Post("/api/orders/bulk-status", orderH.BulkUpdateStatus)
+		r.With(middleware.RequirePermission(rbac.OrdersManage)).Post("/api/orders/{id}/cancel", orderH.CancelOrder)
 		r.With(middleware.RequirePermission(rbac.OrdersManage)).Delete("/api/orders/{id}", orderH.DeleteOrder)
 		r.Get("/api/orders/{id}/items", orderH.GetOrderItems)
+		r.Get("/api/orders/{id}/timeline", orderH.GetOrderTimeline)
+		r.Get("/api/orders/{id}/cancel-preview", orderH.CancelPreview)
+		r.Get("/api/orders/{id}/invoice.pdf", orderH.Invoice)
 		r.Get("/api/users/{user_id}/orders", orderH.ListUserOrders)
 		// Roles & Permissions
 		r.With(middleware.RequirePermission(rbac.RolesManage)).Get("/api/roles", roleH.ListRoles)
@@ -145,6 +157,19 @@ func NewRouter(
 		r.Post("/api/listings", marketH.CreateListing)
 		r.Put("/api/listings/{id}", marketH.UpdateListing)
 		r.Delete("/api/listings/{id}", marketH.DeleteListing)
+
+		// Partners (suppliers / buyers — derived from orders)
+		r.Get("/api/partners", partnerH.List)
+		r.Get("/api/partners/{id}", partnerH.Detail)
+
+		// Returns / RMA
+		r.With(middleware.RequirePermission(rbac.OrdersView)).Get("/api/returns", returnH.ListAll)
+		r.With(middleware.RequirePermission(rbac.OrdersView)).Get("/api/returns/{id}", returnH.GetByID)
+		r.With(middleware.RequirePermission(rbac.OrdersManage)).Post("/api/returns/{id}/approve", returnH.Approve)
+		r.With(middleware.RequirePermission(rbac.OrdersManage)).Post("/api/returns/{id}/reject", returnH.Reject)
+		r.With(middleware.RequirePermission(rbac.OrdersManage)).Post("/api/returns/{id}/received", returnH.MarkReceived)
+		r.With(middleware.RequirePermission(rbac.OrdersCreate)).Post("/api/orders/{id}/returns", returnH.Create)
+		r.With(middleware.RequirePermission(rbac.OrdersView)).Get("/api/orders/{id}/returns", returnH.ListByOrder)
 
 		// Marketplace Cart
 		r.Get("/api/cart", marketH.GetCart)

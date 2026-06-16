@@ -36,6 +36,9 @@ type MarketplaceRepository interface {
 	ReleaseReservation(ctx context.Context, id uuid.UUID) error
 	CommitReservation(ctx context.Context, id uuid.UUID) error
 	ExpireStaleReservations(ctx context.Context) error
+	// ReleaseByOrder marks all of an order's still-committed reservations as
+	// released. Returns the rows so the caller can restore inventory amounts.
+	ReleaseByOrder(ctx context.Context, orderID uuid.UUID) ([]*domain.InventoryReservation, error)
 
 	WithTx(tx pgx.Tx) MarketplaceRepository
 }
@@ -413,4 +416,29 @@ func (r *marketplaceRepository) ExpireStaleReservations(ctx context.Context) err
 	query := `UPDATE inventory_reservations SET status = 'expired' WHERE status = 'active' AND expires_at <= NOW()`
 	_, err := r.db.Exec(ctx, query)
 	return err
+}
+
+func (r *marketplaceRepository) ReleaseByOrder(ctx context.Context, orderID uuid.UUID) ([]*domain.InventoryReservation, error) {
+	// Atomically flip status and return the affected rows so the caller can
+	// add the reserved quantity back to inventory in the same transaction.
+	rows, err := r.db.Query(ctx, `
+		UPDATE inventory_reservations
+		SET status = 'released', released_at = NOW()
+		WHERE order_id = $1 AND status IN ('active', 'committed')
+		RETURNING id, inventory_id, order_id, org_id, quantity, status, reserved_at, expires_at, released_at
+	`, orderID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]*domain.InventoryReservation, 0)
+	for rows.Next() {
+		var r domain.InventoryReservation
+		if err := rows.Scan(&r.ID, &r.InventoryID, &r.OrderID, &r.OrgID, &r.Quantity, &r.Status, &r.ReservedAt, &r.ExpiresAt, &r.ReleasedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, &r)
+	}
+	return out, rows.Err()
 }

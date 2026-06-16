@@ -3,6 +3,8 @@ package repository
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 
 	"github.com/TarunVishwakarma1/ims/backend/internal/domain"
 	"github.com/google/uuid"
@@ -16,6 +18,10 @@ type OrderRepository interface {
 	Update(ctx context.Context, order *domain.Order) error
 	Delete(ctx context.Context, id uuid.UUID, orgID uuid.UUID) error
 	List(ctx context.Context, orgID uuid.UUID) ([]*domain.Order, error)
+	// ListFiltered returns a paginated, filtered view. limit==0 means no
+	// limit (used by export). totalCount returns the count across the
+	// filtered set BEFORE pagination.
+	ListFiltered(ctx context.Context, orgID uuid.UUID, f domain.OrderListFilters) (items []*domain.Order, total int, err error)
 	UpdateStatus(ctx context.Context, id uuid.UUID, status domain.OrderStatus, orgID uuid.UUID) error
 	ListByUser(ctx context.Context, userID uuid.UUID, orgID uuid.UUID) ([]*domain.Order, error)
 	CreateOrderItem(ctx context.Context, item *domain.OrderItem) error
@@ -212,4 +218,80 @@ func (r *orderRepository) GetOrderItems(ctx context.Context, orderID uuid.UUID, 
 	}
 
 	return list, nil
+}
+
+// ListFiltered builds a dynamic WHERE clause from the filter struct and
+// returns the matching orders plus the unpaginated total. Designed to back
+// both UI list and CSV export.
+func (r *orderRepository) ListFiltered(ctx context.Context, orgID uuid.UUID, f domain.OrderListFilters) ([]*domain.Order, int, error) {
+	// Build WHERE incrementally.
+	conds := []string{"org_id = $1"}
+	args := []any{orgID}
+	add := func(sql string, val any) {
+		args = append(args, val)
+		conds = append(conds, fmt.Sprintf(sql, len(args)))
+	}
+	if f.Status != "" {
+		add("status = $%d", f.Status)
+	}
+	if f.PaymentStatus != "" {
+		add("payment_status = $%d", f.PaymentStatus)
+	}
+	if f.OrderType != "" {
+		add("order_type = $%d", f.OrderType)
+	}
+	if f.From != nil {
+		add("created_at >= $%d", *f.From)
+	}
+	if f.To != nil {
+		add("created_at <= $%d", *f.To)
+	}
+	if f.Search != "" {
+		// Search by order id prefix OR user id prefix (cast UUIDs to text).
+		args = append(args, f.Search+"%")
+		conds = append(conds, fmt.Sprintf("(id::text ILIKE $%d OR user_id::text ILIKE $%d)", len(args), len(args)))
+	}
+	where := " WHERE " + strings.Join(conds, " AND ")
+
+	// Count first (cheap with proper indexes — runs on the filtered set).
+	var total int
+	if err := r.db.QueryRow(ctx, `SELECT COUNT(*) FROM orders`+where, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	// Pagination.
+	page := f.Page
+	if page < 1 {
+		page = 1
+	}
+	per := f.PerPage
+	if per <= 0 {
+		per = 25
+	}
+	if per > 200 {
+		per = 200
+	}
+	offset := (page - 1) * per
+
+	q := `SELECT ` + orderCols + ` FROM orders` + where + ` ORDER BY created_at DESC`
+	// Per==0 (used by export path) skips LIMIT/OFFSET so all matches stream.
+	if f.PerPage > 0 || f.Page > 0 {
+		q += fmt.Sprintf(" LIMIT %d OFFSET %d", per, offset)
+	}
+
+	rows, err := r.db.Query(ctx, q, args...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	items := make([]*domain.Order, 0)
+	for rows.Next() {
+		o, err := scanOrder(rows)
+		if err != nil {
+			return nil, 0, err
+		}
+		items = append(items, o)
+	}
+	return items, total, rows.Err()
 }

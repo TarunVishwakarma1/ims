@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/TarunVishwakarma1/ims/backend/internal/repository"
+	"github.com/TarunVishwakarma1/ims/backend/internal/service"
 	"go.uber.org/zap"
 )
 
@@ -74,4 +75,40 @@ func StartRefreshTokenCleanup(ctx context.Context, authRepo repository.AuthRepos
 		}
 	}()
 	zap.L().Info("refresh token cleanup job started", zap.Duration("interval", interval))
+}
+
+// StartPaymentReconciliation runs a daily sweep of captured payments,
+// asking RazorPay for the canonical state and flipping local rows that
+// drifted (e.g. refund webhook lost). Capped at 500 payments per pass so
+// one bad day doesn't lock up the worker. No-op in mock mode.
+func StartPaymentReconciliation(ctx context.Context, paymentService service.PaymentService, interval time.Duration) {
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		// One short pass on startup so dev sees behavior without waiting.
+		runReconciliation(ctx, paymentService)
+
+		for {
+			select {
+			case <-ctx.Done():
+				zap.L().Info("payment reconciliation job stopped")
+				return
+			case <-ticker.C:
+				runReconciliation(ctx, paymentService)
+			}
+		}
+	}()
+	zap.L().Info("payment reconciliation job started", zap.Duration("interval", interval))
+}
+
+func runReconciliation(ctx context.Context, p service.PaymentService) {
+	corrected, err := p.Reconcile(ctx, 500)
+	if err != nil {
+		zap.L().Error("payment reconciliation failed", zap.Error(err))
+		return
+	}
+	if corrected > 0 {
+		zap.L().Info("payment reconciliation corrected drift", zap.Int("corrected", corrected))
+	}
 }

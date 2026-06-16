@@ -20,6 +20,7 @@ import (
 	"github.com/TarunVishwakarma1/ims/backend/pkg/crypto"
 	"github.com/TarunVishwakarma1/ims/backend/pkg/events"
 	"github.com/TarunVishwakarma1/ims/backend/pkg/jobs"
+	"github.com/TarunVishwakarma1/ims/backend/pkg/notify"
 	"github.com/TarunVishwakarma1/ims/backend/pkg/rbac"
 
 	"github.com/golang-migrate/migrate/v4"
@@ -92,6 +93,9 @@ func main() {
 	roleRepo := repository.NewRoleRepository(pool)
 	locationRepo := repository.NewLocationRepository(pool)
 	marketRepo := repository.NewMarketplaceRepository(pool)
+	partnerRepo := repository.NewPartnerRepository(pool)
+	returnRepo := repository.NewReturnRepository(pool)
+	notificationRepo := repository.NewNotificationRepository(pool)
 
 	// Load permissions cache on startup
 	rolePerms, err := roleRepo.LoadRolePermissions(ctx)
@@ -116,11 +120,19 @@ func main() {
 	categoryService := service.NewCategoryService(categoryRepo, auditLogRepo, cacheClient)
 	productService := service.NewProductService(productRepo, inventoryRepo, auditLogRepo, cacheClient, eventBus)
 	inventoryService := service.NewInventoryService(inventoryRepo, auditLogRepo, cacheClient, eventBus)
-	orderService := service.NewOrderService(orderRepo, inventoryRepo, auditLogRepo, eventBus)
+	// Email notifications — log-only fallback if SMTP_HOST not set.
+	emailer := notify.MustNew(cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPUsername, cfg.SMTPPassword, cfg.SMTPFromEmail, cfg.SMTPFromName)
+	notifier := notify.NewNotifier(notificationRepo, userRepo, cfg.WebAppURL)
+	// Drain queued notifications every 10s. Retries with backoff up to
+	// notificationMaxAttempts; failures end up in the DLQ.
+	jobs.StartNotificationWorker(ctx, notificationRepo, emailer, 10*time.Second)
+
+	orderService := service.NewOrderService(orderRepo, inventoryRepo, auditLogRepo, marketRepo, eventBus, cacheClient, notifier)
 	authService := service.NewAuthService(userRepo, orgRepo, auditLogRepo, authRepo, pool, cfg.JWTSecret, cfg.JWTAccessExpiry, cfg.JWTRefreshExpiry)
 	roleService := service.NewRoleService(roleRepo)
 	locationService := service.NewLocationService(locationRepo, cacheClient)
 	marketService := service.NewMarketplaceService(marketRepo, inventoryRepo, orderRepo, productRepo, locationRepo, cacheClient, eventBus, pool)
+	partnerService := service.NewPartnerService(partnerRepo, orgRepo)
 
 	// Encryption for payment payloads / webhook bodies (PII protection).
 	encryptor, err := crypto.New(cfg.PayloadEncryptionKey)
@@ -133,8 +145,16 @@ func main() {
 
 	paymentRepo := repository.NewPaymentRepository(pool, encryptor)
 	webhookRepo := repository.NewWebhookRepository(pool, encryptor)
-	paymentService := service.NewPaymentService(paymentRepo, webhookRepo, orderRepo, eventBus,
+	paymentService := service.NewPaymentService(paymentRepo, webhookRepo, orderRepo, auditLogRepo, eventBus, cacheClient,
 		cfg.RazorpayKeyID, cfg.RazorpayKeySecret, cfg.RazorpayWebhookSecret, cfg.RazorpayWebhookSecretPrev, cfg.RazorpayMockMode)
+
+	// Wire payment → order back-reference so Cancel can auto-refund paid orders.
+	orderService.SetPaymentService(paymentService)
+
+	// Daily payment reconciliation — catches drift from missed RazorPay webhooks.
+	jobs.StartPaymentReconciliation(ctx, paymentService, 24*time.Hour)
+
+	returnService := service.NewReturnService(returnRepo, orderRepo, inventoryRepo, auditLogRepo, paymentService, eventBus, notifier)
 
 	userH := handler.NewUserHandler(userService)
 	categoryH := handler.NewCategoryHandler(categoryService)
@@ -145,6 +165,8 @@ func main() {
 	roleH := handler.NewRoleHandler(roleService)
 	locationH := handler.NewLocationHandler(locationService)
 	marketH := handler.NewMarketplaceHandler(marketService)
+	partnerH := handler.NewPartnerHandler(partnerService)
+	returnH := handler.NewReturnHandler(returnService)
 	mode := "test"
 	switch {
 	case cfg.RazorpayMockMode:
@@ -157,7 +179,7 @@ func main() {
 	webhookH := handler.NewWebhookHandler(paymentService)
 	eventsH := handler.NewEventsHandler(eventBus)
 
-	router := NewRouter(authH, userH, categoryH, productH, inventoryH, orderH, roleH, locationH, marketH, eventsH, paymentH, webhookH, cfg, pool, cacheClient)
+	router := NewRouter(authH, userH, categoryH, productH, inventoryH, orderH, roleH, locationH, marketH, eventsH, paymentH, webhookH, partnerH, returnH, cfg, pool, cacheClient)
 
 	server := &http.Server{
 		Addr:         ":" + cfg.Port,

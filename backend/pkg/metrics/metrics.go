@@ -92,6 +92,20 @@ func (s *statusRecorder) WriteHeader(code int) {
 	s.ResponseWriter.WriteHeader(code)
 }
 
+// Flush delegates to the wrapped writer so SSE / streaming handlers can
+// still flush headers + body chunks through this middleware.
+func (s *statusRecorder) Flush() {
+	if f, ok := s.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+// Unwrap exposes the underlying writer so http.ResponseController (used to
+// disable per-request write deadlines for SSE) can reach it.
+func (s *statusRecorder) Unwrap() http.ResponseWriter {
+	return s.ResponseWriter
+}
+
 // Handler returns an http.Handler for /metrics with optional bearer-token auth.
 // Empty token → public (only for dev / behind VPN). In production, set
 // METRICS_TOKEN so only the scraper can read.

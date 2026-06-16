@@ -164,6 +164,54 @@ func (h *PaymentHandler) GetPayment(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, p)
 }
 
+// RefundPayment — POST /api/payments/{id}/refund
+// Body: { "amount"?: int (paise, 0 = full), "reason"?: string }
+func (h *PaymentHandler) RefundPayment(w http.ResponseWriter, r *http.Request) {
+	orgID, ok := middleware.GetOrgIDFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing org context")
+		return
+	}
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid payment id")
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	var req struct {
+		Amount int64  `json:"amount"`
+		Reason string `json:"reason"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+
+	if err := h.service.Refund(r.Context(), orgID, id, req.Amount, req.Reason); err != nil {
+		zap.L().Warn("refund failed",
+			zap.String("payment_id", id.String()),
+			zap.Int64("amount", req.Amount),
+			zap.Error(err))
+		msg := err.Error()
+		if containsAny(msg, "not found") {
+			writeError(w, http.StatusNotFound, msg)
+			return
+		}
+		if containsAny(msg, "only captured", "exceeds", "no razorpay_payment_id", "must be non-negative") {
+			writeError(w, http.StatusBadRequest, msg)
+			return
+		}
+		// RazorPay rejections we couldn't reconcile (e.g. partial-refund
+		// conflict) → 409 Conflict, not 500. They're business-state
+		// errors, not server faults.
+		if containsAny(msg, "fully refunded", "already refunded", "already been refunded", "razorpay refund failed") {
+			writeError(w, http.StatusConflict, msg)
+			return
+		}
+		writeError(w, http.StatusInternalServerError, msg)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"message": "refund submitted"})
+}
+
 // ListDLQ — GET /api/payments/webhooks/dlq
 // Admin endpoint: returns failed webhook events parked in the DLQ.
 func (h *PaymentHandler) ListDLQ(w http.ResponseWriter, r *http.Request) {
@@ -173,6 +221,26 @@ func (h *PaymentHandler) ListDLQ(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, list)
+}
+
+// ReplayDLQ — POST /api/payments/webhooks/dlq/{id}/replay
+// Admin endpoint: re-runs a single dead-lettered event through the normal
+// handler chain. Used after fixing whatever bug caused the original failure.
+func (h *PaymentHandler) ReplayDLQ(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid event id")
+		return
+	}
+	if err := h.service.ReplayDLQEvent(r.Context(), id); err != nil {
+		zap.L().Warn("DLQ replay failed",
+			zap.String("event_id", id.String()),
+			zap.Error(err))
+		// Still in DLQ; respond 409 — replay attempted, handler rejected.
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"message": "event replayed and processed"})
 }
 
 // ListPayments — GET /api/payments

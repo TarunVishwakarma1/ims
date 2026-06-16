@@ -47,6 +47,34 @@ type Order struct {
 	DeliveredAt            *time.Time      `json:"delivered_at"`
 	CompletedAt            *time.Time      `json:"completed_at"`
 	CancelledAt            *time.Time      `json:"cancelled_at"`
+
+	// Optional display names — populated only by endpoints that JOIN the
+	// organizations table (partner detail recent-orders). Empty for normal
+	// list/get paths; UI falls back to UUID prefix when blank.
+	BuyerOrgName    string `json:"buyer_org_name,omitempty"`
+	SupplierOrgName string `json:"supplier_org_name,omitempty"`
+}
+
+// OrderListFilters captures every supported list / search / export
+// filter for orders. Empty/zero values mean "no constraint".
+type OrderListFilters struct {
+	Status        string     // exact match, e.g. "pending"
+	PaymentStatus string     // exact match, e.g. "paid"
+	OrderType     string     // exact match, e.g. "b2b"
+	Search        string     // free-text — matches order id prefix / user id prefix
+	From          *time.Time // inclusive lower bound on created_at
+	To            *time.Time // inclusive upper bound on created_at
+	Page          int        // 1-indexed; 0 → 1
+	PerPage       int        // 0 → 25, clamped to [1,200]
+}
+
+// OrderListResult bundles a page of orders with the unfiltered total
+// (used by the UI to render "showing N of M" + pagination).
+type OrderListResult struct {
+	Items   []*Order `json:"items"`
+	Total   int      `json:"total"`
+	Page    int      `json:"page"`
+	PerPage int      `json:"per_page"`
 }
 
 type OrderItem struct {

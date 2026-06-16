@@ -102,3 +102,31 @@ func GetRoleFromContext(ctx context.Context) (string, bool) {
 	role, ok := ctx.Value(ContextKeyRole).(string)
 	return role, ok
 }
+
+// Actor is the parsed identity for a single request. Populated once by
+// Auth middleware (UUID parsing happens there), then handed to handlers
+// via ActorFromRequest — no more per-handler uuid.Parse boilerplate.
+type Actor struct {
+	UserID uuid.UUID
+	OrgID  uuid.UUID
+	Role   string
+}
+
+// ActorFromRequest extracts the resolved Actor from the request context.
+// Returns ok=false when any required claim is missing or unparseable —
+// handler should respond 401. After this, handlers never call
+// GetOrgIDFromContext / GetUserIDFromContext directly.
+func ActorFromRequest(r *http.Request) (Actor, bool) {
+	ctx := r.Context()
+	orgID, ok := GetOrgIDFromContext(ctx)
+	if !ok {
+		return Actor{}, false
+	}
+	userStr, _ := GetUserIDFromContext(ctx)
+	userID, err := uuid.Parse(userStr)
+	if err != nil {
+		return Actor{}, false
+	}
+	role, _ := GetRoleFromContext(ctx)
+	return Actor{UserID: userID, OrgID: orgID, Role: role}, true
+}

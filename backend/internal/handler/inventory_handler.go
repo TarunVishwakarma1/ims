@@ -156,6 +156,58 @@ func (h *InventoryHandler) UpdateInventory(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, existing)
 }
 
+// GetByID — GET /api/inventory/{id}
+func (h *InventoryHandler) GetByID(w http.ResponseWriter, r *http.Request) {
+	orgID, ok := middleware.GetOrgIDFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing org context")
+		return
+	}
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid inventory id")
+		return
+	}
+	inv, err := h.service.GetByID(r.Context(), id, orgID)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "inventory not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+	writeJSON(w, http.StatusOK, inv)
+}
+
+// Timeline — GET /api/inventory/{id}/timeline
+func (h *InventoryHandler) Timeline(w http.ResponseWriter, r *http.Request) {
+	orgID, ok := middleware.GetOrgIDFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing org context")
+		return
+	}
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid inventory id")
+		return
+	}
+	events, err := h.service.Timeline(r.Context(), id, orgID)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "inventory not found")
+			return
+		}
+		zap.L().Error("Inventory timeline failed", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+	if events == nil {
+		events = []*domain.AuditLog{}
+	}
+	writeJSON(w, http.StatusOK, events)
+}
+
 func (h *InventoryHandler) ListInventory(w http.ResponseWriter, r *http.Request) {
 	orgID, ok := middleware.GetOrgIDFromContext(r.Context())
 	if !ok {

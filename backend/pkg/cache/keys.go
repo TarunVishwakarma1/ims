@@ -54,6 +54,22 @@ func ListingsByOrgPattern(orgID uuid.UUID) string {
 	return OrgPrefix(orgID) + ":listings:*"
 }
 
+func OrdersListKey(orgID uuid.UUID) string {
+	return OrgPrefix(orgID) + ":orders:list"
+}
+
+func OrdersListPattern(orgID uuid.UUID) string {
+	return OrgPrefix(orgID) + ":orders:*"
+}
+
+func InventoryListKey(orgID uuid.UUID) string {
+	return OrgPrefix(orgID) + ":inventory:list"
+}
+
+func InventoryListPattern(orgID uuid.UUID) string {
+	return OrgPrefix(orgID) + ":inventory:*"
+}
+
 // Marketplace search is global. Hash the params into a single key.
 func MarketplaceSearchKey(params string) string {
 	h := sha1.Sum([]byte(params))

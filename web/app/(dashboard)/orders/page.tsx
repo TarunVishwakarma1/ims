@@ -1,17 +1,18 @@
 'use client'
 
-import { useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, Suspense } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Edit, Loader2, Eye, Plus } from 'lucide-react'
+import { Edit, Loader2, Eye, Plus, XCircle, RotateCcw, Download, ChevronLeft, ChevronRight, Search } from 'lucide-react'
 import { TableSkeleton } from '@/components/ui/table-skeleton'
 import { toast } from 'sonner'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { HTTPError } from 'ky'
 
 import { ordersApi } from '@/lib/api/orders'
+import { paymentsApi } from '@/lib/api/payments'
 import { formatPrice } from '@/lib/utils'
 import { usePermission } from '@/hooks/usePermission'
 import { useAuthStore } from '@/lib/stores/auth-store'
@@ -20,6 +21,7 @@ import { useEventStream } from '@/hooks/useEventStream'
 import type { Order, OrderStatus } from '@/types/api'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
+import { Input } from '@/components/ui/input'
 import {
   Table,
   TableBody,
@@ -36,6 +38,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Select,
   SelectContent,
@@ -67,45 +70,7 @@ const getAllowedStatuses = (current: OrderStatus): OrderStatus[] => {
   }
 }
 
-function OrderItemsList({ orderId }: { orderId: string }) {
-  const { data: items, isLoading } = useQuery({
-    queryKey: ['orders', orderId, 'items'],
-    queryFn: () => ordersApi.getItems(orderId),
-  })
-
-  if (isLoading) {
-    return <div className="py-6 flex justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
-  }
-
-  if (!items || items.length === 0) {
-    return <div className="py-6 text-center text-muted-foreground">No items found for this order.</div>
-  }
-
-  return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Product</TableHead>
-          <TableHead className="text-right">Qty</TableHead>
-          <TableHead className="text-right">Unit Price</TableHead>
-          <TableHead className="text-right">Total</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {items.map(item => (
-          <TableRow key={item.id}>
-            <TableCell>{item.product_name || item.product_id.split('-')[0]}</TableCell>
-            <TableCell className="text-right">{item.quantity}</TableCell>
-            <TableCell className="text-right">{formatPrice(item.unit_price)}</TableCell>
-            <TableCell className="text-right font-medium">{formatPrice(item.quantity * item.unit_price)}</TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
-  )
-}
-
-export default function OrdersPage() {
+function OrdersContent() {
   const queryClient = useQueryClient()
   const router = useRouter()
   const { can } = usePermission()
@@ -128,15 +93,155 @@ export default function OrdersPage() {
   })
 
   const [isStatusDialogOpen, setIsStatusDialogOpen] = useState(false)
-  const [isItemsDialogOpen, setIsItemsDialogOpen] = useState(false)
+  const [isCancelDialogOpen, setIsCancelDialogOpen] = useState(false)
+  const [isRefundDialogOpen, setIsRefundDialogOpen] = useState(false)
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
+  const [cancelReason, setCancelReason] = useState('')
+  const [refundReason, setRefundReason] = useState('')
 
-  const { data: rawOrders, isLoading } = useQuery({
-    queryKey: ['orders'],
-    queryFn: ordersApi.list,
+  // Filter / pagination state — synced with URL query params so a refresh
+  // doesn't nuke them and shared links land on the same view.
+  const searchParams = useSearchParams()
+  const statusFilter = searchParams.get('status') ?? ''
+  const paymentFilter = searchParams.get('payment_status') ?? ''
+  const search = searchParams.get('search') ?? ''
+  const fromDate = searchParams.get('from') ?? ''
+  const toDate = searchParams.get('to') ?? ''
+  const page = Number(searchParams.get('page') ?? '1')
+  const perPage = Number(searchParams.get('per_page') ?? '25')
+
+  // Mutator: builds a new URL with overridden params and pushes via router.
+  // Clearing a param (set to '') drops it from the URL entirely.
+  const setParams = useCallback((patch: Record<string, string | number | undefined>) => {
+    const next = new URLSearchParams(searchParams.toString())
+    for (const [k, v] of Object.entries(patch)) {
+      if (v === undefined || v === '' || v === null) next.delete(k)
+      else next.set(k, String(v))
+    }
+    router.replace(`/orders${next.toString() ? `?${next.toString()}` : ''}`, { scroll: false })
+  }, [searchParams, router])
+
+  // Search input keeps a local mirror so each keystroke debounces nicely.
+  const [searchInput, setSearchInput] = useState(search)
+  useEffect(() => { setSearchInput(search) }, [search])
+  useEffect(() => {
+    if (searchInput === search) return
+    const t = setTimeout(() => setParams({ search: searchInput || undefined, page: 1 }), 250)
+    return () => clearTimeout(t)
+  }, [searchInput, search, setParams])
+
+  const [isExporting, setIsExporting] = useState(false)
+  // Bulk selection — set of selected order ids on the current page.
+  const [selectedIDs, setSelectedIDs] = useState<Set<string>>(new Set())
+  const [bulkStatus, setBulkStatus] = useState('')
+
+  // Convert YYYY-MM-DD to RFC3339 covering the full local day. Backend
+  // compares against created_at as TIMESTAMPTZ, so the bounds need to be
+  // an explicit instant — empty input → undefined → no constraint.
+  const filters = useMemo(() => {
+    const fromRFC = fromDate ? new Date(fromDate + 'T00:00:00').toISOString() : undefined
+    const toRFC = toDate ? new Date(toDate + 'T23:59:59.999').toISOString() : undefined
+    return {
+      status: statusFilter || undefined,
+      payment_status: paymentFilter || undefined,
+      search: search || undefined,
+      from: fromRFC,
+      to: toRFC,
+      page,
+      per_page: perPage,
+    }
+  }, [statusFilter, paymentFilter, search, fromDate, toDate, page, perPage])
+
+  const { data: ordersResult, isLoading } = useQuery({
+    queryKey: ['orders', filters],
+    queryFn: () => ordersApi.list(filters),
   })
 
-  const orders = rawOrders ?? []
+  // Fetch cancel-preview only while the dialog is open for the selected order.
+  const cancelPreviewQ = useQuery({
+    queryKey: ['order', selectedOrder?.id, 'cancel-preview'],
+    queryFn: () => ordersApi.getCancelPreview(selectedOrder!.id),
+    enabled: isCancelDialogOpen && !!selectedOrder,
+  })
+
+  // Payments index so we can map order → payment id for refunds.
+  const { data: rawPayments } = useQuery({
+    queryKey: ['payments'],
+    queryFn: paymentsApi.list,
+  })
+
+  const orders = ordersResult?.items ?? []
+  const totalOrders = ordersResult?.total ?? 0
+  const totalPages = Math.max(1, Math.ceil(totalOrders / perPage))
+  const payments = rawPayments ?? []
+  const paymentByOrderID = new Map<string, string>()
+  for (const p of payments) {
+    if (p.order_id && p.status === 'captured') {
+      paymentByOrderID.set(p.order_id, p.id)
+    }
+  }
+
+  const cancelMutation = useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) => ordersApi.cancel(id, reason),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['orders'] })
+      queryClient.invalidateQueries({ queryKey: ['inventory'] })
+      setIsCancelDialogOpen(false)
+      setCancelReason('')
+      toast.success('Order cancelled')
+    },
+    onError: async (err: Error) => {
+      if (err instanceof HTTPError) {
+        const data = await err.response.json().catch(() => ({} as { error?: string }))
+        toast.error(data.error || 'Cancel failed')
+      } else {
+        toast.error(err.message)
+      }
+    },
+  })
+
+  const refundMutation = useMutation({
+    mutationFn: ({ paymentID, reason }: { paymentID: string; reason: string }) =>
+      paymentsApi.refund(paymentID, 0, reason),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['payments'] })
+      queryClient.invalidateQueries({ queryKey: ['orders'] })
+      setIsRefundDialogOpen(false)
+      setRefundReason('')
+      toast.success('Refund submitted')
+    },
+    onError: async (err: Error) => {
+      if (err instanceof HTTPError) {
+        const data = await err.response.json().catch(() => ({} as { error?: string }))
+        toast.error(data.error || 'Refund failed')
+      } else {
+        toast.error(err.message)
+      }
+    },
+  })
+
+  const canCancel = (s: OrderStatus) =>
+    s === 'pending' || s === 'confirmed' || s === 'accepted' || s === 'processing' || s === 'ready'
+
+  const bulkStatusMutation = useMutation({
+    mutationFn: ({ ids, status }: { ids: string[]; status: string }) => ordersApi.bulkStatus(ids, status),
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: ['orders'] })
+      setSelectedIDs(new Set())
+      setBulkStatus('')
+      if (res.skipped > 0) {
+        toast.info(`${res.applied} updated, ${res.skipped} skipped (not eligible)`)
+      } else {
+        toast.success(`${res.applied} orders updated`)
+      }
+    },
+    onError: async (err: Error) => {
+      if (err instanceof HTTPError) {
+        const data = await err.response.json().catch(() => ({} as { error?: string }))
+        toast.error(data.error || 'Bulk update failed')
+      } else toast.error(err.message)
+    },
+  })
 
   const updateStatusMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: { status: OrderStatus } }) => ordersApi.updateStatus(id, data),
@@ -215,6 +320,27 @@ export default function OrdersPage() {
 
   const allowedTransitions = selectedOrder ? getAllowedStatuses(selectedOrder.status) : []
 
+  // Trigger a browser download of the filtered orders as CSV. We reuse the
+  // current filters (minus pagination) so what you see is what you export.
+  const handleExport = async () => {
+    try {
+      setIsExporting(true)
+      const { status, payment_status, search: searchQ, from, to } = filters
+      const blob = await ordersApi.exportCsv({ status, payment_status, search: searchQ, from, to })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `orders-${new Date().toISOString().slice(0, 10)}.csv`
+      a.click()
+      URL.revokeObjectURL(url)
+      toast.success('Export downloaded')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Export failed')
+    } finally {
+      setIsExporting(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -222,18 +348,136 @@ export default function OrdersPage() {
           <h2 className="text-2xl font-bold tracking-tight">Orders</h2>
           <p className="text-muted-foreground">Manage and process customer orders.</p>
         </div>
-        {can(PERMISSIONS.ORDERS_CREATE) && (
-          <Button onClick={() => router.push('/marketplace')}>
-            <Plus className="mr-2 h-4 w-4" />
-            Create Order
+        <div className="flex items-center gap-2">
+          <Button variant="outline" disabled={isExporting} onClick={handleExport}>
+            {isExporting
+              ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              : <Download className="mr-2 h-4 w-4" />
+            }
+            Export CSV
+          </Button>
+          {can(PERMISSIONS.ORDERS_CREATE) && (
+            <Button onClick={() => router.push('/marketplace')}>
+              <Plus className="mr-2 h-4 w-4" />
+              Create Order
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* Filter bar */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative">
+          <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder="Search order / user id"
+            className="pl-8 w-64"
+          />
+        </div>
+        <Select
+          value={statusFilter || 'all'}
+          onValueChange={(v) => setParams({ status: v === 'all' ? undefined : v, page: 1 })}
+        >
+          <SelectTrigger className="w-44"><SelectValue placeholder="Status" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All statuses</SelectItem>
+            {['pending','accepted','processing','ready','shipped','delivered','completed','cancelled','rejected','refunded','confirmed'].map(s => (
+              <SelectItem key={s} value={s}>{s}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select
+          value={paymentFilter || 'all'}
+          onValueChange={(v) => setParams({ payment_status: v === 'all' ? undefined : v, page: 1 })}
+        >
+          <SelectTrigger className="w-44"><SelectValue placeholder="Payment" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All payment</SelectItem>
+            {['unpaid','paid','partial','refunded'].map(s => (
+              <SelectItem key={s} value={s}>{s}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <div className="flex items-center gap-1">
+          <Input
+            type="date"
+            value={fromDate}
+            onChange={(e) => setParams({ from: e.target.value || undefined, page: 1 })}
+            className="w-40"
+            aria-label="From date"
+          />
+          <span className="text-muted-foreground text-xs">→</span>
+          <Input
+            type="date"
+            value={toDate}
+            onChange={(e) => setParams({ to: e.target.value || undefined, page: 1 })}
+            className="w-40"
+            aria-label="To date"
+          />
+        </div>
+        {(statusFilter || paymentFilter || search || fromDate || toDate) && (
+          <Button
+            variant="ghost"
+            onClick={() => {
+              setSearchInput('')
+              setParams({ status: undefined, payment_status: undefined, search: undefined, from: undefined, to: undefined, page: 1 })
+            }}
+          >
+            Reset
           </Button>
         )}
+        <span className="ml-auto text-sm text-muted-foreground">
+          {totalOrders} {totalOrders === 1 ? 'order' : 'orders'}
+        </span>
       </div>
+
+      {/* Bulk action toolbar — visible only when one or more rows are selected */}
+      {selectedIDs.size > 0 && can(PERMISSIONS.ORDERS_MANAGE) && (
+        <div className="flex items-center gap-3 rounded-md border bg-amber-50 dark:bg-amber-950/20 border-amber-200 px-4 py-2 text-sm">
+          <span className="font-medium">{selectedIDs.size} selected</span>
+          <span className="text-muted-foreground">Mark as:</span>
+          <Select value={bulkStatus} onValueChange={setBulkStatus}>
+            <SelectTrigger className="w-44 h-8"><SelectValue placeholder="Choose status" /></SelectTrigger>
+            <SelectContent>
+              {['accepted','processing','ready','shipped','delivered','completed','cancelled'].map(s => (
+                <SelectItem key={s} value={s}>{s}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button
+            size="sm"
+            disabled={!bulkStatus || bulkStatusMutation.isPending}
+            onClick={() => bulkStatusMutation.mutate({ ids: Array.from(selectedIDs), status: bulkStatus })}
+          >
+            {bulkStatusMutation.isPending && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
+            Apply
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => setSelectedIDs(new Set())}>
+            Clear selection
+          </Button>
+        </div>
+      )}
 
       <div className="rounded-md border bg-white dark:bg-zinc-950">
         <Table>
           <TableHeader>
             <TableRow>
+              {can(PERMISSIONS.ORDERS_MANAGE) && (
+                <TableHead className="w-8">
+                  <Checkbox
+                    checked={orders.length > 0 && orders.every(o => selectedIDs.has(o.id))}
+                    onCheckedChange={(v) => {
+                      const next = new Set(selectedIDs)
+                      if (v) orders.forEach(o => next.add(o.id))
+                      else orders.forEach(o => next.delete(o.id))
+                      setSelectedIDs(next)
+                    }}
+                    aria-label="Select all on page"
+                  />
+                </TableHead>
+              )}
               <TableHead>Order ID</TableHead>
               <TableHead>Type</TableHead>
               <TableHead>User</TableHead>
@@ -246,10 +490,28 @@ export default function OrdersPage() {
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableSkeleton columns={8} rows={5} />
+              <TableSkeleton columns={can(PERMISSIONS.ORDERS_MANAGE) ? 9 : 8} rows={5} />
             ) : orders.length > 0 ? (
               orders.map((order) => (
-                <TableRow key={order.id}>
+                <TableRow
+                  key={order.id}
+                  className="cursor-pointer hover:bg-muted/50"
+                  onClick={() => router.push(`/orders/${order.id}`)}
+                >
+                  {can(PERMISSIONS.ORDERS_MANAGE) && (
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      <Checkbox
+                        checked={selectedIDs.has(order.id)}
+                        onCheckedChange={(v) => {
+                          const next = new Set(selectedIDs)
+                          if (v) next.add(order.id)
+                          else next.delete(order.id)
+                          setSelectedIDs(next)
+                        }}
+                        aria-label={`Select order ${order.id}`}
+                      />
+                    </TableCell>
+                  )}
                   <TableCell className="font-mono text-xs">{order.id.split('-')[0]}</TableCell>
                   <TableCell>{getTypeBadge(order.order_type)}</TableCell>
                   <TableCell className="font-medium">
@@ -263,28 +525,59 @@ export default function OrdersPage() {
                   <TableCell>{getPaymentBadge(order.payment_status)}</TableCell>
                   <TableCell className="text-right">{formatPrice(order.total_amount)}</TableCell>
                   <TableCell>{new Date(order.created_at).toLocaleDateString()}</TableCell>
-                  <TableCell>
+                  <TableCell onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center justify-end gap-2">
                       {can(PERMISSIONS.ORDERS_VIEW) && (
-                        <Button variant="ghost" size="icon" onClick={() => {
-                          setSelectedOrder(order)
-                          setIsItemsDialogOpen(true)
-                        }}>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => router.push(`/orders/${order.id}`)}
+                          title="View details"
+                        >
                           <Eye className="w-4 h-4 text-zinc-600" />
                         </Button>
                       )}
                       {can(PERMISSIONS.ORDERS_MANAGE) && (
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
+                        <Button
+                          variant="ghost"
+                          size="icon"
                           disabled={getAllowedStatuses(order.status).length === 0}
                           onClick={() => {
                             setSelectedOrder(order)
                             reset({ status: order.status })
                             setIsStatusDialogOpen(true)
                           }}
+                          title="Change status"
                         >
                           <Edit className="w-4 h-4 text-blue-600" />
+                        </Button>
+                      )}
+                      {can(PERMISSIONS.ORDERS_MANAGE) && canCancel(order.status) && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => {
+                            setSelectedOrder(order)
+                            setCancelReason('')
+                            setIsCancelDialogOpen(true)
+                          }}
+                          title="Cancel order"
+                        >
+                          <XCircle className="w-4 h-4 text-red-600" />
+                        </Button>
+                      )}
+                      {can(PERMISSIONS.ORDERS_MANAGE) && order.payment_status === 'paid' && paymentByOrderID.has(order.id) && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => {
+                            setSelectedOrder(order)
+                            setRefundReason('')
+                            setIsRefundDialogOpen(true)
+                          }}
+                          title="Refund payment"
+                        >
+                          <RotateCcw className="w-4 h-4 text-amber-600" />
                         </Button>
                       )}
                     </div>
@@ -293,13 +586,47 @@ export default function OrdersPage() {
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
+                <TableCell colSpan={can(PERMISSIONS.ORDERS_MANAGE) ? 9 : 8} className="h-24 text-center text-muted-foreground">
                   No orders found.
                 </TableCell>
               </TableRow>
             )}
           </TableBody>
         </Table>
+      </div>
+
+      {/* Pagination */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <span>Rows per page</span>
+          <Select value={String(perPage)} onValueChange={(v) => setParams({ per_page: Number(v), page: 1 })}>
+            <SelectTrigger className="w-20"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {[10, 25, 50, 100].map(n => <SelectItem key={n} value={String(n)}>{n}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex items-center gap-2 text-sm">
+          <span className="text-muted-foreground">
+            Page {page} of {totalPages}
+          </span>
+          <Button
+            variant="outline"
+            size="icon"
+            disabled={page <= 1}
+            onClick={() => setParams({ page: Math.max(1, page - 1) })}
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            disabled={page >= totalPages}
+            onClick={() => setParams({ page: Math.min(totalPages, page + 1) })}
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
 
       {/* Update Status Dialog */}
@@ -349,24 +676,116 @@ export default function OrdersPage() {
         </DialogContent>
       </Dialog>
 
-      {/* View Items Dialog */}
-      <Dialog open={isItemsDialogOpen} onOpenChange={setIsItemsDialogOpen}>
-        <DialogContent className="max-w-2xl">
+      {/* Cancel confirmation */}
+      <Dialog open={isCancelDialogOpen} onOpenChange={setIsCancelDialogOpen}>
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle>Order Items</DialogTitle>
+            <DialogTitle>Cancel order?</DialogTitle>
           </DialogHeader>
-          
-          {selectedOrder && (
-            <OrderItemsList orderId={selectedOrder.id} />
-          )}
-
+          <div className="space-y-3 py-2">
+            <p className="text-sm text-muted-foreground">
+              Reserved stock will be returned. This cannot be undone.
+              {cancelPreviewQ.isLoading ? (
+                <span className="block mt-2 text-xs text-muted-foreground">
+                  <Loader2 className="inline h-3 w-3 mr-1 animate-spin" /> Computing refund…
+                </span>
+              ) : cancelPreviewQ.data && cancelPreviewQ.data.payment_paid ? (
+                <span className="block mt-2 font-medium text-amber-700 dark:text-amber-400">
+                  {cancelPreviewQ.data.refund_amount > 0
+                    ? `Refund: ${formatPrice(cancelPreviewQ.data.refund_amount)} (${cancelPreviewQ.data.refund_percent}%). ${cancelPreviewQ.data.reason}`
+                    : cancelPreviewQ.data.reason}
+                </span>
+              ) : null}
+            </p>
+            <div>
+              <Label htmlFor="cancel-reason" className="text-xs">Reason (optional)</Label>
+              <Input
+                id="cancel-reason"
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value)}
+                placeholder="e.g. customer request"
+              />
+            </div>
+          </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsItemsDialogOpen(false)}>
-              Close
+            <Button variant="outline" onClick={() => setIsCancelDialogOpen(false)}>
+              Keep order
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={cancelMutation.isPending}
+              onClick={() =>
+                selectedOrder && cancelMutation.mutate({ id: selectedOrder.id, reason: cancelReason })
+              }
+            >
+              {cancelMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Cancel order
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Refund confirmation */}
+      <Dialog open={isRefundDialogOpen} onOpenChange={setIsRefundDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Refund payment?</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <p className="text-sm text-muted-foreground">
+              Full amount {selectedOrder && (<span className="font-semibold">{formatPrice(selectedOrder.total_amount)}</span>)} will be refunded to the customer&apos;s original payment method via RazorPay. Funds typically arrive in 5-7 business days.
+            </p>
+            <div>
+              <Label htmlFor="refund-reason" className="text-xs">Reason (optional)</Label>
+              <Input
+                id="refund-reason"
+                value={refundReason}
+                onChange={(e) => setRefundReason(e.target.value)}
+                placeholder="e.g. damaged item"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsRefundDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              className="bg-amber-600 hover:bg-amber-700 text-white"
+              disabled={refundMutation.isPending}
+              onClick={() => {
+                if (!selectedOrder) return
+                const paymentID = paymentByOrderID.get(selectedOrder.id)
+                if (!paymentID) {
+                  toast.error('No captured payment found for this order')
+                  return
+                }
+                refundMutation.mutate({ paymentID, reason: refundReason })
+              }}
+            >
+              {refundMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Refund
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
+  )
+}
+
+export default function OrdersPage() {
+  return (
+    <Suspense fallback={
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-bold tracking-tight">Orders</h2>
+            <p className="text-muted-foreground">Manage your incoming and outgoing orders.</p>
+          </div>
+        </div>
+        <TableSkeleton columns={8} />
+      </div>
+    }>
+      <OrdersContent />
+    </Suspense>
   )
 }

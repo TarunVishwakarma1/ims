@@ -11,13 +11,16 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 export default function DashboardPage() {
   const { data: products } = useQuery({ queryKey: ['products'], queryFn: productsApi.list })
   const { data: categories } = useQuery({ queryKey: ['categories'], queryFn: categoriesApi.list })
-  const { data: orders } = useQuery({ queryKey: ['orders'], queryFn: ordersApi.list })
+  const { data: ordersResult } = useQuery({
+    queryKey: ['orders', 'dashboard'],
+    queryFn: () => ordersApi.list({ per_page: 1, page: 1 }),
+  })
   const { data: inventory } = useQuery({ queryKey: ['inventory'], queryFn: inventoryApi.list })
 
   const stats = [
     { title: 'Products', value: (products ?? []).length, icon: Package },
     { title: 'Categories', value: (categories ?? []).length, icon: Tags },
-    { title: 'Orders', value: (orders ?? []).length, icon: ShoppingCart },
+    { title: 'Orders', value: ordersResult?.total ?? 0, icon: ShoppingCart },
     { title: 'Low Stock', value: (inventory ?? []).filter(i => i.quantity <= i.low_stock_threshold).length, icon: AlertTriangle },
   ]
 

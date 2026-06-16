@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/TarunVishwakarma1/ims/backend/internal/domain"
@@ -21,6 +22,9 @@ type InventoryService interface {
 	Delete(ctx context.Context, id uuid.UUID, orgID uuid.UUID, ipAddress string) error
 	List(ctx context.Context, orgID uuid.UUID) ([]*domain.Inventory, error)
 	ListLowStock(ctx context.Context, orgID uuid.UUID) ([]*domain.Inventory, error)
+	// Timeline returns chronological audit entries for an inventory row.
+	// Backs the drill-down "stock-change history" view.
+	Timeline(ctx context.Context, id, orgID uuid.UUID) ([]*domain.AuditLog, error)
 }
 
 type inventoryService struct {
@@ -56,9 +60,11 @@ func (s *inventoryService) emit(ctx context.Context, inv *domain.Inventory) {
 	}
 }
 
-// Inventory mutations bust marketplace search (stock counts feed into it).
-func (s *inventoryService) invalidate(ctx context.Context) {
+// Inventory mutations bust marketplace search (stock counts feed into it)
+// and the per-org inventory list cache.
+func (s *inventoryService) invalidate(ctx context.Context, orgID uuid.UUID) {
 	_ = s.cache.DeleteByPattern(ctx, cache.MarketplaceSearchPattern())
+	_ = s.cache.DeleteByPattern(ctx, cache.InventoryListPattern(orgID))
 }
 
 func (s *inventoryService) Create(ctx context.Context, inventory *domain.Inventory, ipAddress string) error {
@@ -91,7 +97,7 @@ func (s *inventoryService) Create(ctx context.Context, inventory *domain.Invento
 		zap.L().Error("audit log failed", zap.Error(err))
 	}
 
-	s.invalidate(ctx)
+	s.invalidate(ctx, inventory.OrgID)
 	s.emit(ctx, inventory)
 	return nil
 }
@@ -109,7 +115,19 @@ func (s *inventoryService) Update(ctx context.Context, inventory *domain.Invento
 	if err := s.repo.Update(ctx, inventory); err != nil {
 		return err
 	}
-	s.invalidate(ctx)
+	// Audit the stock change so the inventory drill-down can show history.
+	audit := &domain.AuditLog{
+		ID:        uuid.New(),
+		OrgID:     inventory.OrgID,
+		Action:    fmt.Sprintf("inventory.updated:qty=%d,threshold=%d", inventory.Quantity, inventory.LowStockThreshold),
+		Entity:    "inventory",
+		EntityID:  inventory.ID,
+		CreatedAt: inventory.UpdatedAt,
+	}
+	if err := s.auditLogRepo.Create(ctx, audit); err != nil {
+		zap.L().Warn("inventory audit log failed", zap.Error(err))
+	}
+	s.invalidate(ctx, inventory.OrgID)
 	s.emit(ctx, inventory)
 	return nil
 }
@@ -133,12 +151,30 @@ func (s *inventoryService) Delete(ctx context.Context, id uuid.UUID, orgID uuid.
 		zap.L().Error("audit log failed", zap.Error(err))
 	}
 
-	s.invalidate(ctx)
+	s.invalidate(ctx, orgID)
 	return nil
 }
 
 func (s *inventoryService) List(ctx context.Context, orgID uuid.UUID) ([]*domain.Inventory, error) {
-	return s.repo.List(ctx, orgID)
+	key := cache.InventoryListKey(orgID)
+	var cached []*domain.Inventory
+	if err := s.cache.Get(ctx, key, &cached); err == nil {
+		return cached, nil
+	}
+	list, err := s.repo.List(ctx, orgID)
+	if err != nil {
+		return nil, err
+	}
+	_ = s.cache.Set(ctx, key, list, cache.TTLShort)
+	return list, nil
+}
+
+func (s *inventoryService) Timeline(ctx context.Context, id, orgID uuid.UUID) ([]*domain.AuditLog, error) {
+	// Verify ownership before exposing audit trail.
+	if _, err := s.repo.GetByID(ctx, id, orgID); err != nil {
+		return nil, err
+	}
+	return s.auditLogRepo.ListByEntity(ctx, "inventory", id, orgID)
 }
 
 func (s *inventoryService) ListLowStock(ctx context.Context, orgID uuid.UUID) ([]*domain.Inventory, error) {

@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -13,7 +14,6 @@ import { productsApi } from '@/lib/api/products'
 import { usePermission } from '@/hooks/usePermission'
 import { PERMISSIONS } from '@/lib/rbac'
 import { useEventStream } from '@/hooks/useEventStream'
-import { toast } from 'sonner'
 import type { Inventory } from '@/types/api'
 
 import { Button } from '@/components/ui/button'
@@ -49,18 +49,25 @@ const inventoryCreateSchema = z.object({
 })
 type InventoryCreateFormValues = z.infer<typeof inventoryCreateSchema>
 
-export default function InventoryPage() {
+function InventoryContent() {
   const queryClient = useQueryClient()
   const { can } = usePermission()
+  const router = useRouter()
+  const searchParams = useSearchParams()
+
+  // Show-only-low-stock toggle. Honors ?lowOnly=1 in the URL so the toast
+  // action button in the sidebar can deep-link straight to the filtered view.
+  const [lowOnly, setLowOnly] = useState(false)
+  useEffect(() => {
+    setLowOnly(searchParams.get('lowOnly') === '1')
+  }, [searchParams])
 
   // Live updates: invalidate the inventory query whenever the backend
-  // emits an inventory.updated event. Also surface low-stock alerts via toast.
+  // emits an inventory.* event. Low-stock toast is handled globally by
+  // the sidebar so it fires on every page, not just /inventory.
   useEventStream(['inventory'], (evt) => {
-    if (evt.type === 'inventory.updated') {
+    if (evt.type === 'inventory.updated' || evt.type === 'inventory.low_stock') {
       queryClient.invalidateQueries({ queryKey: ['inventory'] })
-    } else if (evt.type === 'inventory.low_stock') {
-      const data = evt.data as { quantity?: number; threshold?: number } | undefined
-      toast.warning(`Low stock alert: ${data?.quantity ?? 0} units left`)
     }
   })
 
@@ -78,7 +85,11 @@ export default function InventoryPage() {
     queryFn: productsApi.list,
   })
 
-  const inventoryList = rawInventory ?? []
+  const fullInventory = rawInventory ?? []
+  const lowStockTotal = fullInventory.filter(i => i.quantity <= i.low_stock_threshold).length
+  const inventoryList = lowOnly
+    ? fullInventory.filter(i => i.quantity <= i.low_stock_threshold)
+    : fullInventory
   const products = rawProducts ?? []
 
   // Products that do not have an inventory record yet
@@ -146,15 +157,24 @@ export default function InventoryPage() {
           <h2 className="text-2xl font-bold tracking-tight">Inventory</h2>
           <p className="text-muted-foreground">Monitor and update stock levels.</p>
         </div>
-        {can(PERMISSIONS.INVENTORY_MANAGE) && uninventoriedProducts.length > 0 && (
-          <Button onClick={() => {
-            resetCreate({ product_id: uninventoriedProducts[0]?.id || '', quantity: 0, low_stock_threshold: 10 })
-            setIsCreateDialogOpen(true)
-          }}>
-            <Plus className="mr-2 h-4 w-4" />
-            Add Inventory
+        <div className="flex items-center gap-2">
+          <Button
+            variant={lowOnly ? 'default' : 'outline'}
+            onClick={() => setLowOnly(s => !s)}
+          >
+            <AlertTriangle className="mr-2 h-4 w-4" />
+            {lowOnly ? `Showing low stock (${lowStockTotal})` : `Low stock (${lowStockTotal})`}
           </Button>
-        )}
+          {can(PERMISSIONS.INVENTORY_MANAGE) && uninventoriedProducts.length > 0 && (
+            <Button onClick={() => {
+              resetCreate({ product_id: uninventoriedProducts[0]?.id || '', quantity: 0, low_stock_threshold: 10 })
+              setIsCreateDialogOpen(true)
+            }}>
+              <Plus className="mr-2 h-4 w-4" />
+              Add Inventory
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="rounded-md border bg-white dark:bg-zinc-950">
@@ -179,7 +199,11 @@ export default function InventoryPage() {
                 const isLowStock = !isOutOfStock && inv.quantity <= inv.low_stock_threshold
                 
                 return (
-                  <TableRow key={inv.id}>
+                  <TableRow
+                    key={inv.id}
+                    className="cursor-pointer hover:bg-muted/50"
+                    onClick={() => router.push(`/inventory/${inv.id}`)}
+                  >
                     <TableCell className="font-medium">
                       {product?.name ?? 'Unknown Product'}
                     </TableCell>
@@ -203,7 +227,7 @@ export default function InventoryPage() {
                         </Badge>
                       )}
                     </TableCell>
-                    <TableCell>
+                    <TableCell onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-end">
                         {can(PERMISSIONS.INVENTORY_MANAGE) && (
                           <Button variant="ghost" size="icon" onClick={() => {
@@ -315,5 +339,23 @@ export default function InventoryPage() {
         </DialogContent>
       </Dialog>
     </div>
+  )
+}
+
+export default function InventoryPage() {
+  return (
+    <Suspense fallback={
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-bold tracking-tight">Inventory</h2>
+            <p className="text-muted-foreground">Manage your product stock levels and alerts.</p>
+          </div>
+        </div>
+        <TableSkeleton columns={7} />
+      </div>
+    }>
+      <InventoryContent />
+    </Suspense>
   )
 }

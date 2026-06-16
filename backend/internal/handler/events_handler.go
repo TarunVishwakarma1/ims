@@ -58,6 +58,14 @@ func (h *EventsHandler) Stream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// SSE is long-lived. Clear the server's per-request WriteTimeout so the
+	// connection isn't killed mid-stream. http.ResponseController walks any
+	// Unwrap() chain to reach the underlying http.ResponseWriter.
+	rc := http.NewResponseController(w)
+	if err := rc.SetWriteDeadline(time.Time{}); err != nil {
+		zap.L().Debug("SetWriteDeadline unsupported on writer", zap.Error(err))
+	}
+
 	// Subscribe to Valkey for this org
 	stream, cancel, err := h.bus.Subscribe(r.Context(), orgID.String())
 	if err != nil {

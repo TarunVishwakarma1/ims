@@ -427,5 +427,15 @@ func (s *marketplaceService) Checkout(ctx context.Context, cartID uuid.UUID, del
 		return nil, err
 	}
 
+	// Invalidate orders cache for buyer org AND every supplier org touched —
+	// each side's orders list now has a new row. Also bust supplier inventory
+	// list (stock was decremented) + marketplace search (search shows stock).
+	_ = s.cache.DeleteByPattern(ctx, cache.OrdersListPattern(buyerOrgID))
+	for supplierID := range supplierGroups {
+		_ = s.cache.DeleteByPattern(ctx, cache.OrdersListPattern(supplierID))
+		_ = s.cache.DeleteByPattern(ctx, cache.InventoryListPattern(supplierID))
+	}
+	_ = s.cache.DeleteByPattern(ctx, cache.MarketplaceSearchPattern())
+
 	return createdOrders, nil
 }

@@ -16,7 +16,11 @@ type PaymentRepository interface {
 	Create(ctx context.Context, p *domain.Payment) error
 	GetByID(ctx context.Context, id uuid.UUID, orgID uuid.UUID) (*domain.Payment, error)
 	GetByRazorpayOrderID(ctx context.Context, rzpOrderID string) (*domain.Payment, error)
+	GetByRazorpayPaymentID(ctx context.Context, rzpPaymentID string) (*domain.Payment, error)
 	GetByOrderID(ctx context.Context, orderID uuid.UUID, orgID uuid.UUID) (*domain.Payment, error)
+	// ListByStatus pages through payments with a given status across all
+	// orgs. Used by the reconciliation cron — small batches at a time.
+	ListByStatus(ctx context.Context, status string, limit int, afterCreatedAt time.Time) ([]*domain.Payment, error)
 	UpdateStatus(ctx context.Context, id uuid.UUID, status, method, paymentID, failureReason string, raw json.RawMessage) error
 	List(ctx context.Context, orgID uuid.UUID) ([]*domain.Payment, error)
 	WithTx(tx pgx.Tx) PaymentRepository
@@ -107,6 +111,18 @@ func (r *paymentRepository) GetByRazorpayOrderID(ctx context.Context, rzpOrderID
 	return p, nil
 }
 
+func (r *paymentRepository) GetByRazorpayPaymentID(ctx context.Context, rzpPaymentID string) (*domain.Payment, error) {
+	row := r.db.QueryRow(ctx, `SELECT `+paymentCols+` FROM payments WHERE razorpay_payment_id = $1`, rzpPaymentID)
+	p, err := r.scan(row)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, err
+	}
+	return p, nil
+}
+
 func (r *paymentRepository) GetByOrderID(ctx context.Context, orderID, orgID uuid.UUID) (*domain.Payment, error) {
 	row := r.db.QueryRow(ctx, `SELECT `+paymentCols+` FROM payments WHERE order_id = $1 AND org_id = $2 ORDER BY created_at DESC LIMIT 1`, orderID, orgID)
 	p, err := r.scan(row)
@@ -149,6 +165,33 @@ func (r *paymentRepository) List(ctx context.Context, orgID uuid.UUID) ([]*domai
 	defer rows.Close()
 
 	out := make([]*domain.Payment, 0)
+	for rows.Next() {
+		p, err := r.scan(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+// ListByStatus pages through payments with a given status across orgs. Used
+// by the daily reconciliation cron to catch payments whose state may have
+// drifted from the canonical RazorPay record (typically due to a missed
+// webhook). `afterCreatedAt` is an exclusive cursor for batch pagination.
+func (r *paymentRepository) ListByStatus(ctx context.Context, status string, limit int, afterCreatedAt time.Time) ([]*domain.Payment, error) {
+	if limit <= 0 || limit > 1000 {
+		limit = 100
+	}
+	rows, err := r.db.Query(ctx, `SELECT `+paymentCols+` FROM payments
+		WHERE status = $1 AND created_at > $2
+		ORDER BY created_at ASC LIMIT $3`, status, afterCreatedAt, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []*domain.Payment
 	for rows.Next() {
 		p, err := r.scan(rows)
 		if err != nil {

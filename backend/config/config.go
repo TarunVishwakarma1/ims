@@ -27,6 +27,15 @@ type Config struct {
 	PayloadEncryptionKey      []byte // 32 bytes (AES-256). Empty → encryption disabled.
 	MetricsEnabled            bool
 	MetricsToken              string // bearer token for /metrics; empty disables auth
+
+	// SMTP — empty SMTPHost → fall back to log-only emailer (dev default).
+	SMTPHost      string
+	SMTPPort      string
+	SMTPUsername  string
+	SMTPPassword  string
+	SMTPFromEmail string // e.g. "no-reply@example.com"
+	SMTPFromName  string // e.g. "IMS Notifications"
+	WebAppURL     string // for action links in emails (e.g. https://app.example.com)
 }
 
 func LoadConfig() (*Config, error) {
@@ -137,6 +146,13 @@ func LoadConfig() (*Config, error) {
 		PayloadEncryptionKey:      encKey,
 		MetricsEnabled:            metricsEnabled,
 		MetricsToken:              metricsToken,
+		SMTPHost:                  os.Getenv("SMTP_HOST"),
+		SMTPPort:                  os.Getenv("SMTP_PORT"),
+		SMTPUsername:              os.Getenv("SMTP_USERNAME"),
+		SMTPPassword:              os.Getenv("SMTP_PASSWORD"),
+		SMTPFromEmail:             os.Getenv("SMTP_FROM_EMAIL"),
+		SMTPFromName:              os.Getenv("SMTP_FROM_NAME"),
+		WebAppURL:                 os.Getenv("WEB_APP_URL"),
 	}, nil
 }
 

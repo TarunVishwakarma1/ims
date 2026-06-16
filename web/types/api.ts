@@ -69,6 +69,8 @@ export interface Order {
   discount?: number;
   buyer_org_id?: UUID | null;
   supplier_org_id?: UUID | null;
+  buyer_org_name?: string;
+  supplier_org_name?: string;
   accepted_at?: ISODate | null;
   shipped_at?: ISODate | null;
   delivered_at?: ISODate | null;

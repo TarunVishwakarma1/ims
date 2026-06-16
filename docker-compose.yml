@@ -34,8 +34,13 @@ services:
       dockerfile: Dockerfile
     env_file:
       - ./backend/.env.docker
+      - ./backend/.env.local
+    environment:
+      LOG_FILE_PATH: /var/log/backend/backend.log
     ports:
       - 8080:8080
+    volumes:
+      - ./backend/logs:/var/log/backend
     depends_on:
       postgres:
         condition: service_healthy
