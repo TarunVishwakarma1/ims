@@ -16,19 +16,21 @@ import (
 type PaymentHandler struct {
 	service  service.PaymentService
 	mockMode bool
+	liveMode bool
 	keyID    string
 }
 
-func NewPaymentHandler(s service.PaymentService, mockMode bool, keyID string) *PaymentHandler {
-	return &PaymentHandler{service: s, mockMode: mockMode, keyID: keyID}
+func NewPaymentHandler(s service.PaymentService, mockMode, liveMode bool, keyID string) *PaymentHandler {
+	return &PaymentHandler{service: s, mockMode: mockMode, liveMode: liveMode, keyID: keyID}
 }
 
 // Config — GET /api/payments/config
-// Returns front-end-safe payment config (mock flag + public key_id).
-// Lets the UI decide between real RazorPay widget and the mock dialog.
+// Frontend-safe view of payment config. UI uses these to choose between the
+// mock dialog and the real RazorPay widget, and to badge LIVE vs TEST mode.
 func (h *PaymentHandler) Config(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"mock":   h.mockMode,
+		"live":   h.liveMode,
 		"key_id": h.keyID, // public — safe to expose
 	})
 }

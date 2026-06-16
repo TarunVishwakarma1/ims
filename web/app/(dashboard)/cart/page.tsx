@@ -84,14 +84,14 @@ export default function CartPage() {
         throw new Error('No orders created')
       }
 
-      // Sum up the total across all created orders
-      const totalAmount = orders.reduce((sum, o) => sum + (o.total_amount || 0), 0)
-
-      // Create one payment record for the combined total, link to the first order.
-      // (Real flow: one payment per order; mock keeps it simple.)
+      // One payment per order is the correct model — RazorPay reconciles by
+      // order_id and the server validates amount matches the order's total.
+      // For now we link the payment to the first order. Multi-supplier carts
+      // need a payment-per-order loop; track that as a follow-up.
+      const firstOrder = orders[0]
       const paymentOrder = await paymentsApi.createOrder({
-        order_id: orders[0].id,
-        amount: totalAmount,
+        order_id: firstOrder.id,
+        amount: firstOrder.total_amount,
       })
 
       return {
@@ -286,9 +286,20 @@ export default function CartPage() {
                 <span>{formatPrice(grandTotal)}</span>
               </div>
             </CardContent>
-            <CardFooter>
-              <Button 
-                className="w-full" 
+            <CardFooter className="flex-col gap-3 items-stretch">
+              {/* Dev-only hints. Hidden in LIVE so customers see a clean UI. */}
+              {payConfig && !payConfig.mock && !payConfig.live && (
+                <div className="rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 text-xs text-amber-900 dark:text-amber-300">
+                  Test sandbox — use card <code>4111 1111 1111 1111</code>
+                </div>
+              )}
+              {payConfig?.mock && (
+                <div className="rounded-md border border-zinc-300 bg-zinc-50 dark:bg-zinc-900 px-3 py-2 text-xs text-muted-foreground">
+                  Mock mode — no real RazorPay call.
+                </div>
+              )}
+              <Button
+                className="w-full"
                 size="lg"
                 disabled={checkoutMutation.isPending || items.length === 0}
                 onClick={() => checkoutMutation.mutate()}

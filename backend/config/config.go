@@ -20,9 +20,10 @@ type Config struct {
 	AllowedOrigins            string
 	RazorpayKeyID             string
 	RazorpayKeySecret         string
-	RazorpayWebhookSecret     string // primary
+	RazorpayWebhookSecret     string // primary (test or live, picked by RazorpayLiveMode)
 	RazorpayWebhookSecretPrev string // previous secret (rotation window)
 	RazorpayMockMode          bool
+	RazorpayLiveMode          bool   // true → real money. False → RazorPay test sandbox.
 	PayloadEncryptionKey      []byte // 32 bytes (AES-256). Empty → encryption disabled.
 	MetricsEnabled            bool
 	MetricsToken              string // bearer token for /metrics; empty disables auth
@@ -66,20 +67,36 @@ func LoadConfig() (*Config, error) {
 		return nil, fmt.Errorf("ALLOWED_ORIGINS is not set")
 	}
 
-	rzpWebhookSecret := os.Getenv("RAZORPAY_WEBHOOK_SECRET")
+	// Razorpay mode resolution. Three orthogonal flags:
+	//   RAZORPAY_MOCK_MODE=true  → use the internal mock (no external calls)
+	//   RAZORPAY_LIVE_MODE=true  → use real-money live keys/webhook
+	//   neither                  → use test sandbox (default)
+	//
+	// Mock wins if both mock and live are set — safer default.
+	rzpMock := os.Getenv("RAZORPAY_MOCK_MODE") == "true"
+	rzpLive := os.Getenv("RAZORPAY_LIVE_MODE") == "true"
+
+	var rzpKeyID, rzpKeySecret, rzpWebhookSecret string
+	if rzpLive && !rzpMock {
+		rzpKeyID = firstNonEmpty(os.Getenv("RAZORPAY_LIVE_API_KEY"), os.Getenv("RAZORPAY_KEY_ID"))
+		rzpKeySecret = firstNonEmpty(os.Getenv("RAZOR_PAY_LIVE_SECRET"), os.Getenv("RAZORPAY_LIVE_KEY_SECRET"), os.Getenv("RAZORPAY_KEY_SECRET"))
+		rzpWebhookSecret = firstNonEmpty(os.Getenv("RAZORPAY_WEBHOOK_SECRET_LIVE"), os.Getenv("RAZORPAY_WEBHOOK_SECRET"))
+	} else {
+		rzpKeyID = firstNonEmpty(os.Getenv("RAZORPAY_TEST_API_KEY"), os.Getenv("RAZORPAY_KEY_ID"))
+		rzpKeySecret = firstNonEmpty(os.Getenv("RAZOR_PAY_SECRET"), os.Getenv("RAZOR_PAY_TEST_SECRET"), os.Getenv("RAZORPAY_KEY_SECRET"))
+		rzpWebhookSecret = firstNonEmpty(os.Getenv("RAZORPAY_WEBHOOK_SECRET_TEST"), os.Getenv("RAZORPAY_WEBHOOK_SECRET"))
+	}
 	rzpWebhookSecretPrev := os.Getenv("RAZORPAY_WEBHOOK_SECRET_PREV")
-	if env == "production" {
-		if len(rzpWebhookSecret) < 32 {
-			return nil, fmt.Errorf("RAZORPAY_WEBHOOK_SECRET must be set and >= 32 chars in production")
-		}
-	} else if rzpWebhookSecret == "" {
+
+	// Live mode in production must have a real webhook secret.
+	if rzpLive && env == "production" && len(rzpWebhookSecret) < 32 {
+		return nil, fmt.Errorf("RAZORPAY_WEBHOOK_SECRET_LIVE must be set and >= 32 chars when live in production")
+	}
+	if rzpWebhookSecret == "" {
 		rzpWebhookSecret = "mock_webhook_secret_change_in_prod"
 	}
 
-	rzpKeyID := firstNonEmpty(os.Getenv("RAZORPAY_KEY_ID"), os.Getenv("RAZORPAY_TEST_API_KEY"))
-	rzpKeySecret := firstNonEmpty(os.Getenv("RAZORPAY_KEY_SECRET"), os.Getenv("RAZOR_PAY_SECRET"))
-
-	rzpMock := os.Getenv("RAZORPAY_MOCK_MODE") != "false"
+	// Fall back to mock if credentials are missing for the selected mode.
 	if !rzpMock && (rzpKeyID == "" || rzpKeySecret == "") {
 		rzpMock = true
 	}
@@ -116,6 +133,7 @@ func LoadConfig() (*Config, error) {
 		RazorpayWebhookSecret:     rzpWebhookSecret,
 		RazorpayWebhookSecretPrev: rzpWebhookSecretPrev,
 		RazorpayMockMode:          rzpMock,
+		RazorpayLiveMode:          rzpLive && !rzpMock,
 		PayloadEncryptionKey:      encKey,
 		MetricsEnabled:            metricsEnabled,
 		MetricsToken:              metricsToken,

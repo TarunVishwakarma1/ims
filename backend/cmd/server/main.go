@@ -145,7 +145,15 @@ func main() {
 	roleH := handler.NewRoleHandler(roleService)
 	locationH := handler.NewLocationHandler(locationService)
 	marketH := handler.NewMarketplaceHandler(marketService)
-	paymentH := handler.NewPaymentHandler(paymentService, cfg.RazorpayMockMode, cfg.RazorpayKeyID)
+	mode := "test"
+	switch {
+	case cfg.RazorpayMockMode:
+		mode = "MOCK"
+	case cfg.RazorpayLiveMode:
+		mode = "LIVE (real money)"
+	}
+	zap.L().Info("razorpay mode", zap.String("mode", mode), zap.String("key_id", cfg.RazorpayKeyID))
+	paymentH := handler.NewPaymentHandler(paymentService, cfg.RazorpayMockMode, cfg.RazorpayLiveMode, cfg.RazorpayKeyID)
 	webhookH := handler.NewWebhookHandler(paymentService)
 	eventsH := handler.NewEventsHandler(eventBus)
 

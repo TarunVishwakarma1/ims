@@ -3,6 +3,7 @@ import type { Payment, CreatePaymentOrderResponse, UUID } from '@/types/api'
 
 export interface PaymentConfig {
   mock: boolean
+  live: boolean
   key_id: string
 }
 
