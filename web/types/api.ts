@@ -1,7 +1,11 @@
 export type UUID = string;
 export type ISODate = string;
 
-export type Role = "admin" | "manager" | "staff";
+// Role is the user's role name. System roles ship as 'admin' | 'manager' |
+// 'staff' but custom roles can be created at runtime via the roles admin
+// page, so the runtime value is any non-empty string. The string union is
+// kept only for badge styling lookups in older components.
+export type Role = string;
 export type OrderStatus = "pending" | "accepted" | "rejected" | "processing" | "ready" | "shipped" | "delivered" | "completed" | "refunded" | "confirmed" | "cancelled";
 
 export interface Organization {
@@ -23,6 +27,8 @@ export interface User {
   is_active: boolean;
   email_verified: boolean;
   last_login_at?: ISODate | null;
+  totp_enabled?: boolean;
+  totp_verified_at?: ISODate | null;
   created_at: ISODate;
   updated_at: ISODate;
 }
@@ -100,10 +106,13 @@ export interface AuditLog {
 }
 
 export interface LoginResponse {
-  access_token: string;
-  refresh_token: string;
-  user: User;
-  organization: Organization;
+  access_token?: string;
+  refresh_token?: string;
+  user?: User;
+  organization?: Organization;
+  // 2FA second-step plumbing.
+  require_totp?: boolean;
+  pending_token?: string;
 }
 
 export interface LoginRequest {

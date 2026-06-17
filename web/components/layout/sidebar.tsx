@@ -21,7 +21,10 @@ import {
   MapPin,
   Handshake,
   Inbox,
-  Undo2
+  Undo2,
+  Mail,
+  ScrollText,
+  KeyRound
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/lib/stores/auth-store'
@@ -83,7 +86,12 @@ export function Sidebar() {
     { href: '/marketplace', label: 'Marketplace', icon: Store, permission: PERMISSIONS.PRODUCTS_VIEW },
     { href: '/cart',        label: 'Cart',        icon: ShoppingBag, permission: PERMISSIONS.ORDERS_CREATE },
     { href: '/locations',   label: 'Locations',   icon: MapPin, permission: PERMISSIONS.LOCATIONS_MANAGE },
-    { href: '/webhooks/dlq', label: 'Webhook DLQ', icon: Inbox, permission: PERMISSIONS.USERS_DELETE },
+    { href: '/webhooks/events', label: 'Webhook events', icon: Inbox, permission: PERMISSIONS.WEBHOOKS_VIEW },
+    { href: '/webhooks/dlq', label: 'Webhook DLQ', icon: Inbox, permission: PERMISSIONS.WEBHOOKS_VIEW },
+    { href: '/webhooks/secrets', label: 'Webhook secrets', icon: KeyRound, permission: PERMISSIONS.WEBHOOKS_MANAGE },
+    { href: '/notifications', label: 'Notifications', icon: Mail, permission: PERMISSIONS.NOTIFICATIONS_VIEW },
+    { href: '/audit', label: 'Audit log', icon: ScrollText, permission: PERMISSIONS.AUDIT_VIEW },
+    { href: '/settings/2fa', label: '2FA', icon: KeyRound, permission: null },
   ].filter(item => item.permission === null || can(item.permission))
 
   return (

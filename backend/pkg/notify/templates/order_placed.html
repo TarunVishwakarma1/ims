@@ -1,0 +1,8 @@
+{{define "body"}}
+{{template "hero" .Hero}}
+<p style="margin:0 0 14px 0;">Your order has been received and is awaiting confirmation from the supplier.</p>
+{{template "amount_box" .Amount}}
+{{template "key_value_table" .Rows}}
+{{template "cta_button" .CTA}}
+<p class="muted" style="margin:18px 0 0 0;color:#64748b;font-size:13px;">We'll email you again at every step of the way — accepted, shipped, delivered.</p>
+{{end}}

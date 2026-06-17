@@ -26,6 +26,15 @@ const (
 	RolesManage Permission = "roles:manage"
 
 	LocationsManage Permission = "locations:manage"
+
+	// Admin tooling — webhook DLQ, notifications outbox, audit log.
+	// Separated from users:delete so manager / custom roles can grant a
+	// subset without unlocking user deletion.
+	WebhooksView       Permission = "webhooks:view"
+	WebhooksManage     Permission = "webhooks:manage"
+	NotificationsView  Permission = "notifications:view"
+	NotificationsManage Permission = "notifications:manage"
+	AuditView          Permission = "audit:view"
 )
 
 

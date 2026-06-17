@@ -54,10 +54,20 @@ export default function LoginPage() {
     },
   })
 
+  // 2FA second-step state. Populated when /login returns require_totp.
+  const [pendingToken, setPendingToken] = useState<string | null>(null)
+  const [totpCode, setTotpCode] = useState('')
+  const [verifying, setVerifying] = useState(false)
+
   const onSubmit = async (data: LoginFormValues) => {
     setError(null)
     try {
       const response = await api.post('auth/login', { json: data }).json<LoginResponse>()
+      if (response.require_totp && response.pending_token) {
+        // Pause here for the second step.
+        setPendingToken(response.pending_token)
+        return
+      }
       useAuthStore.getState().login(response)
       router.push('/dashboard')
     } catch (err) {
@@ -71,6 +81,28 @@ export default function LoginPage() {
       } else {
         setError(err instanceof Error ? err.message : 'Network error. Please try again later.')
       }
+    }
+  }
+
+  const verify2FA = async () => {
+    if (!pendingToken) return
+    setError(null)
+    setVerifying(true)
+    try {
+      const response = await api.post('auth/login/verify-2fa', {
+        json: { pending_token: pendingToken, code: totpCode },
+      }).json<LoginResponse>()
+      useAuthStore.getState().login(response)
+      router.push('/dashboard')
+    } catch (err) {
+      if (err instanceof HTTPError) {
+        const data = await err.response.json().catch(() => ({})) as ApiError
+        setError(data.error || 'Invalid code')
+      } else {
+        setError(err instanceof Error ? err.message : 'Verification failed')
+      }
+    } finally {
+      setVerifying(false)
     }
   }
 
@@ -109,6 +141,46 @@ export default function LoginPage() {
             </p>
           </div>
 
+          {pendingToken ? (
+            <div className="space-y-4">
+              <div>
+                <h2 className="text-2xl font-bold tracking-tight mb-1">Two-factor verification</h2>
+                <p className="text-muted-foreground text-sm">
+                  Enter the 6-digit code from your authenticator app (or a backup code).
+                </p>
+              </div>
+              {error && (
+                <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>
+              )}
+              <div className="space-y-2">
+                <Label htmlFor="totp-code">Code</Label>
+                <Input
+                  id="totp-code"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  placeholder="123456 or backup code"
+                  value={totpCode}
+                  onChange={(e) => setTotpCode(e.target.value)}
+                  disabled={verifying}
+                  autoFocus
+                />
+              </div>
+              <Button
+                className="w-full"
+                disabled={!totpCode || verifying}
+                onClick={verify2FA}
+              >
+                {verifying ? (<><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Verifying…</>) : 'Verify'}
+              </Button>
+              <Button
+                variant="ghost"
+                className="w-full"
+                onClick={() => { setPendingToken(null); setTotpCode(''); setError(null) }}
+              >
+                Back
+              </Button>
+            </div>
+          ) : (
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             {registered && (
               <Alert className="bg-emerald-50 text-emerald-900 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-200 dark:border-emerald-900">
@@ -179,6 +251,7 @@ export default function LoginPage() {
               )}
             </Button>
           </form>
+          )}
 
           <p className="text-center text-sm text-muted-foreground">
             Don&apos;t have an account?{' '}

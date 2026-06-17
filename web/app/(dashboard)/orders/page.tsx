@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Edit, Loader2, Eye, Plus, XCircle, RotateCcw, Download, ChevronLeft, ChevronRight, Search } from 'lucide-react'
+import { Edit, Loader2, Eye, Plus, XCircle, RotateCcw, Download, ChevronLeft, ChevronRight, Search, Star, X } from 'lucide-react'
 import { TableSkeleton } from '@/components/ui/table-skeleton'
 import { toast } from 'sonner'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -14,6 +14,7 @@ import { HTTPError } from 'ky'
 import { ordersApi } from '@/lib/api/orders'
 import { paymentsApi } from '@/lib/api/payments'
 import { formatPrice } from '@/lib/utils'
+import { useFilterPresets } from '@/hooks/useFilterPresets'
 import { usePermission } from '@/hooks/usePermission'
 import { useAuthStore } from '@/lib/stores/auth-store'
 import { PERMISSIONS } from '@/lib/rbac'
@@ -134,6 +135,11 @@ function OrdersContent() {
   // Bulk selection — set of selected order ids on the current page.
   const [selectedIDs, setSelectedIDs] = useState<Set<string>>(new Set())
   const [bulkStatus, setBulkStatus] = useState('')
+
+  // Filter presets — named snapshots of the current URL params, stored
+  // per-user in localStorage. Useful for "My open B2B orders" etc.
+  const { presets, save: savePreset, remove: removePreset } = useFilterPresets('orders')
+  const hasAnyFilter = !!(statusFilter || paymentFilter || search || fromDate || toDate)
 
   // Convert YYYY-MM-DD to RFC3339 covering the full local day. Backend
   // compares against created_at as TIMESTAMPTZ, so the bounds need to be
@@ -417,7 +423,7 @@ function OrdersContent() {
             aria-label="To date"
           />
         </div>
-        {(statusFilter || paymentFilter || search || fromDate || toDate) && (
+        {hasAnyFilter && (
           <Button
             variant="ghost"
             onClick={() => {
@@ -428,10 +434,67 @@ function OrdersContent() {
             Reset
           </Button>
         )}
+        {hasAnyFilter && (
+          <Button
+            variant="ghost"
+            size="sm"
+            title="Save current filter as a preset"
+            onClick={() => {
+              const name = window.prompt('Preset name')
+              if (!name) return
+              const params: Record<string, string> = {}
+              if (statusFilter) params.status = statusFilter
+              if (paymentFilter) params.payment_status = paymentFilter
+              if (search) params.search = search
+              if (fromDate) params.from = fromDate
+              if (toDate) params.to = toDate
+              savePreset(name, params)
+            }}
+          >
+            <Star className="mr-2 h-3.5 w-3.5" /> Save
+          </Button>
+        )}
         <span className="ml-auto text-sm text-muted-foreground">
           {totalOrders} {totalOrders === 1 ? 'order' : 'orders'}
         </span>
       </div>
+
+      {/* Preset chips — click loads, X removes */}
+      {presets.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-muted-foreground">Presets:</span>
+          {presets.map((p) => (
+            <span
+              key={p.id}
+              className="inline-flex items-center gap-1 rounded-full border bg-muted px-3 py-1 text-xs"
+            >
+              <button
+                onClick={() => {
+                  setSearchInput(p.params.search ?? '')
+                  setParams({
+                    status: p.params.status,
+                    payment_status: p.params.payment_status,
+                    search: p.params.search,
+                    from: p.params.from,
+                    to: p.params.to,
+                    page: 1,
+                  })
+                }}
+                className="font-medium hover:underline"
+              >
+                {p.name}
+              </button>
+              <button
+                onClick={() => removePreset(p.id)}
+                className="text-muted-foreground hover:text-foreground"
+                title="Delete preset"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
 
       {/* Bulk action toolbar — visible only when one or more rows are selected */}
       {selectedIDs.size > 0 && can(PERMISSIONS.ORDERS_MANAGE) && (

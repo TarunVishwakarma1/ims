@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	chiMiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 func NewRouter(
@@ -29,6 +30,9 @@ func NewRouter(
 	webhookH *handler.WebhookHandler,
 	partnerH *handler.PartnerHandler,
 	returnH *handler.ReturnHandler,
+	notificationH *handler.NotificationHandler,
+	auditH *handler.AuditHandler,
+	totpH *handler.TOTPHandler,
 	cfg *config.Config,
 	pool *pgxpool.Pool,
 	cacheClient cache.Cache,
@@ -38,9 +42,11 @@ func NewRouter(
 	// Global middleware (applied to ALL routes)
 	r.Use(chiMiddleware.RequestID)
 	r.Use(middleware.RealIP)
-	r.Use(chiMiddleware.Logger)
+	// Structured request logger (zap JSON) replaces chi's stdlib text logger
+	// so file logs are uniformly JSON and greppable via `jq` / aggregators.
+	r.Use(middleware.RequestLogger)
 	r.Use(chiMiddleware.Recoverer)
-	r.Use(middleware.SecurityHeaders())
+	r.Use(middleware.SecurityHeaders(cfg.ENV))
 	r.Use(metrics.HTTPMiddleware) // record request count + latency
 	r.Use(middleware.RateLimiter())
 	r.Use(middleware.CORS(cfg.AllowedOrigins))
@@ -58,6 +64,7 @@ func NewRouter(
 		r.Use(middleware.AuthRateLimiter(cfg.ENV))
 		r.Post("/api/auth/register", authH.Signup)
 		r.Post("/api/auth/login", authH.Login)
+		r.Post("/api/auth/login/verify-2fa", totpH.VerifyLogin)
 		r.Post("/api/auth/refresh", authH.RefreshToken)
 		r.Post("/api/auth/logout", authH.Logout)
 	})
@@ -84,13 +91,30 @@ func NewRouter(
 		// Mock-only endpoints — service rejects when mockMode = false
 		r.Post("/api/payments/mock/capture", paymentH.MockCapture)
 		r.Post("/api/payments/mock/fail", paymentH.MockFail)
-		// DLQ inspection (admin)
-		r.With(middleware.RequirePermission(rbac.UsersDelete)).Get("/api/payments/webhooks/dlq", paymentH.ListDLQ)
-		r.With(middleware.RequirePermission(rbac.UsersDelete)).Post("/api/payments/webhooks/dlq/{id}/replay", paymentH.ReplayDLQ)
+		// Audit log viewer (admin / compliance)
+		r.With(middleware.RequirePermission(rbac.AuditView)).Get("/api/audit", auditH.List)
+
+		// Notifications outbox / DLQ admin
+		r.With(middleware.RequirePermission(rbac.NotificationsView)).Get("/api/notifications", notificationH.List)
+		r.With(middleware.RequirePermission(rbac.NotificationsView)).Get("/api/notifications/{id}", notificationH.GetByID)
+		r.With(middleware.RequirePermission(rbac.NotificationsManage)).Post("/api/notifications/{id}/resend", notificationH.Resend)
+
+		// Webhook event log + DLQ
+		r.With(middleware.RequirePermission(rbac.WebhooksView)).Get("/api/payments/webhooks/events", paymentH.ListEvents)
+		r.With(middleware.RequirePermission(rbac.WebhooksManage)).Get("/api/payments/webhooks/secrets", paymentH.WebhookSecretStatus)
+		r.With(middleware.RequirePermission(rbac.WebhooksView)).Get("/api/payments/webhooks/dlq", paymentH.ListDLQ)
+		r.With(middleware.RequirePermission(rbac.WebhooksView)).Get("/api/payments/webhooks/dlq/{id}", paymentH.GetDLQEvent)
+		r.With(middleware.RequirePermission(rbac.WebhooksManage)).Post("/api/payments/webhooks/dlq/{id}/replay", paymentH.ReplayDLQ)
 
 		// Email verification (authenticated user only)
 		r.Post("/api/auth/verify-email", authH.VerifyEmail)
 		r.Post("/api/auth/resend-verification", authH.ResendVerification)
+
+		// 2FA enrollment (requires existing session — user opts in
+		// from settings while logged in).
+		r.Post("/api/auth/2fa/enroll", totpH.Enroll)
+		r.Post("/api/auth/2fa/confirm", totpH.Confirm)
+		r.Post("/api/auth/2fa/disable", totpH.Disable)
 
 		// Users
 		r.With(middleware.RequirePermission(rbac.UsersView)).Get("/api/users", userH.ListUsers)
@@ -179,5 +203,17 @@ func NewRouter(
 		r.Post("/api/cart/checkout", marketH.Checkout)
 	})
 
-	return r
+	// otelhttp wraps the whole router so every incoming request gets a
+	// server span. Route-template name (e.g. "/api/orders/{id}") shows up
+	// as the span name via the operation func.
+	return otelhttp.NewHandler(r, "http.server",
+		otelhttp.WithSpanNameFormatter(func(_ string, req *http.Request) string {
+			if rc := req.Context().Value(routeKey{}); rc != nil {
+				return req.Method + " " + rc.(string)
+			}
+			return req.Method + " " + req.URL.Path
+		}),
+	)
 }
+
+type routeKey struct{}

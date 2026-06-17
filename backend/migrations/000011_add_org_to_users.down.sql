@@ -1,2 +1,0 @@
-ALTER TABLE users DROP CONSTRAINT IF EXISTS users_org_id_fkey;
-ALTER TABLE users DROP COLUMN IF EXISTS org_id;

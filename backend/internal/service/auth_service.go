@@ -9,6 +9,7 @@ import (
 
 	"github.com/TarunVishwakarma1/ims/backend/internal/domain"
 	"github.com/TarunVishwakarma1/ims/backend/internal/repository"
+	"github.com/TarunVishwakarma1/ims/backend/pkg/notify"
 	"github.com/TarunVishwakarma1/ims/backend/pkg/utils"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
@@ -36,10 +37,13 @@ var slugPattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 type AuthService interface {
 	Signup(ctx context.Context, req *SignupRequest, ipAddress, userAgent string) (*domain.LoginResponse, error)
 	Login(ctx context.Context, email, password, ipAddress, userAgent string) (*domain.LoginResponse, error)
+	VerifyTOTPLogin(ctx context.Context, pendingToken, code, ipAddress, userAgent string) (*domain.LoginResponse, error)
 	RefreshToken(ctx context.Context, refreshToken, ipAddress, userAgent string) (*domain.LoginResponse, error)
 	Logout(ctx context.Context, refreshToken string) error
 	VerifyEmail(ctx context.Context, userID uuid.UUID, otp string) error
 	ResendVerificationOTP(ctx context.Context, userID uuid.UUID) (string, error)
+	SetTOTPService(t TOTPService)
+	SetNotifier(n notify.Notifier)
 }
 
 type SignupRequest struct {
@@ -59,6 +63,21 @@ type authService struct {
 	jwtSecret     string
 	accessExpiry  time.Duration
 	refreshExpiry time.Duration
+	totp          TOTPService // optional; wired post-construction
+	notifier      notify.Notifier
+}
+
+// SetNotifier wires the email notifier post-construction so the existing
+// constructor signature stays unchanged.
+func (s *authService) SetNotifier(n notify.Notifier) {
+	s.notifier = n
+}
+
+// SetTOTPService wires the TOTP validator. Decoupled from constructor to
+// keep the existing call site untouched and avoid a chicken-and-egg
+// problem if TOTPService ever depends on auth.
+func (s *authService) SetTOTPService(t TOTPService) {
+	s.totp = t
 }
 
 func NewAuthService(
@@ -175,7 +194,11 @@ func (s *authService) Signup(ctx context.Context, req *SignupRequest, ipAddress,
 	}
 
 	zap.L().Info("signup: email verification OTP issued",
-		zap.String("email", email), zap.String("otp_dev_only", otp))
+		zap.String("email", email))
+	// Send the OTP email. Notifier is nil-safe if email is disabled.
+	if s.notifier != nil {
+		s.notifier.EmailVerificationOTP(ctx, email, otp, int(otpTTL.Minutes()))
+	}
 
 	// Audit
 	s.audit(ctx, &orgID, &userID, "auth.signup", "users", userID, ipAddress)
@@ -234,11 +257,74 @@ func (s *authService) Login(ctx context.Context, email, password, ipAddress, use
 		return nil, domain.ErrUnauthorized
 	}
 
+	// Password is correct. If the user has 2FA on, return a short-lived
+	// "pending" JWT — the client must call VerifyTOTPLogin with the
+	// rotating code (or a backup code) to receive real tokens.
+	if user.TOTPEnabled {
+		pending, err := s.signJWT(user.ID.String(), user.OrgID.String(), user.Role, "2fa_pending", 5*time.Minute)
+		if err != nil {
+			return nil, err
+		}
+		return &domain.LoginResponse{
+			RequireTOTP: true, PendingToken: pending,
+		}, nil
+	}
+
 	// Success path
 	s.recordLoginAttempt(ctx, email, ipAddress, userAgent, true, "")
 	_ = s.authRepo.ResetFailedLogins(ctx, user.ID)
 	_ = s.authRepo.UpdateLastLogin(ctx, user.ID)
 	s.audit(ctx, &user.OrgID, &user.ID, "auth.login", "users", user.ID, ipAddress)
+
+	access, refresh, err := s.issueTokens(ctx, user, org, ipAddress, userAgent, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &domain.LoginResponse{
+		AccessToken: access, RefreshToken: refresh,
+		User: user, Organization: org,
+	}, nil
+}
+
+// VerifyTOTPLogin completes the two-step login: verifies the pending JWT,
+// then validates the TOTP / backup code. On success, issues real tokens.
+func (s *authService) VerifyTOTPLogin(ctx context.Context, pendingToken, code, ipAddress, userAgent string) (*domain.LoginResponse, error) {
+	if pendingToken == "" || code == "" {
+		return nil, domain.ErrUnauthorized
+	}
+	c := &claims{}
+	tok, err := jwt.ParseWithClaims(pendingToken, c, func(t *jwt.Token) (interface{}, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, jwt.ErrSignatureInvalid
+		}
+		return []byte(s.jwtSecret), nil
+	})
+	if err != nil || !tok.Valid || c.Subject != "2fa_pending" {
+		return nil, domain.ErrUnauthorized
+	}
+	userID, err := uuid.Parse(c.UserID)
+	if err != nil {
+		return nil, domain.ErrUnauthorized
+	}
+	user, err := s.userRepo.GetByID(ctx, userID, uuid.Nil)
+	if err != nil {
+		return nil, err
+	}
+	org, err := s.orgRepo.GetByID(ctx, user.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	if s.totp == nil {
+		return nil, errors.New("2FA service not configured")
+	}
+	if err := s.totp.Validate(ctx, user, code); err != nil {
+		s.recordLoginAttempt(ctx, user.Email, ipAddress, userAgent, false, "invalid_2fa")
+		return nil, domain.ErrUnauthorized
+	}
+	s.recordLoginAttempt(ctx, user.Email, ipAddress, userAgent, true, "")
+	_ = s.authRepo.ResetFailedLogins(ctx, user.ID)
+	_ = s.authRepo.UpdateLastLogin(ctx, user.ID)
+	s.audit(ctx, &user.OrgID, &user.ID, "auth.login.2fa", "users", user.ID, ipAddress)
 
 	access, refresh, err := s.issueTokens(ctx, user, org, ipAddress, userAgent, nil)
 	if err != nil {
@@ -365,16 +451,19 @@ func (s *authService) VerifyEmail(ctx context.Context, userID uuid.UUID, otp str
 func (s *authService) ResendVerificationOTP(ctx context.Context, userID uuid.UUID) (string, error) {
 	otp := utils.GenerateOTP()
 	otpHash := utils.HashToken(otp)
-	// Find user's email
-	// We don't have a direct lookup; orgID is unknown here. Use a raw query path.
-	// For simplicity, look up via UserRepo using orgID from refresh token isn't possible.
-	// Caller knows userID + orgID from JWT, but service takes userID only.
-	// We accept the trade-off: this method requires the caller to have already validated
-	// the user (which the handler does via the Auth middleware).
-	zap.L().Info("verification OTP reissued",
-		zap.String("user_id", userID.String()), zap.String("otp_dev_only", otp))
-	if err := s.authRepo.CreateEmailVerification(ctx, userID, "", otpHash, time.Now().Add(otpTTL)); err != nil {
+	// Look up user so we have an email to send to. uuid.Nil for orgID does a
+	// cross-org lookup (refresh-token path uses the same trick).
+	user, err := s.userRepo.GetByID(ctx, userID, uuid.Nil)
+	if err != nil {
 		return "", err
+	}
+	if err := s.authRepo.CreateEmailVerification(ctx, userID, user.Email, otpHash, time.Now().Add(otpTTL)); err != nil {
+		return "", err
+	}
+	zap.L().Info("verification OTP reissued",
+		zap.String("user_id", userID.String()))
+	if s.notifier != nil {
+		s.notifier.EmailVerificationOTP(ctx, user.Email, otp, int(otpTTL.Minutes()))
 	}
 	return otp, nil
 }

@@ -25,10 +25,15 @@ export const useAuthStore = create<AuthState>()(
       isAuthenticated: false,
 
       login: (response) => {
+        if (!response.access_token || !response.refresh_token || !response.user) {
+          // Caller forgot to handle the require_totp branch. Refuse to
+          // half-authenticate.
+          throw new Error('login response missing tokens')
+        }
         setTokens(response.access_token, response.refresh_token);
         set({
           user: response.user,
-          organization: response.organization,
+          organization: response.organization ?? null,
           accessToken: response.access_token,
           isAuthenticated: true,
         });

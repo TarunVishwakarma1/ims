@@ -214,6 +214,9 @@ type WebhookRepository interface {
 	IncrementAttempts(ctx context.Context, id uuid.UUID) (int, error)
 	// ListDLQ returns failed events parked in the dead-letter queue.
 	ListDLQ(ctx context.Context, limit int) ([]*domain.WebhookEvent, error)
+	// ListRecent returns the most recent N webhook events regardless of
+	// status. Drives the success-log admin view.
+	ListRecent(ctx context.Context, limit int, status string) ([]*domain.WebhookEvent, error)
 }
 
 type webhookRepository struct {
@@ -302,6 +305,44 @@ func (r *webhookRepository) IncrementAttempts(ctx context.Context, id uuid.UUID)
 		UPDATE webhook_events SET attempts = attempts + 1 WHERE id = $1 RETURNING attempts
 	`, id).Scan(&attempts)
 	return attempts, err
+}
+
+// ListRecent returns the most recent webhook events. `status` is optional
+// (e.g. "processed" filters to success log; "" matches all).
+func (r *webhookRepository) ListRecent(ctx context.Context, limit int, status string) ([]*domain.WebhookEvent, error) {
+	if limit <= 0 || limit > 1000 {
+		limit = 200
+	}
+	var rows pgx.Rows
+	var err error
+	if status != "" {
+		rows, err = r.db.Query(ctx, `
+			SELECT id, provider, event_id, event_type, status, error, attempts, created_at, processed_at
+			FROM webhook_events
+			WHERE status = $1
+			ORDER BY created_at DESC LIMIT $2
+		`, status, limit)
+	} else {
+		rows, err = r.db.Query(ctx, `
+			SELECT id, provider, event_id, event_type, status, error, attempts, created_at, processed_at
+			FROM webhook_events
+			ORDER BY created_at DESC LIMIT $1
+		`, limit)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]*domain.WebhookEvent, 0)
+	for rows.Next() {
+		var e domain.WebhookEvent
+		var attempts int
+		if err := rows.Scan(&e.ID, &e.Provider, &e.EventID, &e.EventType, &e.Status, &e.Error, &attempts, &e.CreatedAt, &e.ProcessedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, &e)
+	}
+	return out, rows.Err()
 }
 
 func (r *webhookRepository) ListDLQ(ctx context.Context, limit int) ([]*domain.WebhookEvent, error) {

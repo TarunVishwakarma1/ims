@@ -22,6 +22,7 @@ import (
 	"github.com/TarunVishwakarma1/ims/backend/pkg/jobs"
 	"github.com/TarunVishwakarma1/ims/backend/pkg/notify"
 	"github.com/TarunVishwakarma1/ims/backend/pkg/rbac"
+	"github.com/TarunVishwakarma1/ims/backend/pkg/tracing"
 
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/pgx/v5"
@@ -48,6 +49,18 @@ func main() {
 	}
 	defer appLogger.Sync()
 	zap.ReplaceGlobals(appLogger)
+
+	// OpenTelemetry tracing. Stdout exporter by default; set OTEL_EXPORTER=otlp
+	// and OTEL_ENDPOINT=collector:4317 to ship to Tempo/Jaeger.
+	tracerShutdown, err := tracing.Init(ctx, cfg.ENV)
+	if err != nil {
+		zap.L().Warn("tracing init failed (continuing without traces)", zap.Error(err))
+	}
+	defer func() {
+		shutdownCtx, c := context.WithTimeout(context.Background(), 5*time.Second)
+		defer c()
+		_ = tracerShutdown(shutdownCtx)
+	}()
 
 	// Run Migrations
 	d, err := iofs.New(migrations.FS, ".")
@@ -129,6 +142,9 @@ func main() {
 
 	orderService := service.NewOrderService(orderRepo, inventoryRepo, auditLogRepo, marketRepo, eventBus, cacheClient, notifier)
 	authService := service.NewAuthService(userRepo, orgRepo, auditLogRepo, authRepo, pool, cfg.JWTSecret, cfg.JWTAccessExpiry, cfg.JWTRefreshExpiry)
+	totpService := service.NewTOTPService(userRepo)
+	authService.SetTOTPService(totpService)
+	authService.SetNotifier(notifier)
 	roleService := service.NewRoleService(roleRepo)
 	locationService := service.NewLocationService(locationRepo, cacheClient)
 	marketService := service.NewMarketplaceService(marketRepo, inventoryRepo, orderRepo, productRepo, locationRepo, cacheClient, eventBus, pool)
@@ -155,6 +171,7 @@ func main() {
 	jobs.StartPaymentReconciliation(ctx, paymentService, 24*time.Hour)
 
 	returnService := service.NewReturnService(returnRepo, orderRepo, inventoryRepo, auditLogRepo, paymentService, eventBus, notifier)
+	notificationService := service.NewNotificationService(notificationRepo)
 
 	userH := handler.NewUserHandler(userService)
 	categoryH := handler.NewCategoryHandler(categoryService)
@@ -167,6 +184,9 @@ func main() {
 	marketH := handler.NewMarketplaceHandler(marketService)
 	partnerH := handler.NewPartnerHandler(partnerService)
 	returnH := handler.NewReturnHandler(returnService)
+	notificationH := handler.NewNotificationHandler(notificationService)
+	auditH := handler.NewAuditHandler(auditLogRepo)
+	totpH := handler.NewTOTPHandler(totpService, authService)
 	mode := "test"
 	switch {
 	case cfg.RazorpayMockMode:
@@ -175,11 +195,11 @@ func main() {
 		mode = "LIVE (real money)"
 	}
 	zap.L().Info("razorpay mode", zap.String("mode", mode), zap.String("key_id", cfg.RazorpayKeyID))
-	paymentH := handler.NewPaymentHandler(paymentService, cfg.RazorpayMockMode, cfg.RazorpayLiveMode, cfg.RazorpayKeyID)
+	paymentH := handler.NewPaymentHandler(paymentService, cfg.RazorpayMockMode, cfg.RazorpayLiveMode, cfg.RazorpayKeyID, cfg.RazorpayWebhookSecret, cfg.RazorpayWebhookSecretPrev)
 	webhookH := handler.NewWebhookHandler(paymentService)
 	eventsH := handler.NewEventsHandler(eventBus)
 
-	router := NewRouter(authH, userH, categoryH, productH, inventoryH, orderH, roleH, locationH, marketH, eventsH, paymentH, webhookH, partnerH, returnH, cfg, pool, cacheClient)
+	router := NewRouter(authH, userH, categoryH, productH, inventoryH, orderH, roleH, locationH, marketH, eventsH, paymentH, webhookH, partnerH, returnH, notificationH, auditH, totpH, cfg, pool, cacheClient)
 
 	server := &http.Server{
 		Addr:         ":" + cfg.Port,

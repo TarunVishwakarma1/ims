@@ -1,0 +1,79 @@
+{{define "layout"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Subject}}</title>
+<style>
+/* Email clients strip <style> sometimes; everything CRITICAL is also inlined. */
+@media (prefers-color-scheme: dark) {
+  .bg-page  { background:#0b0f17 !important; }
+  .card     { background:#111827 !important; }
+  .text     { color:#e5e7eb !important; }
+  .muted    { color:#94a3b8 !important; }
+  .divider  { border-top-color:#1f2937 !important; }
+  .pill     { background:#1f2937 !important; color:#cbd5e1 !important; }
+}
+@media only screen and (max-width:620px) {
+  .container { width:100% !important; }
+  .px-xl     { padding-left:24px !important; padding-right:24px !important; }
+  .hero-h    { font-size:24px !important; line-height:32px !important; }
+}
+</style>
+</head>
+<body class="bg-page" style="margin:0;padding:0;background:#f6f7fb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased;">
+
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="bg-page" style="background:#f6f7fb;padding:32px 16px;">
+<tr><td align="center">
+
+<!-- Card -->
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" class="container card"
+       style="width:600px;max-width:600px;background:#ffffff;border-radius:14px;overflow:hidden;
+              box-shadow:0 1px 2px rgba(15,23,42,0.06),0 8px 24px rgba(15,23,42,0.06);">
+
+  <!-- Header: brand stripe -->
+  <tr><td style="padding:0;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+      <tr><td style="height:6px;background:linear-gradient(90deg,#4f46e5 0%,#7c3aed 50%,#ec4899 100%);font-size:0;line-height:0;">&nbsp;</td></tr>
+    </table>
+  </td></tr>
+
+  <tr><td class="px-xl" style="padding:28px 40px 0 40px;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+      <tr>
+        <td align="left" valign="middle">
+          <span class="text" style="font-weight:700;font-size:18px;letter-spacing:-0.01em;color:#0f172a;">IMS</span>
+          <span class="muted" style="margin-left:8px;font-size:13px;color:#64748b;">Inventory Management</span>
+        </td>
+        <td align="right" valign="middle">
+          {{if .HeaderTag}}<span class="pill" style="display:inline-block;background:#eef2ff;color:#4338ca;font-size:11px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;padding:4px 10px;border-radius:999px;">{{.HeaderTag}}</span>{{end}}
+        </td>
+      </tr>
+    </table>
+  </td></tr>
+
+  <!-- Body -->
+  <tr><td class="px-xl text" style="padding:24px 40px 32px 40px;color:#0f172a;font-size:15px;line-height:24px;">
+    {{block "body" .}}{{end}}
+  </td></tr>
+
+  <!-- Divider -->
+  <tr><td class="px-xl" style="padding:0 40px;">
+    <div class="divider" style="border-top:1px solid #eef2f7;height:1px;line-height:1px;font-size:0;">&nbsp;</div>
+  </td></tr>
+
+  <!-- Footer -->
+  <tr><td class="px-xl muted" style="padding:18px 40px 28px 40px;color:#64748b;font-size:12px;line-height:18px;">
+    You received this email because of activity on your IMS account.<br>
+    Replies to this address are not monitored — for support, contact your administrator.
+    <br><br>
+    <span style="color:#94a3b8;">© IMS · {{.Year}}</span>
+  </td></tr>
+
+</table>
+
+</td></tr>
+</table>
+
+</body>
+</html>{{end}}

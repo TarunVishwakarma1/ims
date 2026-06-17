@@ -73,6 +73,14 @@ type WebhookProcessor interface {
 	// ListWebhookDLQ returns failed-and-parked webhook events for ops review.
 	ListWebhookDLQ(ctx context.Context) ([]*domain.WebhookEvent, error)
 
+	// ListRecentWebhooks returns up to 200 of the most recent events,
+	// optionally filtered by status (e.g. "processed" for the success log).
+	ListRecentWebhooks(ctx context.Context, status string) ([]*domain.WebhookEvent, error)
+
+	// GetWebhookEvent returns the full event row with decrypted payload.
+	// Used by the DLQ admin UI's "View payload" modal.
+	GetWebhookEvent(ctx context.Context, id uuid.UUID) (*domain.WebhookEvent, error)
+
 	// ReplayDLQEvent re-runs a single dead-lettered webhook through the
 	// normal processing pipeline. Used by admin UI to recover from
 	// transient failures after the underlying bug has been fixed.
@@ -798,6 +806,22 @@ func (s *paymentService) RefundByOrder(ctx context.Context, orgID, orderID uuid.
 		return nil
 	}
 	return s.Refund(ctx, orgID, payment.ID, amount, reason)
+}
+
+func (s *paymentService) ListRecentWebhooks(ctx context.Context, status string) ([]*domain.WebhookEvent, error) {
+	return s.webhookRepo.ListRecent(ctx, 200, status)
+}
+
+func (s *paymentService) GetWebhookEvent(ctx context.Context, id uuid.UUID) (*domain.WebhookEvent, error) {
+	evt, raw, err := s.webhookRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	// Decrypted payload is stitched back onto the row for the JSON response.
+	if raw != nil {
+		evt.Payload = raw
+	}
+	return evt, nil
 }
 
 // ReplayDLQEvent fetches the raw payload and signature for a dead-lettered

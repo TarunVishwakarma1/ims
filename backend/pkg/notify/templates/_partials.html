@@ -1,0 +1,80 @@
+{{/* Reusable inline pieces. Always called from a body template. */}}
+
+{{define "hero"}}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 16px 0;">
+  <tr><td>
+    <h1 class="hero-h text" style="margin:0 0 8px 0;font-size:28px;line-height:36px;font-weight:700;letter-spacing:-0.02em;color:#0f172a;">{{.Title}}</h1>
+    {{if .Subtitle}}<p class="muted" style="margin:0;color:#64748b;font-size:15px;line-height:22px;">{{.Subtitle}}</p>{{end}}
+  </td></tr>
+</table>
+{{end}}
+
+{{define "cta_button"}}
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:20px 0 8px 0;">
+  <tr><td>
+    <a href="{{.URL}}" target="_blank" rel="noopener"
+       style="display:inline-block;background:#4f46e5;color:#ffffff;text-decoration:none;
+              font-weight:600;font-size:14px;padding:12px 22px;border-radius:10px;
+              box-shadow:0 1px 2px rgba(79,70,229,0.4);">
+      {{.Label}} →
+    </a>
+  </td></tr>
+</table>
+{{end}}
+
+{{define "key_value_table"}}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="background:#f8fafc;border:1px solid #eef2f7;border-radius:10px;margin:16px 0;">
+  <tbody>
+  {{range .}}
+    <tr>
+      <td style="padding:12px 16px;border-bottom:1px solid #eef2f7;color:#64748b;font-size:13px;width:40%;">{{.K}}</td>
+      <td style="padding:12px 16px;border-bottom:1px solid #eef2f7;color:#0f172a;font-size:14px;font-weight:500;text-align:right;">{{.V}}</td>
+    </tr>
+  {{end}}
+  </tbody>
+</table>
+{{end}}
+
+{{define "amount_box"}}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="background:linear-gradient(135deg,#eef2ff 0%,#fdf4ff 100%);
+              border-radius:12px;margin:18px 0;">
+  <tr><td style="padding:18px 22px;">
+    <div style="color:#6b7280;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;font-weight:600;">{{.Label}}</div>
+    <div style="margin-top:4px;color:#0f172a;font-size:28px;line-height:36px;font-weight:700;letter-spacing:-0.02em;">{{.Amount}}</div>
+    {{if .Sub}}<div style="margin-top:2px;color:#64748b;font-size:13px;">{{.Sub}}</div>{{end}}
+  </td></tr>
+</table>
+{{end}}
+
+{{define "otp_code"}}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+  <tr><td align="center" style="padding:8px 0 16px 0;">
+    <div style="display:inline-block;background:#0f172a;color:#ffffff;border-radius:14px;
+                font-family:'SF Mono','Roboto Mono',Menlo,Consolas,monospace;
+                font-size:30px;font-weight:700;letter-spacing:0.4em;padding:18px 24px;">
+      {{.Code}}
+    </div>
+    <div style="margin-top:10px;color:#64748b;font-size:12px;">Expires in {{.Minutes}} min</div>
+  </td></tr>
+</table>
+{{end}}
+
+{{define "alert_warning"}}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;margin:16px 0;">
+  <tr><td style="padding:14px 16px;color:#78350f;font-size:13px;line-height:20px;">
+    <strong>⚠ {{.Title}}</strong><br>{{.Body}}
+  </td></tr>
+</table>
+{{end}}
+
+{{define "alert_success"}}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:10px;margin:16px 0;">
+  <tr><td style="padding:14px 16px;color:#065f46;font-size:13px;line-height:20px;">
+    <strong>✓ {{.Title}}</strong><br>{{.Body}}
+  </td></tr>
+</table>
+{{end}}

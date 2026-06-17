@@ -2,9 +2,11 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 
+	"github.com/TarunVishwakarma1/ims/backend/internal/domain"
 	"github.com/TarunVishwakarma1/ims/backend/internal/service"
 	"github.com/TarunVishwakarma1/ims/backend/pkg/metrics"
 	"github.com/TarunVishwakarma1/ims/backend/pkg/middleware"
@@ -14,14 +16,23 @@ import (
 )
 
 type PaymentHandler struct {
-	service  service.PaymentService
-	mockMode bool
-	liveMode bool
-	keyID    string
+	service                 service.PaymentService
+	mockMode                bool
+	liveMode                bool
+	keyID                   string
+	webhookSecretPrimarySet bool
+	webhookSecretPrevSet    bool
 }
 
-func NewPaymentHandler(s service.PaymentService, mockMode, liveMode bool, keyID string) *PaymentHandler {
-	return &PaymentHandler{service: s, mockMode: mockMode, liveMode: liveMode, keyID: keyID}
+func NewPaymentHandler(s service.PaymentService, mockMode, liveMode bool, keyID, webhookSecret, webhookSecretPrev string) *PaymentHandler {
+	return &PaymentHandler{
+		service:                 s,
+		mockMode:                mockMode,
+		liveMode:                liveMode,
+		keyID:                   keyID,
+		webhookSecretPrimarySet: webhookSecret != "",
+		webhookSecretPrevSet:    webhookSecretPrev != "",
+	}
 }
 
 // Config — GET /api/payments/config
@@ -221,6 +232,57 @@ func (h *PaymentHandler) ListDLQ(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, list)
+}
+
+// WebhookSecretStatus — GET /api/payments/webhooks/secrets
+// Returns visibility info ONLY (never the secret values themselves):
+//   primary_set: is RAZORPAY_WEBHOOK_SECRET_* configured for current mode?
+//   prev_set:    is the previous-rotation secret configured?
+//   live_mode:   real money vs test sandbox
+//   mock_mode:   skip RazorPay entirely
+//
+// UI uses this to surface "rotation window active" + warn when no rotation
+// secret is configured.
+func (h *PaymentHandler) WebhookSecretStatus(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"primary_set": h.webhookSecretPrimarySet,
+		"prev_set":    h.webhookSecretPrevSet,
+		"live_mode":   h.liveMode,
+		"mock_mode":   h.mockMode,
+		"key_id":      h.keyID,
+	})
+}
+
+// ListEvents — GET /api/payments/webhooks/events?status=processed
+func (h *PaymentHandler) ListEvents(w http.ResponseWriter, r *http.Request) {
+	status := r.URL.Query().Get("status")
+	list, err := h.service.ListRecentWebhooks(r.Context(), status)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+// GetDLQEvent — GET /api/payments/webhooks/dlq/{id}
+// Returns the full webhook_event row with decrypted payload so the admin UI
+// can render the raw JSON for debugging.
+func (h *PaymentHandler) GetDLQEvent(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid event id")
+		return
+	}
+	evt, err := h.service.GetWebhookEvent(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "event not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+	writeJSON(w, http.StatusOK, evt)
 }
 
 // ReplayDLQ — POST /api/payments/webhooks/dlq/{id}/replay

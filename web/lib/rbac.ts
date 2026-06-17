@@ -15,6 +15,15 @@ export const PERMISSIONS = {
 
   LOCATIONS_MANAGE: 'locations:manage',
   ROLES_MANAGE: 'roles:manage',
+
+  // Admin tooling — separate from users:delete so the bits can be granted
+  // independently (e.g. ops manager gets audit + notifications but not
+  // raw webhook replay).
+  WEBHOOKS_VIEW: 'webhooks:view',
+  WEBHOOKS_MANAGE: 'webhooks:manage',
+  NOTIFICATIONS_VIEW: 'notifications:view',
+  NOTIFICATIONS_MANAGE: 'notifications:manage',
+  AUDIT_VIEW: 'audit:view',
 } as const
 
 export type Permission = typeof PERMISSIONS[keyof typeof PERMISSIONS]
@@ -28,6 +37,10 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     PERMISSIONS.INVENTORY_VIEW, PERMISSIONS.INVENTORY_MANAGE,
     PERMISSIONS.ORDERS_VIEW, PERMISSIONS.ORDERS_CREATE, PERMISSIONS.ORDERS_MANAGE,
     PERMISSIONS.LOCATIONS_MANAGE,
+    // Ops triage tools — read-only webhooks + manage notifications + read audit.
+    PERMISSIONS.WEBHOOKS_VIEW,
+    PERMISSIONS.NOTIFICATIONS_VIEW, PERMISSIONS.NOTIFICATIONS_MANAGE,
+    PERMISSIONS.AUDIT_VIEW,
   ],
   staff: [
     PERMISSIONS.PRODUCTS_VIEW,

@@ -1,5 +1,0 @@
-ALTER TABLE users
-  ADD CONSTRAINT users_role_fkey
-  FOREIGN KEY (role) REFERENCES roles(name)
-  ON UPDATE CASCADE
-  ON DELETE RESTRICT;

@@ -21,6 +21,12 @@ type User struct {
 	PasswordChangedAt *time.Time `json:"-" db:"password_changed_at"`
 	CreatedAt         time.Time  `json:"created_at" db:"created_at"`
 	UpdatedAt         time.Time  `json:"updated_at" db:"updated_at"`
+
+	// TOTP-based 2FA. Secret + backup codes never leave the server.
+	TOTPSecret       *string    `json:"-" db:"totp_secret"`
+	TOTPEnabled      bool       `json:"totp_enabled" db:"totp_enabled"`
+	TOTPVerifiedAt   *time.Time `json:"totp_verified_at,omitempty" db:"totp_verified_at"`
+	TOTPBackupCodes  *string    `json:"-" db:"totp_backup_codes"`
 }
 
 

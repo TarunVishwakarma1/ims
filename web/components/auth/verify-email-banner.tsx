@@ -1,8 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
-import { MailWarning, Loader2 } from 'lucide-react'
+import { MailWarning, Loader2, RefreshCcw } from 'lucide-react'
 import { toast } from 'sonner'
 import { HTTPError } from 'ky'
 
@@ -11,15 +11,47 @@ import { authApi } from '@/lib/api/auth'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
+// Dashboard layout re-mounts this banner on every route change. Persist
+// "input is open" + the in-progress OTP in localStorage so navigating
+// between tabs doesn't nuke either.
+const OPEN_KEY = 'ims:verify-email-input-open'
+const OTP_KEY  = 'ims:verify-email-input-otp'
+
 export function VerifyEmailBanner() {
   const { user, setUser } = useAuthStore()
   const [showInput, setShowInput] = useState(false)
   const [otp, setOtp] = useState('')
+  const [hydrated, setHydrated] = useState(false)
+
+  // Hydrate from localStorage after mount — avoids SSR/CSR mismatch.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    setShowInput(window.localStorage.getItem(OPEN_KEY) === '1')
+    setOtp(window.localStorage.getItem(OTP_KEY) ?? '')
+    setHydrated(true)
+  }, [])
+
+  useEffect(() => {
+    if (!hydrated || typeof window === 'undefined') return
+    if (showInput) window.localStorage.setItem(OPEN_KEY, '1')
+    else           window.localStorage.removeItem(OPEN_KEY)
+  }, [showInput, hydrated])
+
+  useEffect(() => {
+    if (!hydrated || typeof window === 'undefined') return
+    if (otp) window.localStorage.setItem(OTP_KEY, otp)
+    else     window.localStorage.removeItem(OTP_KEY)
+  }, [otp, hydrated])
+
+  const clearAll = () => {
+    setShowInput(false)
+    setOtp('')
+  }
 
   const resendMutation = useMutation({
     mutationFn: authApi.resendVerification,
     onSuccess: () => {
-      toast.success('Verification code sent. Check the server log (dev mode).')
+      toast.success('Verification code sent — check your inbox')
       setShowInput(true)
     },
     onError: () => toast.error('Could not send verification code'),
@@ -30,8 +62,7 @@ export function VerifyEmailBanner() {
     onSuccess: () => {
       toast.success('Email verified')
       if (user) setUser({ ...user, email_verified: true })
-      setShowInput(false)
-      setOtp('')
+      clearAll()
     },
     onError: async (err: Error) => {
       if (err instanceof HTTPError) {
@@ -56,7 +87,7 @@ export function VerifyEmailBanner() {
         <span>Verify your email <strong>{user.email}</strong> to keep your account secure.</span>
       </div>
       {showInput ? (
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Input
             value={otp}
             onChange={e => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
@@ -64,6 +95,7 @@ export function VerifyEmailBanner() {
             className="w-32"
             inputMode="numeric"
             maxLength={6}
+            autoComplete="one-time-code"
           />
           <Button
             size="sm"
@@ -73,8 +105,20 @@ export function VerifyEmailBanner() {
             {verifyMutation.isPending && <Loader2 className="mr-2 h-3 w-3 animate-spin" />}
             Verify
           </Button>
-          <Button size="sm" variant="ghost" onClick={() => setShowInput(false)}>
-            Cancel
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={resendMutation.isPending}
+            onClick={() => { setOtp(''); resendMutation.mutate() }}
+            title="Send a new code"
+          >
+            {resendMutation.isPending
+              ? <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+              : <RefreshCcw className="mr-2 h-3 w-3" />}
+            Resend
+          </Button>
+          <Button size="sm" variant="ghost" onClick={clearAll}>
+            Close
           </Button>
         </div>
       ) : (

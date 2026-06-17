@@ -35,8 +35,24 @@ export const paymentsApi = {
 
   // DLQ admin
   listDLQ: () => api.get('payments/webhooks/dlq').json<DLQEvent[]>(),
+  listEvents: (status?: string) =>
+    api.get('payments/webhooks/events', { searchParams: status ? { status } : {} }).json<DLQEvent[]>(),
+  webhookSecretStatus: () =>
+    api.get('payments/webhooks/secrets').json<{
+      primary_set: boolean
+      prev_set: boolean
+      live_mode: boolean
+      mock_mode: boolean
+      key_id: string
+    }>(),
+  getDLQEvent: (id: string) => api.get(`payments/webhooks/dlq/${id}`).json<DLQEventFull>(),
   replayDLQ: (id: string) =>
     api.post(`payments/webhooks/dlq/${id}/replay`).json<{ message: string }>(),
+}
+
+export interface DLQEventFull extends DLQEvent {
+  payload?: unknown
+  signature?: string | null
 }
 
 export interface DLQEvent {

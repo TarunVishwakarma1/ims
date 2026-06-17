@@ -9,6 +9,7 @@ import { Edit, Loader2, Trash2, Shield, User as UserIcon, Plus } from 'lucide-re
 import { TableSkeleton } from '@/components/ui/table-skeleton'
 
 import { usersApi } from '@/lib/api/users'
+import { rolesApi } from '@/lib/api/roles'
 import { usePermission } from '@/hooks/usePermission'
 import { PERMISSIONS } from '@/lib/rbac'
 import type { User, Role } from '@/types/api'
@@ -41,18 +42,20 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 
+// Role is validated as a non-empty string so custom roles created via the
+// roles panel are accepted. Backend already accepts any role name.
 const createUserSchema = z.object({
   name: z.string().min(1, 'Name is required'),
   email: z.string().email('Valid email is required'),
   password: z.string().min(8, 'Password must be at least 8 characters'),
-  role: z.enum(['admin', 'manager', 'staff']),
+  role: z.string().min(1, 'Role is required'),
 })
 type CreateUserFormValues = z.infer<typeof createUserSchema>
 
 const editUserSchema = z.object({
   name: z.string().min(1, 'Name is required'),
   email: z.string().email('Valid email is required'),
-  role: z.enum(['admin', 'manager', 'staff']),
+  role: z.string().min(1, 'Role is required'),
   is_active: z.boolean(),
 })
 type EditUserFormValues = z.infer<typeof editUserSchema>
@@ -71,6 +74,16 @@ export default function UsersPage() {
     queryFn: usersApi.list,
     enabled: can(PERMISSIONS.USERS_VIEW),
   })
+
+  // Roles drive the Role select in create + edit dialogs. Includes both
+  // system roles (admin/manager/staff) and any custom roles created via
+  // the roles admin page.
+  const { data: rawRoles } = useQuery({
+    queryKey: ['roles'],
+    queryFn: rolesApi.listRoles,
+    enabled: can(PERMISSIONS.USERS_CREATE) || can(PERMISSIONS.USERS_EDIT),
+  })
+  const roles = rawRoles ?? []
 
   const users = rawUsers ?? []
 
@@ -142,6 +155,11 @@ export default function UsersPage() {
         return <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100"><UserIcon className="w-3 h-3 mr-1" /> Manager</Badge>
       case 'staff':
         return <Badge variant="secondary"><UserIcon className="w-3 h-3 mr-1" /> Staff</Badge>
+      default:
+        // Custom roles created via the roles admin page.
+        return <Badge variant="outline" className="bg-amber-50 text-amber-800 border-amber-200">
+          <Shield className="w-3 h-3 mr-1" /> {role.charAt(0).toUpperCase() + role.slice(1)}
+        </Badge>
     }
   }
 
@@ -272,9 +290,12 @@ export default function UsersPage() {
                       <SelectValue placeholder="Select role" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="admin">Admin</SelectItem>
-                      <SelectItem value="manager">Manager</SelectItem>
-                      <SelectItem value="staff">Staff</SelectItem>
+                      {roles.map(r => (
+                        <SelectItem key={r.id} value={r.name}>
+                          {r.name.charAt(0).toUpperCase() + r.name.slice(1)}
+                          {r.is_system && <span className="ml-2 text-xs text-muted-foreground">(system)</span>}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 )}
@@ -327,9 +348,12 @@ export default function UsersPage() {
                       <SelectValue placeholder="Select role" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="admin">Admin</SelectItem>
-                      <SelectItem value="manager">Manager</SelectItem>
-                      <SelectItem value="staff">Staff</SelectItem>
+                      {roles.map(r => (
+                        <SelectItem key={r.id} value={r.name}>
+                          {r.name.charAt(0).toUpperCase() + r.name.slice(1)}
+                          {r.is_system && <span className="ml-2 text-xs text-muted-foreground">(system)</span>}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 )}

@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/TarunVishwakarma1/ims/backend/internal/domain"
 	"github.com/google/uuid"
@@ -16,6 +17,11 @@ type UserRepository interface {
 	Update(ctx context.Context, user *domain.User) error
 	Delete(ctx context.Context, id uuid.UUID, orgID uuid.UUID) error
 	List(ctx context.Context, orgID uuid.UUID) ([]*domain.User, error)
+
+	// SetTOTP writes the TOTP secret / enabled flag / backup codes / verified
+	// timestamp in a single update. Used by the 2FA enroll + confirm flow.
+	SetTOTP(ctx context.Context, userID uuid.UUID, secret *string, enabled bool, verifiedAt *time.Time, backupCodes *string) error
+
 	WithTx(tx pgx.Tx) UserRepository
 }
 
@@ -42,7 +48,8 @@ func (r *userRepository) Create(ctx context.Context, user *domain.User) error {
 
 const userSelectCols = `id, org_id, name, email, password_hash, role, is_active,
 	email_verified, failed_login_count, locked_until, last_login_at, password_changed_at,
-	created_at, updated_at`
+	created_at, updated_at,
+	totp_secret, totp_enabled, totp_verified_at, totp_backup_codes`
 
 func scanUser(scanner interface {
 	Scan(dest ...any) error
@@ -50,7 +57,8 @@ func scanUser(scanner interface {
 	u := &domain.User{}
 	err := scanner.Scan(&u.ID, &u.OrgID, &u.Name, &u.Email, &u.PasswordHash, &u.Role, &u.IsActive,
 		&u.EmailVerified, &u.FailedLoginCount, &u.LockedUntil, &u.LastLoginAt, &u.PasswordChangedAt,
-		&u.CreatedAt, &u.UpdatedAt)
+		&u.CreatedAt, &u.UpdatedAt,
+		&u.TOTPSecret, &u.TOTPEnabled, &u.TOTPVerifiedAt, &u.TOTPBackupCodes)
 	if err != nil {
 		return nil, err
 	}
@@ -89,6 +97,19 @@ func (r *userRepository) GetByEmail(ctx context.Context, email string) (*domain.
 		return nil, err
 	}
 	return user, nil
+}
+
+func (r *userRepository) SetTOTP(ctx context.Context, userID uuid.UUID, secret *string, enabled bool, verifiedAt *time.Time, backupCodes *string) error {
+	_, err := r.db.Exec(ctx, `
+		UPDATE users SET
+			totp_secret = $2,
+			totp_enabled = $3,
+			totp_verified_at = $4,
+			totp_backup_codes = $5,
+			updated_at = NOW()
+		WHERE id = $1
+	`, userID, secret, enabled, verifiedAt, backupCodes)
+	return err
 }
 
 func (r *userRepository) Update(ctx context.Context, user *domain.User) error {
