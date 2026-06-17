@@ -11,4 +11,8 @@ type LoginResponse struct {
 
 	RequireTOTP  bool   `json:"require_totp,omitempty"`
 	PendingToken string `json:"pending_token,omitempty"`
+	// TwoFAMethod hints to the client which UI to show next: "totp" or
+	// "email". For email, an OTP has already been sent to the address on
+	// the account.
+	TwoFAMethod string `json:"two_fa_method,omitempty"`
 }

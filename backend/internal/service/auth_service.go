@@ -38,12 +38,24 @@ type AuthService interface {
 	Signup(ctx context.Context, req *SignupRequest, ipAddress, userAgent string) (*domain.LoginResponse, error)
 	Login(ctx context.Context, email, password, ipAddress, userAgent string) (*domain.LoginResponse, error)
 	VerifyTOTPLogin(ctx context.Context, pendingToken, code, ipAddress, userAgent string) (*domain.LoginResponse, error)
+	// ResendLoginEmailOTP re-issues a fresh email OTP for an in-progress
+	// login. pendingToken carries the user id.
+	ResendLoginEmailOTP(ctx context.Context, pendingToken, ip string) error
 	RefreshToken(ctx context.Context, refreshToken, ipAddress, userAgent string) (*domain.LoginResponse, error)
 	Logout(ctx context.Context, refreshToken string) error
 	VerifyEmail(ctx context.Context, userID uuid.UUID, otp string) error
 	ResendVerificationOTP(ctx context.Context, userID uuid.UUID) (string, error)
 	SetTOTPService(t TOTPService)
 	SetNotifier(n notify.Notifier)
+
+	// RequestPasswordReset issues a one-hour reset token for the account
+	// owning `email`. Returns nil regardless of whether the account exists
+	// — defends against email enumeration.
+	RequestPasswordReset(ctx context.Context, email, ip, ua string) error
+
+	// ConfirmPasswordReset consumes a reset token and sets a new bcrypt
+	// hash. Rejects expired / consumed / unknown tokens with ErrUnauthorized.
+	ConfirmPasswordReset(ctx context.Context, rawToken, newPassword string) error
 }
 
 type SignupRequest struct {
@@ -257,16 +269,27 @@ func (s *authService) Login(ctx context.Context, email, password, ipAddress, use
 		return nil, domain.ErrUnauthorized
 	}
 
-	// Password is correct. If the user has 2FA on, return a short-lived
-	// "pending" JWT — the client must call VerifyTOTPLogin with the
-	// rotating code (or a backup code) to receive real tokens.
-	if user.TOTPEnabled {
+	// Password is correct. If the user has any 2FA factor on, halt here
+	// and return a short-lived "pending" JWT. Client then calls
+	// VerifyTOTPLogin (despite the name, accepts TOTP or email OTP) with
+	// the rotating code to receive real tokens.
+	if user.TOTPEnabled || user.EmailTwoFAEnabled {
 		pending, err := s.signJWT(user.ID.String(), user.OrgID.String(), user.Role, "2fa_pending", 5*time.Minute)
 		if err != nil {
 			return nil, err
 		}
+		// Email-only factor: mint + email an OTP immediately so the user
+		// can finish login on the very next request without an extra round
+		// trip. If TOTP is also enabled, we prefer TOTP and don't email.
+		method := "totp"
+		if user.EmailTwoFAEnabled && !user.TOTPEnabled {
+			method = "email"
+			s.issueLoginEmailOTP(ctx, user, ipAddress)
+		}
 		return &domain.LoginResponse{
-			RequireTOTP: true, PendingToken: pending,
+			RequireTOTP:  true,
+			PendingToken: pending,
+			TwoFAMethod:  method,
 		}, nil
 	}
 
@@ -284,6 +307,46 @@ func (s *authService) Login(ctx context.Context, email, password, ipAddress, use
 		AccessToken: access, RefreshToken: refresh,
 		User: user, Organization: org,
 	}, nil
+}
+
+const maxLoginOTPAttempts = 5
+
+// validateLoginEmailOTP checks the supplied code against the active OTP
+// for the user. Bumps attempts on failure; consumes on success. Returns
+// ErrUnauthorized for any failure mode to avoid leaking which code worked.
+func (s *authService) validateLoginEmailOTP(ctx context.Context, userID uuid.UUID, code string) error {
+	hash, attempts, err := s.authRepo.FindActiveLoginOTP(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if hash == "" {
+		return domain.ErrUnauthorized
+	}
+	if attempts >= maxLoginOTPAttempts {
+		_ = s.authRepo.ConsumeLoginOTP(ctx, userID)
+		return domain.ErrUnauthorized
+	}
+	if hash != utils.HashToken(code) {
+		_ = s.authRepo.IncrementLoginOTPAttempts(ctx, userID)
+		return domain.ErrUnauthorized
+	}
+	return s.authRepo.ConsumeLoginOTP(ctx, userID)
+}
+
+// issueLoginEmailOTP generates a 6-digit code, stores its hash with a
+// 10-minute TTL, and dispatches the code to the user's email. Failures
+// are logged so login can still continue if the user resends.
+func (s *authService) issueLoginEmailOTP(ctx context.Context, user *domain.User, ip string) {
+	otp := utils.GenerateOTP()
+	otpHash := utils.HashToken(otp)
+	if err := s.authRepo.CreateLoginOTP(ctx, user.ID, otpHash, time.Now().Add(otpTTL), ip); err != nil {
+		zap.L().Warn("create login OTP failed", zap.Error(err))
+		return
+	}
+	if s.notifier != nil {
+		s.notifier.EmailVerificationOTP(ctx, user.Email, otp, int(otpTTL.Minutes()))
+	}
+	zap.L().Info("login OTP issued", zap.String("user_id", user.ID.String()))
 }
 
 // VerifyTOTPLogin completes the two-step login: verifies the pending JWT,
@@ -314,11 +377,24 @@ func (s *authService) VerifyTOTPLogin(ctx context.Context, pendingToken, code, i
 	if err != nil {
 		return nil, err
 	}
-	if s.totp == nil {
-		return nil, errors.New("2FA service not configured")
-	}
-	if err := s.totp.Validate(ctx, user, code); err != nil {
-		s.recordLoginAttempt(ctx, user.Email, ipAddress, userAgent, false, "invalid_2fa")
+	// Pick a validator. TOTP wins when both factors are on (rotating code
+	// is stronger than email). Email path falls back when only it is on.
+	switch {
+	case user.TOTPEnabled:
+		if s.totp == nil {
+			return nil, errors.New("2FA service not configured")
+		}
+		if err := s.totp.Validate(ctx, user, code); err != nil {
+			s.recordLoginAttempt(ctx, user.Email, ipAddress, userAgent, false, "invalid_2fa")
+			return nil, domain.ErrUnauthorized
+		}
+	case user.EmailTwoFAEnabled:
+		if err := s.validateLoginEmailOTP(ctx, user.ID, code); err != nil {
+			s.recordLoginAttempt(ctx, user.Email, ipAddress, userAgent, false, "invalid_email_2fa")
+			return nil, domain.ErrUnauthorized
+		}
+	default:
+		// User flipped a flag off mid-login. Reject — caller should retry login.
 		return nil, domain.ErrUnauthorized
 	}
 	s.recordLoginAttempt(ctx, user.Email, ipAddress, userAgent, true, "")
@@ -544,4 +620,99 @@ func nullable(s string) *string {
 		return nil
 	}
 	return &s
+}
+
+// ── Password reset ────────────────────────────────────────────────────────
+
+const passwordResetTTL = time.Hour
+
+// RequestPasswordReset is intentionally silent on whether the email maps
+// to a real account. UI shows the same success message either way so
+// attackers can't enumerate the user table.
+func (s *authService) RequestPasswordReset(ctx context.Context, email, ip, ua string) error {
+	email = strings.ToLower(strings.TrimSpace(email))
+	user, err := s.userRepo.GetByEmail(ctx, email)
+	if err != nil || user == nil {
+		zap.L().Info("password reset request — no matching user (silenced)",
+			zap.String("email", email))
+		return nil
+	}
+
+	rawToken, err := utils.GenerateRandomToken(32) // 256 bits of entropy
+	if err != nil {
+		return err
+	}
+	tokenHash := utils.HashToken(rawToken)
+	expiresAt := time.Now().Add(passwordResetTTL).UTC()
+	if err := s.authRepo.CreatePasswordReset(ctx, user.ID, tokenHash, expiresAt, ip, ua); err != nil {
+		return err
+	}
+	s.audit(ctx, &user.OrgID, &user.ID, "auth.password_reset.requested", "users", user.ID, ip)
+	if s.notifier != nil {
+		s.notifier.PasswordReset(ctx, user.Email, rawToken, int(passwordResetTTL.Minutes()))
+	}
+	return nil
+}
+
+// ConfirmPasswordReset validates the raw token, swaps the user's password,
+// consumes the token, and revokes every refresh-token family so existing
+// sessions can't continue with the old password.
+func (s *authService) ConfirmPasswordReset(ctx context.Context, rawToken, newPassword string) error {
+	if rawToken == "" || len(newPassword) < 8 {
+		return domain.ErrUnauthorized
+	}
+	tokenHash := utils.HashToken(rawToken)
+	userID, err := s.authRepo.FindActivePasswordResetByHash(ctx, tokenHash)
+	if err != nil {
+		return domain.ErrUnauthorized
+	}
+	hashed, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+	if err := s.authRepo.SetPasswordHash(ctx, userID, string(hashed)); err != nil {
+		return err
+	}
+	if err := s.authRepo.ConsumePasswordReset(ctx, tokenHash); err != nil {
+		zap.L().Warn("consume reset token failed", zap.Error(err))
+	}
+	// Kill every active refresh token for this user — old sessions can't
+	// keep refreshing into new access tokens after the password changes.
+	if err := s.authRepo.RevokeAllForUser(ctx, userID, "password_reset"); err != nil {
+		zap.L().Warn("revoke refresh tokens after password reset failed", zap.Error(err))
+	}
+	s.audit(ctx, nil, &userID, "auth.password_reset.confirmed", "users", userID, "")
+	return nil
+}
+
+// ResendLoginEmailOTP validates the pending JWT and re-sends an email OTP
+// for the user it references. Only meaningful for email-2FA users; TOTP
+// users don't need it. Silently no-ops if the user has TOTP only.
+func (s *authService) ResendLoginEmailOTP(ctx context.Context, pendingToken, ip string) error {
+	if pendingToken == "" {
+		return domain.ErrUnauthorized
+	}
+	c := &claims{}
+	tok, err := jwt.ParseWithClaims(pendingToken, c, func(t *jwt.Token) (interface{}, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, jwt.ErrSignatureInvalid
+		}
+		return []byte(s.jwtSecret), nil
+	})
+	if err != nil || !tok.Valid || c.Subject != "2fa_pending" {
+		return domain.ErrUnauthorized
+	}
+	userID, err := uuid.Parse(c.UserID)
+	if err != nil {
+		return domain.ErrUnauthorized
+	}
+	user, err := s.userRepo.GetByID(ctx, userID, uuid.Nil)
+	if err != nil {
+		return err
+	}
+	if !user.EmailTwoFAEnabled {
+		return nil // TOTP-only user; nothing to resend
+	}
+	s.issueLoginEmailOTP(ctx, user, ip)
+	return nil
 }

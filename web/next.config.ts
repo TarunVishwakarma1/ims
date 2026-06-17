@@ -27,7 +27,7 @@ const csp = [
   // Tailwind / shadcn pump styles inline — allow with 'unsafe-inline'.
   // Long-term: move to nonced inline-styles via Next's CSP nonce.
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob:",
+  "img-src 'self' data: blob: https://*.tile.openstreetmap.org https://unpkg.com",
   "font-src 'self' data:",
   // EventSource (SSE) + fetch to the backend.
   `connect-src 'self' ${apiOrigin}`,
@@ -46,7 +46,7 @@ const securityHeaders = [
   {
     key: "Permissions-Policy",
     value:
-      "geolocation=(), camera=(), microphone=(), payment=(self), usb=(), magnetometer=(), gyroscope=(), accelerometer=()",
+      "geolocation=(self), camera=(), microphone=(), payment=(self), usb=(), magnetometer=(), gyroscope=(), accelerometer=()",
   },
   // HSTS prod-only — accidental localhost HSTS pinning would force https
   // on dev sessions.

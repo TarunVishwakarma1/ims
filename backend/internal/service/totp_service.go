@@ -50,9 +50,15 @@ func NewTOTPService(users repository.UserRepository) TOTPService {
 const issuer = "IMS"
 
 func (s *totpService) Enroll(ctx context.Context, userID uuid.UUID, accountName string) (string, string, error) {
+	// Pin period/digits/algorithm so the QR encodes them explicitly.
+	// Match Validate's expectations exactly — protects against future
+	// library-default changes.
 	key, err := totp.Generate(totp.GenerateOpts{
 		Issuer:      issuer,
 		AccountName: accountName,
+		Period:      30,
+		Digits:      otp.DigitsSix,
+		Algorithm:   otp.AlgorithmSHA1,
 	})
 	if err != nil {
 		return "", "", err
@@ -73,7 +79,17 @@ func (s *totpService) Confirm(ctx context.Context, userID uuid.UUID, code string
 	if u.TOTPSecret == nil {
 		return nil, errors.New("no pending enrollment — call Enroll first")
 	}
-	if !totp.Validate(code, *u.TOTPSecret) {
+	// Same tolerance window as login (Validate): accept ±30s drift so a
+	// container with slightly stale clock vs the authenticator doesn't
+	// reject correct codes. Six digits / SHA1 / 30s period — matches
+	// every consumer authenticator app.
+	valid, vErr := totp.ValidateCustom(code, *u.TOTPSecret, time.Now(), totp.ValidateOpts{
+		Period:    30,
+		Skew:      1,
+		Digits:    otp.DigitsSix,
+		Algorithm: otp.AlgorithmSHA1,
+	})
+	if vErr != nil || !valid {
 		return nil, errors.New("invalid code")
 	}
 	codes, err := generateBackupCodes(8)

@@ -27,6 +27,10 @@ type Notifier interface {
 	// EmailVerificationOTP sends the OTP used to verify a newly-created
 	// email address. Subject + body use the OTP template.
 	EmailVerificationOTP(ctx context.Context, email, otp string, ttlMinutes int)
+
+	// PasswordReset sends the password-reset link with the raw token
+	// embedded in the URL. Subject + body use the password_reset template.
+	PasswordReset(ctx context.Context, email, rawToken string, ttlMinutes int)
 }
 
 type notifier struct {
@@ -313,6 +317,40 @@ func (n *notifier) EmailVerificationOTP(ctx context.Context, email, otp string, 
 	}
 	fallback := fmt.Sprintf("Your IMS verification code is %s. Expires in %d minutes.", otp, ttlMinutes)
 	n.dispatchHTML(ctx, email, subj, "otp", data, fallback)
+}
+
+func (n *notifier) PasswordReset(ctx context.Context, email, rawToken string, ttlMinutes int) {
+	if ttlMinutes <= 0 {
+		ttlMinutes = 60
+	}
+	resetURL := fmt.Sprintf("%s/reset-password?token=%s", n.appURL, rawToken)
+	// Dev escape hatch: log the URL so the operator can copy it from the
+	// backend log if the email lands in spam / fails to deliver.
+	zap.L().Info("password reset URL issued",
+		zap.String("to", email),
+		zap.String("url", resetURL),
+		zap.Int("ttl_min", ttlMinutes))
+	subj := "Reset your IMS password"
+	data := struct {
+		baseData
+		Hero  hero
+		Body  string
+		CTA   cta
+		Rows  []kv
+		Alert alert
+	}{
+		baseData: newBase(subj, "ACCOUNT"),
+		Hero:     hero{Title: "Password reset", Subtitle: "Click the button below to set a new password."},
+		Body:     "Someone requested a password reset for this account. If that wasn't you, ignore this email and your password stays the same.",
+		CTA:      cta{URL: resetURL, Label: "Reset password"},
+		Rows: []kv{
+			{"Link expires in", fmt.Sprintf("%d minutes", ttlMinutes)},
+			{"Requested at", time.Now().UTC().Format("2 Jan 2006, 15:04 UTC")},
+		},
+		Alert: alert{Title: "Security tip", Body: "We never ask for your password or the link via chat or phone."},
+	}
+	fallback := fmt.Sprintf("Reset your IMS password: %s (expires in %d minutes)", resetURL, ttlMinutes)
+	n.dispatchHTML(ctx, email, subj, "password_reset", data, fallback)
 }
 
 // short returns the first uuid block — easier to read in subject lines.

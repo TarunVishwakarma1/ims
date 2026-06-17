@@ -2,6 +2,11 @@
 -- Previously these items were hacked onto users:delete; carve them out.
 -- Admin gets all of them; manager gets the read-only ones; staff gets none.
 
+-- The pg_dump prelude in 000001 calls set_config('search_path','',false)
+-- which is session-local — i.e. persists across migrations on the same
+-- connection. Restore the default so unqualified table names resolve.
+SET search_path TO public;
+
 INSERT INTO permissions (id, resource, action, description) VALUES
     (gen_random_uuid(), 'webhooks',      'view',   'View webhook event history'),
     (gen_random_uuid(), 'webhooks',      'manage', 'Inspect DLQ, replay events, view secrets'),

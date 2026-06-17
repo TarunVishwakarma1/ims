@@ -56,16 +56,18 @@ export default function LoginPage() {
 
   // 2FA second-step state. Populated when /login returns require_totp.
   const [pendingToken, setPendingToken] = useState<string | null>(null)
+  const [twoFAMethod, setTwoFAMethod] = useState<'totp' | 'email'>('totp')
   const [totpCode, setTotpCode] = useState('')
   const [verifying, setVerifying] = useState(false)
+  const [resending, setResending] = useState(false)
 
   const onSubmit = async (data: LoginFormValues) => {
     setError(null)
     try {
       const response = await api.post('auth/login', { json: data }).json<LoginResponse>()
       if (response.require_totp && response.pending_token) {
-        // Pause here for the second step.
         setPendingToken(response.pending_token)
+        setTwoFAMethod(response.two_fa_method === 'email' ? 'email' : 'totp')
         return
       }
       useAuthStore.getState().login(response)
@@ -144,9 +146,13 @@ export default function LoginPage() {
           {pendingToken ? (
             <div className="space-y-4">
               <div>
-                <h2 className="text-2xl font-bold tracking-tight mb-1">Two-factor verification</h2>
+                <h2 className="text-2xl font-bold tracking-tight mb-1">
+                  {twoFAMethod === 'email' ? 'Email verification' : 'Two-factor verification'}
+                </h2>
                 <p className="text-muted-foreground text-sm">
-                  Enter the 6-digit code from your authenticator app (or a backup code).
+                  {twoFAMethod === 'email'
+                    ? 'We sent a 6-digit code to your email. Enter it below to finish signing in.'
+                    : 'Enter the 6-digit code from your authenticator app (or a backup code).'}
                 </p>
               </div>
               {error && (
@@ -158,7 +164,7 @@ export default function LoginPage() {
                   id="totp-code"
                   inputMode="numeric"
                   autoComplete="one-time-code"
-                  placeholder="123456 or backup code"
+                  placeholder={twoFAMethod === 'email' ? '6-digit code' : '123456 or backup code'}
                   value={totpCode}
                   onChange={(e) => setTotpCode(e.target.value)}
                   disabled={verifying}
@@ -172,6 +178,27 @@ export default function LoginPage() {
               >
                 {verifying ? (<><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Verifying…</>) : 'Verify'}
               </Button>
+              {twoFAMethod === 'email' && (
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  disabled={resending}
+                  onClick={async () => {
+                    if (!pendingToken) return
+                    setResending(true)
+                    try {
+                      await api.post('auth/login/resend-2fa', { json: { pending_token: pendingToken } }).json()
+                      setError(null)
+                    } catch {
+                      setError('Could not resend the code. Try again in a moment.')
+                    } finally {
+                      setResending(false)
+                    }
+                  }}
+                >
+                  {resending ? (<><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Sending…</>) : 'Resend code'}
+                </Button>
+              )}
               <Button
                 variant="ghost"
                 className="w-full"
@@ -210,7 +237,12 @@ export default function LoginPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="password">Password</Label>
+                <Link href="/forgot-password" className="text-xs text-muted-foreground hover:text-foreground hover:underline">
+                  Forgot password?
+                </Link>
+              </div>
               <div className="relative">
                 <Input
                   id="password"

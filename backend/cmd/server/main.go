@@ -178,7 +178,7 @@ func main() {
 	productH := handler.NewProductHandler(productService)
 	inventoryH := handler.NewInventoryHandler(inventoryService)
 	orderH := handler.NewOrderHandler(orderService, productService)
-	authH := handler.NewAuthHandler(authService)
+	authH := handler.NewAuthHandler(authService, userRepo)
 	roleH := handler.NewRoleHandler(roleService)
 	locationH := handler.NewLocationHandler(locationService)
 	marketH := handler.NewMarketplaceHandler(marketService)
@@ -186,7 +186,7 @@ func main() {
 	returnH := handler.NewReturnHandler(returnService)
 	notificationH := handler.NewNotificationHandler(notificationService)
 	auditH := handler.NewAuditHandler(auditLogRepo)
-	totpH := handler.NewTOTPHandler(totpService, authService)
+	totpH := handler.NewTOTPHandler(totpService, authService, userRepo)
 	mode := "test"
 	switch {
 	case cfg.RazorpayMockMode:

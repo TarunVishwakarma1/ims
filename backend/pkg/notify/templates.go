@@ -67,6 +67,7 @@ func NewRenderer() (*Renderer, error) {
 		"return.html",
 		"otp.html",
 		"low_stock.html",
+		"password_reset.html",
 	}
 
 	r := &Renderer{templates: make(map[string]*template.Template, len(bodyFiles))}

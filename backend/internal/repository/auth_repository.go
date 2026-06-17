@@ -35,6 +35,7 @@ type AuthRepository interface {
 	FindRefreshTokenByHash(ctx context.Context, hash string) (*RefreshToken, error)
 	RevokeRefreshToken(ctx context.Context, id uuid.UUID, reason string) error
 	RevokeFamily(ctx context.Context, familyID uuid.UUID, reason string) error
+	RevokeAllForUser(ctx context.Context, userID uuid.UUID, reason string) error
 	DeleteExpiredRefreshTokens(ctx context.Context) error
 
 	// Login attempts
@@ -54,6 +55,20 @@ type AuthRepository interface {
 	FindActiveVerification(ctx context.Context, userID uuid.UUID) (otpHash string, expiresAt time.Time, attempts int, err error)
 	IncrementVerificationAttempts(ctx context.Context, userID uuid.UUID) error
 	ConsumeVerification(ctx context.Context, userID uuid.UUID) error
+
+	// Login OTPs — second-factor codes minted during a 2FA login.
+	// Invalidates older outstanding OTPs for the same user on Create.
+	CreateLoginOTP(ctx context.Context, userID uuid.UUID, otpHash string, expiresAt time.Time, ip string) error
+	FindActiveLoginOTP(ctx context.Context, userID uuid.UUID) (otpHash string, attempts int, err error)
+	IncrementLoginOTPAttempts(ctx context.Context, userID uuid.UUID) error
+	ConsumeLoginOTP(ctx context.Context, userID uuid.UUID) error
+
+	// Password resets — single-use, expiring tokens delivered via email link.
+	CreatePasswordReset(ctx context.Context, userID uuid.UUID, tokenHash string, expiresAt time.Time, ip, ua string) error
+	FindActivePasswordResetByHash(ctx context.Context, tokenHash string) (userID uuid.UUID, err error)
+	ConsumePasswordReset(ctx context.Context, tokenHash string) error
+	// SetPasswordHash updates a user's password_hash + bumps password_changed_at.
+	SetPasswordHash(ctx context.Context, userID uuid.UUID, newHash string) error
 }
 
 type authRepository struct {
@@ -101,6 +116,17 @@ func (r *authRepository) RevokeFamily(ctx context.Context, familyID uuid.UUID, r
 		UPDATE refresh_tokens SET revoked_at = NOW(), revoked_reason = $2
 		WHERE family_id = $1 AND revoked_at IS NULL
 	`, familyID, reason)
+	return err
+}
+
+// RevokeAllForUser revokes every non-revoked refresh token for the user.
+// Used by password-change + account-lockout flows so prior sessions can't
+// keep refreshing.
+func (r *authRepository) RevokeAllForUser(ctx context.Context, userID uuid.UUID, reason string) error {
+	_, err := r.db.Exec(ctx, `
+		UPDATE refresh_tokens SET revoked_at = NOW(), revoked_reason = $2
+		WHERE user_id = $1 AND revoked_at IS NULL
+	`, userID, reason)
 	return err
 }
 
@@ -211,6 +237,117 @@ func (r *authRepository) IncrementVerificationAttempts(ctx context.Context, user
 func (r *authRepository) ConsumeVerification(ctx context.Context, userID uuid.UUID) error {
 	_, err := r.db.Exec(ctx, `
 		UPDATE email_verifications SET consumed_at = NOW()
+		WHERE user_id = $1 AND consumed_at IS NULL
+	`, userID)
+	return err
+}
+
+// ── Password resets ────────────────────────────────────────────────────────
+
+func (r *authRepository) CreatePasswordReset(ctx context.Context, userID uuid.UUID, tokenHash string, expiresAt time.Time, ip, ua string) error {
+	var ipPtr, uaPtr *string
+	if ip != "" {
+		ipPtr = &ip
+	}
+	if ua != "" {
+		uaPtr = &ua
+	}
+	// Invalidate any prior outstanding reset tokens for this user. Each
+	// new "forgot password" click must dead-end older emailed links —
+	// otherwise an attacker who scrapes a stale inbox link gets a second
+	// shot, and the user might reasonably think the latest email is the
+	// only valid one.
+	if _, err := r.db.Exec(ctx, `
+		UPDATE password_resets SET consumed_at = NOW()
+		WHERE user_id = $1 AND consumed_at IS NULL
+	`, userID); err != nil {
+		return err
+	}
+	_, err := r.db.Exec(ctx, `
+		INSERT INTO password_resets (id, user_id, token_hash, expires_at, ip_address, user_agent, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, NOW())
+	`, uuid.New(), userID, tokenHash, expiresAt, ipPtr, uaPtr)
+	return err
+}
+
+// FindActivePasswordResetByHash looks up a non-consumed, non-expired reset
+// by its hashed token. Returns the owning user_id.
+func (r *authRepository) FindActivePasswordResetByHash(ctx context.Context, tokenHash string) (uuid.UUID, error) {
+	var userID uuid.UUID
+	err := r.db.QueryRow(ctx, `
+		SELECT user_id FROM password_resets
+		WHERE token_hash = $1 AND consumed_at IS NULL AND expires_at > NOW()
+	`, tokenHash).Scan(&userID)
+	return userID, err
+}
+
+func (r *authRepository) ConsumePasswordReset(ctx context.Context, tokenHash string) error {
+	_, err := r.db.Exec(ctx, `
+		UPDATE password_resets SET consumed_at = NOW()
+		WHERE token_hash = $1 AND consumed_at IS NULL
+	`, tokenHash)
+	return err
+}
+
+func (r *authRepository) SetPasswordHash(ctx context.Context, userID uuid.UUID, newHash string) error {
+	_, err := r.db.Exec(ctx, `
+		UPDATE users
+		SET password_hash = $2, password_changed_at = NOW(), updated_at = NOW()
+		WHERE id = $1
+	`, userID, newHash)
+	return err
+}
+
+// ── Login OTPs ─────────────────────────────────────────────────────────────
+
+func (r *authRepository) CreateLoginOTP(ctx context.Context, userID uuid.UUID, otpHash string, expiresAt time.Time, ip string) error {
+	var ipPtr *string
+	if ip != "" {
+		ipPtr = &ip
+	}
+	// Burn any outstanding active OTPs for this user — only one pending
+	// code at a time so retries don't leave multiple valid codes.
+	if _, err := r.db.Exec(ctx, `
+		UPDATE login_otps SET consumed_at = NOW()
+		WHERE user_id = $1 AND consumed_at IS NULL
+	`, userID); err != nil {
+		return err
+	}
+	_, err := r.db.Exec(ctx, `
+		INSERT INTO login_otps (id, user_id, otp_hash, expires_at, ip_address, created_at)
+		VALUES ($1, $2, $3, $4, $5, NOW())
+	`, uuid.New(), userID, otpHash, expiresAt, ipPtr)
+	return err
+}
+
+func (r *authRepository) FindActiveLoginOTP(ctx context.Context, userID uuid.UUID) (string, int, error) {
+	var hash string
+	var attempts int
+	err := r.db.QueryRow(ctx, `
+		SELECT otp_hash, attempts FROM login_otps
+		WHERE user_id = $1 AND consumed_at IS NULL AND expires_at > NOW()
+		ORDER BY created_at DESC LIMIT 1
+	`, userID).Scan(&hash, &attempts)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return "", 0, nil
+		}
+		return "", 0, err
+	}
+	return hash, attempts, nil
+}
+
+func (r *authRepository) IncrementLoginOTPAttempts(ctx context.Context, userID uuid.UUID) error {
+	_, err := r.db.Exec(ctx, `
+		UPDATE login_otps SET attempts = attempts + 1
+		WHERE user_id = $1 AND consumed_at IS NULL
+	`, userID)
+	return err
+}
+
+func (r *authRepository) ConsumeLoginOTP(ctx context.Context, userID uuid.UUID) error {
+	_, err := r.db.Exec(ctx, `
+		UPDATE login_otps SET consumed_at = NOW()
 		WHERE user_id = $1 AND consumed_at IS NULL
 	`, userID)
 	return err

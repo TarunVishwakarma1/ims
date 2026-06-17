@@ -25,7 +25,10 @@ SET lock_timeout = 0;
 SET idle_in_transaction_session_timeout = 0;
 SET client_encoding = 'UTF8';
 SET standard_conforming_strings = on;
-SELECT pg_catalog.set_config('search_path', '', false);
+-- pg_dump's `SELECT pg_catalog.set_config('search_path','',false);` was
+-- stripped here because golang-migrate runs migrations on a shared
+-- session: the setting leaks into 000002+ and breaks unqualified table
+-- references. Tables in this dump are already fully qualified with public.
 SET check_function_bodies = false;
 SET xmloption = content;
 SET client_min_messages = warning;
@@ -521,7 +524,8 @@ CREATE TABLE IF NOT EXISTS public.users (
     totp_secret text,
     totp_enabled boolean DEFAULT false NOT NULL,
     totp_verified_at timestamp with time zone,
-    totp_backup_codes text
+    totp_backup_codes text,
+    email_2fa_enabled boolean DEFAULT false NOT NULL
 );
 
 

@@ -22,6 +22,9 @@ type UserRepository interface {
 	// timestamp in a single update. Used by the 2FA enroll + confirm flow.
 	SetTOTP(ctx context.Context, userID uuid.UUID, secret *string, enabled bool, verifiedAt *time.Time, backupCodes *string) error
 
+	// SetEmail2FA toggles the email-based second factor flag.
+	SetEmail2FA(ctx context.Context, userID uuid.UUID, enabled bool) error
+
 	WithTx(tx pgx.Tx) UserRepository
 }
 
@@ -49,7 +52,8 @@ func (r *userRepository) Create(ctx context.Context, user *domain.User) error {
 const userSelectCols = `id, org_id, name, email, password_hash, role, is_active,
 	email_verified, failed_login_count, locked_until, last_login_at, password_changed_at,
 	created_at, updated_at,
-	totp_secret, totp_enabled, totp_verified_at, totp_backup_codes`
+	totp_secret, totp_enabled, totp_verified_at, totp_backup_codes,
+	email_2fa_enabled`
 
 func scanUser(scanner interface {
 	Scan(dest ...any) error
@@ -58,7 +62,8 @@ func scanUser(scanner interface {
 	err := scanner.Scan(&u.ID, &u.OrgID, &u.Name, &u.Email, &u.PasswordHash, &u.Role, &u.IsActive,
 		&u.EmailVerified, &u.FailedLoginCount, &u.LockedUntil, &u.LastLoginAt, &u.PasswordChangedAt,
 		&u.CreatedAt, &u.UpdatedAt,
-		&u.TOTPSecret, &u.TOTPEnabled, &u.TOTPVerifiedAt, &u.TOTPBackupCodes)
+		&u.TOTPSecret, &u.TOTPEnabled, &u.TOTPVerifiedAt, &u.TOTPBackupCodes,
+		&u.EmailTwoFAEnabled)
 	if err != nil {
 		return nil, err
 	}
@@ -109,6 +114,13 @@ func (r *userRepository) SetTOTP(ctx context.Context, userID uuid.UUID, secret *
 			updated_at = NOW()
 		WHERE id = $1
 	`, userID, secret, enabled, verifiedAt, backupCodes)
+	return err
+}
+
+func (r *userRepository) SetEmail2FA(ctx context.Context, userID uuid.UUID, enabled bool) error {
+	_, err := r.db.Exec(ctx, `
+		UPDATE users SET email_2fa_enabled = $2, updated_at = NOW() WHERE id = $1
+	`, userID, enabled)
 	return err
 }
 

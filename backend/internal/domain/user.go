@@ -27,6 +27,9 @@ type User struct {
 	TOTPEnabled      bool       `json:"totp_enabled" db:"totp_enabled"`
 	TOTPVerifiedAt   *time.Time `json:"totp_verified_at,omitempty" db:"totp_verified_at"`
 	TOTPBackupCodes  *string    `json:"-" db:"totp_backup_codes"`
+
+	// Email-based second factor. Independent of TOTP — both can be on.
+	EmailTwoFAEnabled bool `json:"email_2fa_enabled" db:"email_2fa_enabled"`
 }
 
 

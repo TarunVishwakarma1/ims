@@ -11,4 +11,11 @@ export const totpApi = {
     api.post('auth/login/verify-2fa', {
       json: { pending_token: pendingToken, code },
     }).json<unknown>(),
+
+  resendLoginOTP: (pendingToken: string) =>
+    api.post('auth/login/resend-2fa', { json: { pending_token: pendingToken } })
+      .json<{ message: string }>(),
+
+  enableEmail: () => api.post('auth/2fa/email/enable').json<{ message: string }>(),
+  disableEmail: () => api.post('auth/2fa/email/disable').json<{ message: string }>(),
 }

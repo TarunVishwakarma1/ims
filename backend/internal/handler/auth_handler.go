@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/TarunVishwakarma1/ims/backend/internal/domain"
+	"github.com/TarunVishwakarma1/ims/backend/internal/repository"
 	"github.com/TarunVishwakarma1/ims/backend/internal/service"
 	chiMiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/TarunVishwakarma1/ims/backend/pkg/middleware"
@@ -18,12 +19,14 @@ import (
 
 type AuthHandler struct {
 	service  service.AuthService
+	userRepo repository.UserRepository
 	validate *validator.Validate
 }
 
-func NewAuthHandler(service service.AuthService) *AuthHandler {
+func NewAuthHandler(service service.AuthService, userRepo repository.UserRepository) *AuthHandler {
 	return &AuthHandler{
 		service:  service,
+		userRepo: userRepo,
 		validate: validator.New(),
 	}
 }
@@ -116,7 +119,11 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	log.Info("login: success", zap.String("user_id", resp.User.ID.String()))
+	if resp.RequireTOTP {
+		log.Info("login: 2fa required", zap.String("method", resp.TwoFAMethod))
+	} else {
+		log.Info("login: success", zap.String("user_id", resp.User.ID.String()))
+	}
 	writeJSON(w, http.StatusOK, resp)
 }
 
@@ -264,4 +271,63 @@ func (h *AuthHandler) ResendVerification(w http.ResponseWriter, r *http.Request)
 	}
 	log.Info("resend OTP success", zap.String("user_id", userID.String()))
 	writeJSON(w, http.StatusOK, map[string]string{"message": "OTP sent"})
+}
+
+// RequestPasswordReset — POST /api/auth/password-reset/request {email}
+// Always returns 200 + "if your email is registered, a link has been sent"
+// to defend against account enumeration.
+func (h *AuthHandler) RequestPasswordReset(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	var body struct {
+		Email string `json:"email"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Email == "" {
+		writeError(w, http.StatusBadRequest, "email is required")
+		return
+	}
+	ip := utils.GetClientIP(r)
+	_ = h.service.RequestPasswordReset(r.Context(), body.Email, ip, r.UserAgent())
+	writeJSON(w, http.StatusOK, map[string]string{
+		"message": "If that email is registered, a reset link has been sent.",
+	})
+}
+
+// ConfirmPasswordReset — POST /api/auth/password-reset/confirm {token, password}
+func (h *AuthHandler) ConfirmPasswordReset(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	var body struct {
+		Token    string `json:"token"`
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	if len(body.Password) < 8 {
+		writeError(w, http.StatusBadRequest, "password must be at least 8 characters")
+		return
+	}
+	if err := h.service.ConfirmPasswordReset(r.Context(), body.Token, body.Password); err != nil {
+		writeError(w, http.StatusUnauthorized, "reset link is invalid or has expired")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"message": "Password updated. You can sign in now."})
+}
+
+// Me — GET /api/auth/me
+// Returns the authenticated user. Used by the web app to rehydrate
+// auth-store after page reload so server-side toggles (totp_enabled,
+// email_verified, role) reflect on the client.
+func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
+	actor, ok := middleware.ActorFromRequest(r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing identity")
+		return
+	}
+	u, err := h.userRepo.GetByID(r.Context(), actor.UserID, actor.OrgID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "user not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, u)
 }

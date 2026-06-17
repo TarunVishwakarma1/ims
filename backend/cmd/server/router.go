@@ -65,6 +65,9 @@ func NewRouter(
 		r.Post("/api/auth/register", authH.Signup)
 		r.Post("/api/auth/login", authH.Login)
 		r.Post("/api/auth/login/verify-2fa", totpH.VerifyLogin)
+		r.Post("/api/auth/login/resend-2fa", totpH.ResendLoginOTP)
+		r.Post("/api/auth/password-reset/request", authH.RequestPasswordReset)
+		r.Post("/api/auth/password-reset/confirm", authH.ConfirmPasswordReset)
 		r.Post("/api/auth/refresh", authH.RefreshToken)
 		r.Post("/api/auth/logout", authH.Logout)
 	})
@@ -109,12 +112,15 @@ func NewRouter(
 		// Email verification (authenticated user only)
 		r.Post("/api/auth/verify-email", authH.VerifyEmail)
 		r.Post("/api/auth/resend-verification", authH.ResendVerification)
+		r.Get("/api/auth/me", authH.Me)
 
 		// 2FA enrollment (requires existing session — user opts in
 		// from settings while logged in).
 		r.Post("/api/auth/2fa/enroll", totpH.Enroll)
 		r.Post("/api/auth/2fa/confirm", totpH.Confirm)
 		r.Post("/api/auth/2fa/disable", totpH.Disable)
+		r.Post("/api/auth/2fa/email/enable", totpH.EnableEmail2FA)
+		r.Post("/api/auth/2fa/email/disable", totpH.DisableEmail2FA)
 
 		// Users
 		r.With(middleware.RequirePermission(rbac.UsersView)).Get("/api/users", userH.ListUsers)

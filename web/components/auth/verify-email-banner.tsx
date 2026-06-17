@@ -24,9 +24,14 @@ export function VerifyEmailBanner() {
   const [hydrated, setHydrated] = useState(false)
 
   // Hydrate from localStorage after mount — avoids SSR/CSR mismatch.
+  // Default to input-visible: the signup endpoint already auto-sends the
+  // first OTP, so the user should be ready to paste it without clicking
+  // "Send code" first (which would queue a duplicate email). The Resend
+  // button stays available inside the input row for explicit retries.
   useEffect(() => {
     if (typeof window === 'undefined') return
-    setShowInput(window.localStorage.getItem(OPEN_KEY) === '1')
+    const stored = window.localStorage.getItem(OPEN_KEY)
+    setShowInput(stored === null ? true : stored === '1')
     setOtp(window.localStorage.getItem(OTP_KEY) ?? '')
     setHydrated(true)
   }, [])

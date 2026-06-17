@@ -29,6 +29,7 @@ export interface User {
   last_login_at?: ISODate | null;
   totp_enabled?: boolean;
   totp_verified_at?: ISODate | null;
+  email_2fa_enabled?: boolean;
   created_at: ISODate;
   updated_at: ISODate;
 }
@@ -113,6 +114,7 @@ export interface LoginResponse {
   // 2FA second-step plumbing.
   require_totp?: boolean;
   pending_token?: string;
+  two_fa_method?: 'totp' | 'email' | string;
 }
 
 export interface LoginRequest {

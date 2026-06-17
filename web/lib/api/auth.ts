@@ -21,4 +21,10 @@ export const authApi = {
 
   resendVerification: () =>
     api.post('auth/resend-verification').json<{ message: string }>(),
+
+  requestPasswordReset: (email: string) =>
+    api.post('auth/password-reset/request', { json: { email } }).json<{ message: string }>(),
+
+  confirmPasswordReset: (token: string, password: string) =>
+    api.post('auth/password-reset/confirm', { json: { token, password } }).json<{ message: string }>(),
 }
