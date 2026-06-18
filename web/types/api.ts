@@ -48,7 +48,8 @@ export interface Product {
   name: string;
   description: string;
   sku: string;
-  price: number; 
+  price: number;
+  gst_rate: number; // percent (0..28); 0 = exempt
   created_at: ISODate;
   updated_at: ISODate;
 }
@@ -74,6 +75,11 @@ export interface Order {
   subtotal?: number;
   delivery_fee?: number;
   discount?: number;
+  tax_amount?: number;
+  tax_cgst?: number;
+  tax_sgst?: number;
+  tax_igst?: number;
+  is_inter_state?: boolean;
   buyer_org_id?: UUID | null;
   supplier_org_id?: UUID | null;
   buyer_org_name?: string;
@@ -160,6 +166,7 @@ export interface CreateProductRequest {
   description: string;
   sku: string;
   price: number; // in paise
+  gst_rate?: number; // percent (0..28)
 }
 
 export interface UpdateProductRequest {
@@ -168,6 +175,7 @@ export interface UpdateProductRequest {
   description?: string;
   sku?: string;
   price?: number; // in paise
+  gst_rate?: number;
 }
 
 export interface UpdateInventoryRequest {
@@ -289,7 +297,7 @@ export interface CreateLocationRequest {
 }
 
 // Payments
-export type PaymentStatus = 'created' | 'authorized' | 'captured' | 'failed' | 'refunded';
+export type PaymentStatus = 'created' | 'authorized' | 'captured' | 'failed' | 'partially_refunded' | 'refunded';
 
 export interface Payment {
   id: UUID;
@@ -298,6 +306,7 @@ export interface Payment {
   razorpay_order_id: string;
   razorpay_payment_id?: string | null;
   amount: number; // paise
+  amount_refunded: number; // paise — cumulative across refunds
   currency: string;
   status: PaymentStatus;
   method?: string | null;
@@ -305,6 +314,38 @@ export interface Payment {
   is_mock: boolean;
   created_at: ISODate;
   updated_at: ISODate;
+}
+
+export interface Coupon {
+  id: UUID;
+  org_id: UUID;
+  code: string;
+  discount_type: 'percent' | 'fixed';
+  discount_value: number;
+  min_subtotal: number;
+  max_uses: number | null;
+  usage_count: number;
+  expires_at: ISODate | null;
+  is_active: boolean;
+  description: string | null;
+  created_at: ISODate;
+  updated_at: ISODate;
+}
+
+export interface CouponValidateResponse {
+  coupon: Coupon;
+  amount_off: number;
+}
+
+export interface Refund {
+  id: UUID;
+  payment_id: UUID;
+  org_id: UUID;
+  amount: number; // paise
+  razorpay_refund_id: string | null;
+  status: 'processed' | 'failed' | 'pending';
+  reason: string | null;
+  created_at: ISODate;
 }
 
 export interface CreatePaymentOrderResponse {

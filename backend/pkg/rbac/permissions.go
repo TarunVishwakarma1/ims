@@ -35,6 +35,15 @@ const (
 	NotificationsView  Permission = "notifications:view"
 	NotificationsManage Permission = "notifications:manage"
 	AuditView          Permission = "audit:view"
+
+	// Payments admin surface. payments:view = list/detail/receipt for any
+	// org payment (admin/manager). payments:refund = issue refunds (admin
+	// only by default; managers may be granted explicitly via roles UI).
+	PaymentsView   Permission = "payments:view"
+	PaymentsRefund Permission = "payments:refund"
+
+	CouponsView   Permission = "coupons:view"
+	CouponsManage Permission = "coupons:manage"
 )
 
 

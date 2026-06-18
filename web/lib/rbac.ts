@@ -24,6 +24,12 @@ export const PERMISSIONS = {
   NOTIFICATIONS_VIEW: 'notifications:view',
   NOTIFICATIONS_MANAGE: 'notifications:manage',
   AUDIT_VIEW: 'audit:view',
+
+  PAYMENTS_VIEW: 'payments:view',
+  PAYMENTS_REFUND: 'payments:refund',
+
+  COUPONS_VIEW: 'coupons:view',
+  COUPONS_MANAGE: 'coupons:manage',
 } as const
 
 export type Permission = typeof PERMISSIONS[keyof typeof PERMISSIONS]
@@ -41,6 +47,10 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     PERMISSIONS.WEBHOOKS_VIEW,
     PERMISSIONS.NOTIFICATIONS_VIEW, PERMISSIONS.NOTIFICATIONS_MANAGE,
     PERMISSIONS.AUDIT_VIEW,
+    // Payments — view only by default; refunds require explicit grant.
+    PERMISSIONS.PAYMENTS_VIEW,
+    // Coupons — managers can view but not edit by default.
+    PERMISSIONS.COUPONS_VIEW,
   ],
   staff: [
     PERMISSIONS.PRODUCTS_VIEW,

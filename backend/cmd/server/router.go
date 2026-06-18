@@ -33,6 +33,7 @@ func NewRouter(
 	notificationH *handler.NotificationHandler,
 	auditH *handler.AuditHandler,
 	totpH *handler.TOTPHandler,
+	couponH *handler.CouponHandler,
 	cfg *config.Config,
 	pool *pgxpool.Pool,
 	cacheClient cache.Cache,
@@ -88,9 +89,21 @@ func NewRouter(
 		// Payments
 		r.Get("/api/payments/config", paymentH.Config)
 		r.Post("/api/payments/orders", paymentH.CreateOrder)
-		r.Get("/api/payments", paymentH.ListPayments)
+		r.With(middleware.RequirePermission(rbac.PaymentsView)).Get("/api/payments", paymentH.ListPayments)
+		r.With(middleware.RequirePermission(rbac.PaymentsView)).Get("/api/payments/export.csv", paymentH.ExportPayments)
+
+		// Coupons — supplier-scoped discount codes.
+		r.With(middleware.RequirePermission(rbac.CouponsView)).Get("/api/coupons", couponH.List)
+		r.With(middleware.RequirePermission(rbac.CouponsView)).Get("/api/coupons/{id}", couponH.GetByID)
+		r.With(middleware.RequirePermission(rbac.CouponsManage)).Post("/api/coupons", couponH.Create)
+		r.With(middleware.RequirePermission(rbac.CouponsManage)).Put("/api/coupons/{id}", couponH.Update)
+		r.With(middleware.RequirePermission(rbac.CouponsManage)).Delete("/api/coupons/{id}", couponH.Delete)
+		// Validate is open to any authed user — cart needs to preview the discount.
+		r.Post("/api/coupons/validate", couponH.Validate)
 		r.Get("/api/payments/{id}", paymentH.GetPayment)
-		r.With(middleware.RequirePermission(rbac.OrdersManage)).Post("/api/payments/{id}/refund", paymentH.RefundPayment)
+		r.Get("/api/payments/{id}/receipt", paymentH.Receipt)
+		r.Get("/api/payments/{id}/refunds", paymentH.ListRefunds)
+		r.With(middleware.RequirePermission(rbac.PaymentsRefund)).Post("/api/payments/{id}/refund", paymentH.RefundPayment)
 		// Mock-only endpoints — service rejects when mockMode = false
 		r.Post("/api/payments/mock/capture", paymentH.MockCapture)
 		r.Post("/api/payments/mock/fail", paymentH.MockFail)

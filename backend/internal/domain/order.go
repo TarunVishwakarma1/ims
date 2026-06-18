@@ -40,6 +40,11 @@ type Order struct {
 	Subtotal               int64           `json:"subtotal"`
 	DeliveryFee            int64           `json:"delivery_fee"`
 	Discount               int64           `json:"discount"`
+	TaxAmount              int64           `json:"tax_amount"`
+	TaxCGST                int64           `json:"tax_cgst"`
+	TaxSGST                int64           `json:"tax_sgst"`
+	TaxIGST                int64           `json:"tax_igst"`
+	IsInterState           bool            `json:"is_inter_state"`
 	PaymentStatus          string          `json:"payment_status"`
 	PaymentID              *string         `json:"payment_id"`
 	AcceptedAt             *time.Time      `json:"accepted_at"`

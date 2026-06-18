@@ -22,8 +22,16 @@ type PaymentRepository interface {
 	// orgs. Used by the reconciliation cron — small batches at a time.
 	ListByStatus(ctx context.Context, status string, limit int, afterCreatedAt time.Time) ([]*domain.Payment, error)
 	UpdateStatus(ctx context.Context, id uuid.UUID, status, method, paymentID, failureReason string, raw json.RawMessage) error
+	// IncrementRefunded bumps amount_refunded by delta and (atomically) sets
+	// status. Used after a refund webhook lands.
+	IncrementRefunded(ctx context.Context, id uuid.UUID, delta int64, newStatus string) error
 	List(ctx context.Context, orgID uuid.UUID) ([]*domain.Payment, error)
 	WithTx(tx pgx.Tx) PaymentRepository
+
+	// Refund history.
+	CreateRefund(ctx context.Context, r *domain.Refund) error
+	GetRefundByRazorpayID(ctx context.Context, rzpRefundID string) (*domain.Refund, error)
+	ListRefunds(ctx context.Context, paymentID, orgID uuid.UUID) ([]*domain.Refund, error)
 }
 
 type paymentRepository struct {
@@ -63,7 +71,7 @@ func (r *paymentRepository) scan(scanner interface {
 	var encPayload []byte
 	err := scanner.Scan(
 		&p.ID, &p.OrgID, &p.OrderID, &p.RazorpayOrderID, &p.RazorpayPaymentID,
-		&p.Amount, &p.Currency, &p.Status, &p.Method, &p.FailureReason,
+		&p.Amount, &p.AmountRefunded, &p.Currency, &p.Status, &p.Method, &p.FailureReason,
 		&plainPayload, &encPayload, &p.IsMock, &p.CreatedAt, &p.UpdatedAt,
 	)
 	if err != nil {
@@ -84,7 +92,7 @@ func (r *paymentRepository) scan(scanner interface {
 }
 
 const paymentCols = `id, org_id, order_id, razorpay_order_id, razorpay_payment_id,
-	amount, currency, status, method, failure_reason, raw_payload, raw_payload_enc,
+	amount, amount_refunded, currency, status, method, failure_reason, raw_payload, raw_payload_enc,
 	is_mock, created_at, updated_at`
 
 func (r *paymentRepository) GetByID(ctx context.Context, id, orgID uuid.UUID) (*domain.Payment, error) {
@@ -365,6 +373,76 @@ func (r *webhookRepository) ListDLQ(ctx context.Context, limit int) ([]*domain.W
 			return nil, err
 		}
 		out = append(out, &e)
+	}
+	return out, rows.Err()
+}
+
+// IncrementRefunded bumps amount_refunded by `delta` and flips status in a
+// single UPDATE. Caller decides newStatus (`partially_refunded` while the
+// sum is below amount; `refunded` when fully refunded). delta is paise.
+func (r *paymentRepository) IncrementRefunded(ctx context.Context, id uuid.UUID, delta int64, newStatus string) error {
+	_, err := r.db.Exec(ctx, `
+		UPDATE payments
+		SET amount_refunded = amount_refunded + $2,
+		    status          = $3,
+		    updated_at      = NOW()
+		WHERE id = $1
+	`, id, delta, newStatus)
+	return err
+}
+
+// CreateRefund inserts a refund row.
+func (r *paymentRepository) CreateRefund(ctx context.Context, rf *domain.Refund) error {
+	if rf.ID == uuid.Nil {
+		rf.ID = uuid.New()
+	}
+	if rf.CreatedAt.IsZero() {
+		rf.CreatedAt = time.Now().UTC()
+	}
+	if rf.Status == "" {
+		rf.Status = "processed"
+	}
+	_, err := r.db.Exec(ctx, `
+		INSERT INTO refunds (id, payment_id, org_id, amount, razorpay_refund_id, status, reason, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+	`, rf.ID, rf.PaymentID, rf.OrgID, rf.Amount, rf.RazorpayRefundID, rf.Status, rf.Reason, rf.CreatedAt)
+	return err
+}
+
+func (r *paymentRepository) GetRefundByRazorpayID(ctx context.Context, rzpRefundID string) (*domain.Refund, error) {
+	row := r.db.QueryRow(ctx, `
+		SELECT id, payment_id, org_id, amount, razorpay_refund_id, status, reason, created_at
+		FROM refunds WHERE razorpay_refund_id = $1
+	`, rzpRefundID)
+	rf := &domain.Refund{}
+	err := row.Scan(&rf.ID, &rf.PaymentID, &rf.OrgID, &rf.Amount, &rf.RazorpayRefundID, &rf.Status, &rf.Reason, &rf.CreatedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, err
+	}
+	return rf, nil
+}
+
+func (r *paymentRepository) ListRefunds(ctx context.Context, paymentID, orgID uuid.UUID) ([]*domain.Refund, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT id, payment_id, org_id, amount, razorpay_refund_id, status, reason, created_at
+		FROM refunds
+		WHERE payment_id = $1 AND org_id = $2
+		ORDER BY created_at DESC
+	`, paymentID, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]*domain.Refund, 0)
+	for rows.Next() {
+		rf := &domain.Refund{}
+		if err := rows.Scan(&rf.ID, &rf.PaymentID, &rf.OrgID, &rf.Amount, &rf.RazorpayRefundID, &rf.Status, &rf.Reason, &rf.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, rf)
 	}
 	return out, rows.Err()
 }

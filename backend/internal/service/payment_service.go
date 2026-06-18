@@ -16,6 +16,7 @@ import (
 	"github.com/TarunVishwakarma1/ims/backend/pkg/cache"
 	"github.com/TarunVishwakarma1/ims/backend/pkg/events"
 	"github.com/TarunVishwakarma1/ims/backend/pkg/metrics"
+	"github.com/TarunVishwakarma1/ims/backend/pkg/notify"
 	"github.com/google/uuid"
 	razorpay "github.com/razorpay/razorpay-go"
 	"go.uber.org/zap"
@@ -58,6 +59,14 @@ type PaymentOperations interface {
 	// refunds the given amount (0 = full). Used by the cancel flow.
 	// Returns nil (no-op) when the order has no captured payment.
 	RefundByOrder(ctx context.Context, orgID, orderID uuid.UUID, amount int64, reason string) error
+
+	// BuildReceipt fetches a payment + its order + items + buyer/org and
+	// returns a render-ready receipt payload. Used both by the in-app
+	// receipt page and by the email send in markOrderPaid.
+	BuildReceipt(ctx context.Context, paymentID, orgID uuid.UUID) (notify.PaymentReceiptData, error)
+
+	// ListRefunds returns the refund history for a payment, newest first.
+	ListRefunds(ctx context.Context, paymentID, orgID uuid.UUID) ([]*domain.Refund, error)
 }
 
 // WebhookProcessor is the provider-facing slice: signature verification,
@@ -165,6 +174,10 @@ type paymentService struct {
 	webhookRepo       repository.WebhookRepository
 	orderRepo         repository.OrderRepository
 	auditRepo         repository.AuditLogRepository
+	userRepo          repository.UserRepository
+	orgRepo           domain.OrganizationRepository
+	productRepo       repository.ProductRepository
+	notifier          notify.Notifier
 	bus               events.Bus
 	cache             cache.Cache
 	webhookSecret     string
@@ -180,6 +193,10 @@ func NewPaymentService(
 	webhookRepo repository.WebhookRepository,
 	orderRepo repository.OrderRepository,
 	auditRepo repository.AuditLogRepository,
+	userRepo repository.UserRepository,
+	orgRepo domain.OrganizationRepository,
+	productRepo repository.ProductRepository,
+	notifier notify.Notifier,
 	bus events.Bus,
 	c cache.Cache,
 	keyID, keySecret, webhookSecret, webhookSecretPrev string,
@@ -198,6 +215,10 @@ func NewPaymentService(
 		webhookRepo:       webhookRepo,
 		orderRepo:         orderRepo,
 		auditRepo:         auditRepo,
+		userRepo:          userRepo,
+		orgRepo:           orgRepo,
+		productRepo:       productRepo,
+		notifier:          notifier,
 		bus:               bus,
 		cache:             c,
 		webhookSecret:     webhookSecret,
@@ -495,7 +516,9 @@ func canTransition(from, to string) bool {
 	case domain.PaymentStatusAuthorized:
 		return to == domain.PaymentStatusCaptured || to == domain.PaymentStatusFailed
 	case domain.PaymentStatusCaptured:
-		return to == domain.PaymentStatusRefunded
+		return to == domain.PaymentStatusRefunded || to == domain.PaymentStatusPartiallyRefunded
+	case domain.PaymentStatusPartiallyRefunded:
+		return to == domain.PaymentStatusRefunded || to == domain.PaymentStatusPartiallyRefunded
 	case domain.PaymentStatusFailed, domain.PaymentStatusRefunded:
 		return false // terminal
 	}
@@ -620,13 +643,14 @@ func (s *paymentService) handleRefundProcessed(ctx context.Context, env rzpEnvel
 		return errors.New("refund event missing both refund.payment_id and payment.order_id")
 	}
 
-	if !canTransition(payment.Status, domain.PaymentStatusRefunded) {
-		// Already refunded — idempotent no-op (signature was valid, event already applied).
-		if payment.Status == domain.PaymentStatusRefunded {
-			zap.L().Info("payment already refunded — idempotent skip",
-				zap.String("payment_id", payment.ID.String()))
-			return nil
-		}
+	if payment.Status == domain.PaymentStatusRefunded {
+		// Already fully refunded — idempotent no-op.
+		zap.L().Info("payment already fully refunded — idempotent skip",
+			zap.String("payment_id", payment.ID.String()))
+		return nil
+	}
+	if payment.Status != domain.PaymentStatusCaptured &&
+		payment.Status != domain.PaymentStatusPartiallyRefunded {
 		return fmt.Errorf("illegal transition %s → refunded", payment.Status)
 	}
 
@@ -634,33 +658,87 @@ func (s *paymentService) handleRefundProcessed(ctx context.Context, env rzpEnvel
 	if rzpRefID == "" {
 		rzpRefID = payEnt.ID
 	}
-	method := ""
-	if payment.Method != nil {
-		method = *payment.Method
+
+	// Idempotency by razorpay_refund_id — webhook replays must not double-count.
+	if rzpRefID != "" {
+		if existing, err := s.paymentRepo.GetRefundByRazorpayID(ctx, rzpRefID); err == nil && existing != nil {
+			zap.L().Info("refund already recorded — idempotent skip",
+				zap.String("refund_id", rzpRefID))
+			return nil
+		}
 	}
-	if err := s.paymentRepo.UpdateStatus(ctx, payment.ID,
-		domain.PaymentStatusRefunded, method, rzpRefID, "", raw); err != nil {
+
+	// Refund amount comes from the refund entity; fall back to remaining
+	// amount if missing (some mock paths). Never overshoot.
+	delta := refund.Amount
+	remaining := payment.Amount - payment.AmountRefunded
+	if delta <= 0 {
+		delta = remaining
+	}
+	if delta > remaining {
+		delta = remaining
+	}
+
+	var rzpRefPtr *string
+	if rzpRefID != "" {
+		rzpRefPtr = &rzpRefID
+	}
+	var reasonPtr *string
+	if note, ok := refund.Notes["reason"]; ok && note != "" {
+		reasonPtr = &note
+	}
+
+	// Record the refund row first — gives us an authoritative history.
+	if err := s.paymentRepo.CreateRefund(ctx, &domain.Refund{
+		PaymentID:        payment.ID,
+		OrgID:            payment.OrgID,
+		Amount:           delta,
+		RazorpayRefundID: rzpRefPtr,
+		Status:           "processed",
+		Reason:           reasonPtr,
+	}); err != nil {
+		return fmt.Errorf("create refund row: %w", err)
+	}
+
+	// Decide new payment status from the cumulative refunded amount.
+	newTotal := payment.AmountRefunded + delta
+	newStatus := domain.PaymentStatusPartiallyRefunded
+	if newTotal >= payment.Amount {
+		newStatus = domain.PaymentStatusRefunded
+	}
+	if err := s.paymentRepo.IncrementRefunded(ctx, payment.ID, delta, newStatus); err != nil {
 		return err
 	}
 
-	// Flip the linked order's payment_status to "refunded" so the UI badge updates.
+	// Order's payment_status mirrors: full → "refunded", partial → "partial".
+	orderPaymentStatus := "refunded"
+	if newStatus == domain.PaymentStatusPartiallyRefunded {
+		orderPaymentStatus = "partial"
+	}
 	if payment.OrderID != nil {
 		if order, err := s.orderRepo.GetByID(ctx, *payment.OrderID, payment.OrgID); err == nil {
-			order.PaymentStatus = "refunded"
+			order.PaymentStatus = orderPaymentStatus
 			order.UpdatedAt = time.Now().UTC()
 			if err := s.orderRepo.Update(ctx, order); err != nil {
 				zap.L().Warn("order refund-state update failed", zap.Error(err))
 			} else {
 				s.invalidateOrgOrders(ctx, payment.OrgID)
-				s.writeOrderAudit(ctx, payment.OrgID, *payment.OrderID, "payment.refunded")
+				auditAction := "payment.refunded"
+				if newStatus == domain.PaymentStatusPartiallyRefunded {
+					auditAction = "payment.partially_refunded"
+				}
+				s.writeOrderAudit(ctx, payment.OrgID, *payment.OrderID, auditAction)
 			}
 		}
 	}
 
 	_ = s.bus.Publish(ctx, events.NewEvent(TopicPaymentRefunded, payment.OrgID.String(), "", map[string]any{
-		"payment_id": payment.ID,
-		"order_id":   payment.OrderID,
-		"refund_id":  rzpRefID,
+		"payment_id":      payment.ID,
+		"order_id":        payment.OrderID,
+		"refund_id":       rzpRefID,
+		"amount":          delta,
+		"amount_refunded": newTotal,
+		"status":          newStatus,
 	}))
 	return nil
 }
@@ -706,11 +784,112 @@ func (s *paymentService) markOrderPaid(ctx context.Context, orderID, orgID uuid.
 	}
 	s.invalidateOrgOrders(ctx, orgID)
 	s.writeOrderAudit(ctx, orgID, orderID, "payment.captured")
+
+	// Best-effort receipt email. Failure here must not roll back the payment.
+	if s.notifier != nil {
+		go func() {
+			rctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			payment, err := s.paymentRepo.GetByOrderID(rctx, orderID, orgID)
+			if err != nil || payment == nil {
+				zap.L().Warn("receipt: payment lookup failed", zap.Error(err))
+				return
+			}
+			data, err := s.BuildReceipt(rctx, payment.ID, orgID)
+			if err != nil {
+				zap.L().Warn("receipt: build failed", zap.Error(err))
+				return
+			}
+			s.notifier.PaymentReceipt(rctx, data)
+		}()
+	}
 	return nil
+}
+
+// BuildReceipt resolves the payment + its order + items (with product names)
+// + buyer email + org into a render-ready struct. Used by the email send
+// and the in-app /receipt page.
+func (s *paymentService) BuildReceipt(ctx context.Context, paymentID, orgID uuid.UUID) (notify.PaymentReceiptData, error) {
+	var out notify.PaymentReceiptData
+	payment, err := s.paymentRepo.GetByID(ctx, paymentID, orgID)
+	if err != nil {
+		return out, err
+	}
+	if payment.OrderID == nil {
+		return out, errors.New("payment has no linked order")
+	}
+	order, err := s.orderRepo.GetByID(ctx, *payment.OrderID, orgID)
+	if err != nil {
+		return out, err
+	}
+	items, err := s.orderRepo.GetOrderItems(ctx, order.ID, orgID)
+	if err != nil {
+		return out, err
+	}
+	buyer, err := s.userRepo.GetByID(ctx, order.UserID, orgID)
+	if err != nil {
+		return out, err
+	}
+	org, err := s.orgRepo.GetByID(ctx, orgID)
+	if err != nil {
+		return out, err
+	}
+
+	lines := make([]notify.PaymentReceiptLine, 0, len(items))
+	for _, it := range items {
+		name := "Item"
+		if s.productRepo != nil {
+			if p, err := s.productRepo.GetByID(ctx, it.ProductID, orgID); err == nil && p != nil {
+				name = p.Name
+			}
+		}
+		lines = append(lines, notify.PaymentReceiptLine{
+			Name:  name,
+			Qty:   it.Quantity,
+			Total: formatPaiseINR(int64(it.Quantity) * it.UnitPrice),
+		})
+	}
+
+	rzpPayment := ""
+	if payment.RazorpayPaymentID != nil {
+		rzpPayment = *payment.RazorpayPaymentID
+	}
+	method := ""
+	if payment.Method != nil {
+		method = *payment.Method
+	}
+	capturedAt := payment.UpdatedAt
+	if capturedAt.IsZero() {
+		capturedAt = time.Now().UTC()
+	}
+
+	return notify.PaymentReceiptData{
+		ToEmail:         buyer.Email,
+		BuyerName:       buyer.Name,
+		OrgName:         org.Name,
+		OrderID:         order.ID,
+		PaymentID:       payment.ID,
+		RazorpayPayment: rzpPayment,
+		Method:          method,
+		AmountPaise:     payment.Amount,
+		CapturedAt:      capturedAt,
+		Items:           lines,
+	}, nil
+}
+
+// formatPaiseINR — local helper to match notifier.money() output without
+// pulling notify's unexported helper.
+func formatPaiseINR(paise int64) string {
+	rupees := float64(paise) / 100.0
+	return fmt.Sprintf("₹%.2f", rupees)
 }
 
 func (s *paymentService) GetByID(ctx context.Context, id, orgID uuid.UUID) (*domain.Payment, error) {
 	return s.paymentRepo.GetByID(ctx, id, orgID)
+}
+
+func (s *paymentService) ListRefunds(ctx context.Context, paymentID, orgID uuid.UUID) ([]*domain.Refund, error) {
+	return s.paymentRepo.ListRefunds(ctx, paymentID, orgID)
 }
 
 func (s *paymentService) List(ctx context.Context, orgID uuid.UUID) ([]*domain.Payment, error) {
@@ -728,17 +907,24 @@ func (s *paymentService) Refund(ctx context.Context, orgID, paymentID uuid.UUID,
 	if err != nil {
 		return err
 	}
-	if payment.Status != domain.PaymentStatusCaptured {
+	// Refundable from any state that has captured funds and isn't fully
+	// refunded yet — captured + partially_refunded both qualify.
+	if payment.Status != domain.PaymentStatusCaptured &&
+		payment.Status != domain.PaymentStatusPartiallyRefunded {
 		return fmt.Errorf("only captured payments can be refunded (current: %s)", payment.Status)
 	}
 	if amount < 0 {
 		return errors.New("amount must be non-negative")
 	}
-	if amount == 0 {
-		amount = payment.Amount // default full refund
+	remaining := payment.Amount - payment.AmountRefunded
+	if remaining <= 0 {
+		return errors.New("payment is already fully refunded")
 	}
-	if amount > payment.Amount {
-		return fmt.Errorf("refund amount %d exceeds payment amount %d", amount, payment.Amount)
+	if amount == 0 {
+		amount = remaining // default: refund the full outstanding amount
+	}
+	if amount > remaining {
+		return fmt.Errorf("refund amount %d exceeds remaining refundable %d", amount, remaining)
 	}
 	if payment.RazorpayPaymentID == nil || *payment.RazorpayPaymentID == "" {
 		return errors.New("payment has no razorpay_payment_id; cannot refund")

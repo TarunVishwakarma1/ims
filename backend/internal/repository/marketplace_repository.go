@@ -79,11 +79,17 @@ func (r *marketplaceRepository) CreateListing(ctx context.Context, listing *doma
 func (r *marketplaceRepository) UpdateListing(ctx context.Context, listing *domain.MarketplaceListing) error {
 	query := `
 		UPDATE marketplace_listings
-		SET listing_price = $1, min_order_qty = $2, max_order_qty = $3, is_active = $4, updated_at = $5
-		WHERE id = $6 AND org_id = $7
+		SET listing_price = $1,
+		    min_order_qty = $2,
+		    max_order_qty = $3,
+		    is_active     = $4,
+		    location_id   = $5,
+		    updated_at    = $6
+		WHERE id = $7 AND org_id = $8
 	`
 	res, err := r.db.Exec(ctx, query,
-		listing.ListingPrice, listing.MinOrderQty, listing.MaxOrderQty, listing.IsActive, listing.UpdatedAt,
+		listing.ListingPrice, listing.MinOrderQty, listing.MaxOrderQty,
+		listing.IsActive, listing.LocationID, listing.UpdatedAt,
 		listing.ID, listing.OrgID,
 	)
 	if err != nil {

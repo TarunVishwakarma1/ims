@@ -1,10 +1,14 @@
 package handler
 
 import (
+	"encoding/csv"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
+	"strconv"
+	"time"
 
 	"github.com/TarunVishwakarma1/ims/backend/internal/domain"
 	"github.com/TarunVishwakarma1/ims/backend/internal/service"
@@ -175,6 +179,61 @@ func (h *PaymentHandler) GetPayment(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, p)
 }
 
+// ListRefunds — GET /api/payments/{id}/refunds
+// Returns refund history for a payment, newest first.
+func (h *PaymentHandler) ListRefunds(w http.ResponseWriter, r *http.Request) {
+	orgID, ok := middleware.GetOrgIDFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing org context")
+		return
+	}
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid payment id")
+		return
+	}
+	refunds, err := h.service.ListRefunds(r.Context(), id, orgID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not fetch refunds")
+		return
+	}
+	writeJSON(w, http.StatusOK, refunds)
+}
+
+// Receipt — GET /api/payments/{id}/receipt
+// Returns the receipt payload (JSON) for the in-app receipt page. Same data
+// the email uses, minus the rendered HTML — frontend renders its own.
+func (h *PaymentHandler) Receipt(w http.ResponseWriter, r *http.Request) {
+	orgID, ok := middleware.GetOrgIDFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing org context")
+		return
+	}
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid payment id")
+		return
+	}
+	data, err := h.service.BuildReceipt(r.Context(), id, orgID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "receipt not available")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"payment_id":          data.PaymentID,
+		"order_id":            data.OrderID,
+		"razorpay_payment_id": data.RazorpayPayment,
+		"method":              data.Method,
+		"amount":              data.AmountPaise,
+		"currency":            "INR",
+		"captured_at":         data.CapturedAt,
+		"buyer_name":          data.BuyerName,
+		"buyer_email":         data.ToEmail,
+		"org_name":            data.OrgName,
+		"items":               data.Items,
+	})
+}
+
 // RefundPayment — POST /api/payments/{id}/refund
 // Body: { "amount"?: int (paise, 0 = full), "reason"?: string }
 func (h *PaymentHandler) RefundPayment(w http.ResponseWriter, r *http.Request) {
@@ -318,6 +377,91 @@ func (h *PaymentHandler) ListPayments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, list)
+}
+
+// ExportPayments — GET /api/payments/export.csv?from=YYYY-MM-DD&to=YYYY-MM-DD
+// Returns a CSV download suitable for accounting reconciliation.
+// Date filter is inclusive; either bound may be omitted.
+func (h *PaymentHandler) ExportPayments(w http.ResponseWriter, r *http.Request) {
+	orgID, ok := middleware.GetOrgIDFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing org context")
+		return
+	}
+	list, err := h.service.List(r.Context(), orgID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not list payments")
+		return
+	}
+
+	from, _ := parseExportDate(r.URL.Query().Get("from"))
+	to, _ := parseExportDate(r.URL.Query().Get("to"))
+
+	filename := fmt.Sprintf("payments_%s.csv", time.Now().UTC().Format("2006-01-02"))
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+
+	cw := csv.NewWriter(w)
+	_ = cw.Write([]string{
+		"payment_id", "order_id", "razorpay_order_id", "razorpay_payment_id",
+		"amount", "amount_refunded", "net", "currency", "status", "method",
+		"failure_reason", "is_mock", "created_at", "updated_at",
+	})
+	for _, p := range list {
+		if !from.IsZero() && p.CreatedAt.Before(from) {
+			continue
+		}
+		if !to.IsZero() && p.CreatedAt.After(to.AddDate(0, 0, 1)) {
+			continue
+		}
+		rzpPay := ""
+		if p.RazorpayPaymentID != nil {
+			rzpPay = *p.RazorpayPaymentID
+		}
+		method := ""
+		if p.Method != nil {
+			method = *p.Method
+		}
+		failure := ""
+		if p.FailureReason != nil {
+			failure = *p.FailureReason
+		}
+		orderID := ""
+		if p.OrderID != nil {
+			orderID = p.OrderID.String()
+		}
+		_ = cw.Write([]string{
+			p.ID.String(),
+			orderID,
+			p.RazorpayOrderID,
+			rzpPay,
+			rupees(p.Amount),
+			rupees(p.AmountRefunded),
+			rupees(p.Amount - p.AmountRefunded),
+			p.Currency,
+			p.Status,
+			method,
+			failure,
+			strconv.FormatBool(p.IsMock),
+			p.CreatedAt.UTC().Format(time.RFC3339),
+			p.UpdatedAt.UTC().Format(time.RFC3339),
+		})
+	}
+	cw.Flush()
+}
+
+// parseExportDate accepts YYYY-MM-DD (UTC midnight). Empty/invalid returns zero time.
+func parseExportDate(s string) (time.Time, error) {
+	if s == "" {
+		return time.Time{}, nil
+	}
+	return time.Parse("2006-01-02", s)
+}
+
+// rupees formats paise as a decimal rupees string suitable for spreadsheets.
+func rupees(paise int64) string {
+	r := float64(paise) / 100.0
+	return strconv.FormatFloat(r, 'f', 2, 64)
 }
 
 // ── Webhook receiver (public, HMAC-verified) ─────────────────────────────

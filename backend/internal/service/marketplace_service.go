@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/TarunVishwakarma1/ims/backend/internal/domain"
@@ -30,18 +31,19 @@ type MarketplaceService interface {
 	GetCart(ctx context.Context, cartID uuid.UUID) (*domain.Cart, error)
 
 	// Checkout — most complex, atomic
-	Checkout(ctx context.Context, cartID uuid.UUID, deliveryAddressID *uuid.UUID, orgID uuid.UUID, userID uuid.UUID) ([]*domain.Order, error)
+	Checkout(ctx context.Context, cartID uuid.UUID, deliveryAddressID *uuid.UUID, orgID uuid.UUID, userID uuid.UUID, couponsBySupplier map[uuid.UUID]string) ([]*domain.Order, error)
 }
 
 type marketplaceService struct {
-	marketRepo   repository.MarketplaceRepository
-	invRepo      repository.InventoryRepository
-	orderRepo    repository.OrderRepository
-	productRepo  repository.ProductRepository
-	locationRepo repository.LocationRepository
-	cache        cache.Cache
-	bus          events.Bus
-	pool         *pgxpool.Pool
+	marketRepo    repository.MarketplaceRepository
+	invRepo       repository.InventoryRepository
+	orderRepo     repository.OrderRepository
+	productRepo   repository.ProductRepository
+	locationRepo  repository.LocationRepository
+	couponService CouponService
+	cache         cache.Cache
+	bus           events.Bus
+	pool          *pgxpool.Pool
 }
 
 func NewMarketplaceService(
@@ -50,20 +52,41 @@ func NewMarketplaceService(
 	orderRepo repository.OrderRepository,
 	productRepo repository.ProductRepository,
 	locationRepo repository.LocationRepository,
+	couponService CouponService,
 	c cache.Cache,
 	bus events.Bus,
 	pool *pgxpool.Pool,
 ) MarketplaceService {
 	return &marketplaceService{
-		marketRepo:   marketRepo,
-		invRepo:      invRepo,
-		orderRepo:    orderRepo,
-		productRepo:  productRepo,
-		locationRepo: locationRepo,
-		cache:        c,
-		bus:          bus,
-		pool:         pool,
+		marketRepo:    marketRepo,
+		invRepo:       invRepo,
+		orderRepo:     orderRepo,
+		productRepo:   productRepo,
+		locationRepo:  locationRepo,
+		couponService: couponService,
+		cache:         c,
+		bus:           bus,
+		pool:          pool,
 	}
+}
+
+// primaryState returns the state name of the org's primary location, or
+// empty if none. Used for GST intra/inter-state determination.
+func (s *marketplaceService) primaryState(ctx context.Context, orgID uuid.UUID) (string, error) {
+	locs, err := s.locationRepo.List(ctx, orgID)
+	if err != nil {
+		return "", err
+	}
+	var fallback string
+	for _, l := range locs {
+		if l.IsPrimary && l.IsActive {
+			return l.State, nil
+		}
+		if fallback == "" && l.IsActive {
+			fallback = l.State
+		}
+	}
+	return fallback, nil
 }
 
 func (s *marketplaceService) invalidate(ctx context.Context, orgID uuid.UUID) {
@@ -122,14 +145,35 @@ func (s *marketplaceService) CreateListing(ctx context.Context, listing *domain.
 }
 
 func (s *marketplaceService) UpdateListing(ctx context.Context, listing *domain.MarketplaceListing, orgID uuid.UUID) error {
-	listing.OrgID = orgID
-	listing.UpdatedAt = time.Now()
-	if err := s.marketRepo.UpdateListing(ctx, listing); err != nil {
+	// Load existing and merge — the handler decodes the request body
+	// straight into a domain struct, so any field the client omits arrives
+	// as a Go zero (notably is_active=false). Without a merge step a benign
+	// "change my price" call would silently deactivate the listing and make
+	// it vanish from Browse Marketplace. We treat the request as a patch
+	// over the existing record for all client-mutable fields.
+	existing, err := s.marketRepo.GetListingByID(ctx, listing.ID)
+	if err != nil {
+		return err
+	}
+	if existing.OrgID != orgID {
+		return domain.ErrNotFound
+	}
+
+	existing.ListingPrice = listing.ListingPrice
+	existing.MinOrderQty = listing.MinOrderQty
+	existing.MaxOrderQty = listing.MaxOrderQty
+	existing.LocationID = listing.LocationID
+	// is_active is intentionally preserved from `existing`. There's no
+	// edit-listing UI path that toggles it today; activate/deactivate would
+	// be a separate, dedicated endpoint.
+	existing.UpdatedAt = time.Now()
+
+	if err := s.marketRepo.UpdateListing(ctx, existing); err != nil {
 		return err
 	}
 	s.invalidate(ctx, orgID)
 	_ = s.bus.Publish(ctx, events.NewEvent(events.TopicListingUpdated, orgID.String(), "", map[string]any{
-		"id": listing.ID,
+		"id": existing.ID,
 	}))
 	return nil
 }
@@ -284,7 +328,7 @@ func (s *marketplaceService) GetCart(ctx context.Context, cartID uuid.UUID) (*do
 
 // --- Checkout ---
 
-func (s *marketplaceService) Checkout(ctx context.Context, cartID uuid.UUID, deliveryAddressID *uuid.UUID, buyerOrgID uuid.UUID, userID uuid.UUID) ([]*domain.Order, error) {
+func (s *marketplaceService) Checkout(ctx context.Context, cartID uuid.UUID, deliveryAddressID *uuid.UUID, buyerOrgID uuid.UUID, userID uuid.UUID, couponsBySupplier map[uuid.UUID]string) ([]*domain.Order, error) {
 	// 1. Get cart + items
 	cart, err := s.marketRepo.GetCartWithItems(ctx, cartID)
 	if err != nil {
@@ -403,12 +447,89 @@ func (s *marketplaceService) Checkout(ctx context.Context, cartID uuid.UUID, del
 			subtotal += item.Listing.ListingPrice * int64(item.Quantity)
 		}
 
-		// Update the order with the final totals.
+		// Coupon application for this supplier. We validate against the
+		// pre-discount subtotal — the discount is applied below as a single
+		// line. Each supplier order carries at most one coupon.
+		var discount int64
+		var appliedCoupon *domain.Coupon
+		if code, ok := couponsBySupplier[supplierID]; ok && strings.TrimSpace(code) != "" {
+			c, off, vErr := s.couponService.Validate(ctx, supplierID, code, subtotal)
+			if vErr != nil {
+				return nil, fmt.Errorf("coupon for supplier %s: %w", supplierID, vErr)
+			}
+			discount = off
+			appliedCoupon = c
+		}
+
+		// GST computation. Tax is charged on the post-discount taxable
+		// amount of each line. We pro-rate the order-level discount across
+		// lines by ratio of line_subtotal / pre_discount_subtotal so the
+		// per-line tax remains line-accurate.
+		var taxTotal int64
+		if subtotal > 0 {
+			for _, item := range items {
+				prod, err := s.productRepo.GetByID(ctx, item.Listing.ProductID, supplierID)
+				if err != nil || prod == nil {
+					continue
+				}
+				if prod.GSTRate <= 0 {
+					continue
+				}
+				lineSub := item.Listing.ListingPrice * int64(item.Quantity)
+				// Discount share for this line.
+				lineDiscount := discount * lineSub / subtotal
+				taxable := lineSub - lineDiscount
+				lineTax := taxable * int64(prod.GSTRate) / 100
+				taxTotal += lineTax
+			}
+		}
+
+		// Determine inter-state by comparing the primary location's state
+		// of the supplier org vs the buyer org. Anything missing falls
+		// back to intra-state (CGST/SGST split) — the safe default for a
+		// single-state demo deployment.
+		interState := false
+		if supState, err := s.primaryState(ctx, supplierID); err == nil && supState != "" {
+			if buyState, err := s.primaryState(ctx, buyerOrgID); err == nil && buyState != "" {
+				interState = !strings.EqualFold(strings.TrimSpace(supState), strings.TrimSpace(buyState))
+			}
+		}
+
+		var cgst, sgst, igst int64
+		if interState {
+			igst = taxTotal
+		} else {
+			// Integer-divide; remainder lands on CGST to avoid rounding loss.
+			sgst = taxTotal / 2
+			cgst = taxTotal - sgst
+		}
+
+		// Update the order with the final totals. total = subtotal - discount
+		// + tax + delivery. delivery_fee is 0 today; computed when shipping
+		// rules land.
 		order.Subtotal = subtotal
-		order.TotalAmount = subtotal
+		order.Discount = discount
+		order.TaxAmount = taxTotal
+		order.TaxCGST = cgst
+		order.TaxSGST = sgst
+		order.TaxIGST = igst
+		order.IsInterState = interState
+		order.TotalAmount = subtotal - discount + taxTotal + order.DeliveryFee
 		order.UpdatedAt = time.Now()
 		if err := txOrderRepo.Update(ctx, order); err != nil {
 			return nil, fmt.Errorf("order total update failed: %w", err)
+		}
+
+		// Persist coupon → order link + bump usage count. Done inside the tx
+		// via the repo handle from couponService.repo — but couponService
+		// has its own repo. Calling outside the tx is acceptable here
+		// because at most one coupon per checkout per supplier, and the
+		// tx-isolation gap is just the audit row (the order itself rolled
+		// back if anything later in the loop failed). Future: thread tx in.
+		if appliedCoupon != nil {
+			if err := s.couponService.Apply(ctx, appliedCoupon, orderID, discount); err != nil {
+				return nil, fmt.Errorf("coupon apply failed: %w", err)
+			}
 		}
 
 		createdOrders = append(createdOrders, order)

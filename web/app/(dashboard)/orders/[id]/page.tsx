@@ -29,6 +29,9 @@ import { formatPrice } from '@/lib/utils'
 import { usePermission } from '@/hooks/usePermission'
 import { PERMISSIONS } from '@/lib/rbac'
 import { useEventStream } from '@/hooks/useEventStream'
+import { useAuthStore } from '@/lib/stores/auth-store'
+import { openRealCheckout, useRazorpayPreload } from '@/components/payments/real-checkout'
+import { MockCheckoutDialog } from '@/components/payments/mock-checkout-dialog'
 import type { OrderStatus } from '@/types/api'
 
 import { Button } from '@/components/ui/button'
@@ -76,6 +79,16 @@ const allowedTransitions = (s: OrderStatus): OrderStatus[] => {
 
 const cancellable = (s: OrderStatus) =>
   ['pending', 'confirmed', 'accepted', 'processing', 'ready'].includes(s)
+
+// payable decides whether to surface a Pay / Retry button. Either the order
+// has never been paid (no payment row, or unpaid status) or the previous
+// attempt failed. A stuck `created` payment also qualifies — user might want
+// to try again rather than wait for an indefinite webhook.
+function payable(paymentStatus: string, lastAttempt?: string): boolean {
+  if (paymentStatus === 'paid' || paymentStatus === 'refunded') return false
+  if (!lastAttempt) return paymentStatus === 'unpaid'
+  return ['failed', 'created'].includes(lastAttempt)
+}
 
 // Single visual lookup for the timeline icons by audit action string.
 function iconFor(action: string) {
@@ -165,6 +178,11 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
     queryFn: () => ordersApi.getTimeline(id),
   })
   const paymentsQ = useQuery({ queryKey: ['payments'], queryFn: paymentsApi.list })
+  const payConfigQ = useQuery({ queryKey: ['payment-config'], queryFn: paymentsApi.getConfig, staleTime: 60 * 60 * 1000 })
+  const { user } = useAuthStore()
+  useRazorpayPreload(payConfigQ.data?.mock === false)
+  const [retryMock, setRetryMock] = useState<{ open: boolean; razorpayOrderID: string; paymentID: string; amount: number } | null>(null)
+  const [retrying, setRetrying] = useState(false)
   const returnsQ = useQuery({
     queryKey: ['order', id, 'returns'],
     queryFn: () => returnsApi.listForOrder(id),
@@ -338,6 +356,48 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
               <RotateCcw className="mr-2 h-4 w-4" /> Refund
             </Button>
           )}
+          {payable(order.payment_status, payment?.status) && order.status !== 'cancelled' && order.status !== 'rejected' && (
+            <Button
+              className="bg-indigo-600 hover:bg-indigo-700"
+              disabled={retrying}
+              onClick={async () => {
+                setRetrying(true)
+                try {
+                  const po = await paymentsApi.createOrder({ order_id: order.id, amount: order.total_amount })
+                  if (payConfigQ.data && !payConfigQ.data.mock && payConfigQ.data.key_id) {
+                    openRealCheckout({
+                      keyID: payConfigQ.data.key_id,
+                      razorpayOrderID: po.razorpay_order_id,
+                      amount: po.amount,
+                      prefill: { name: user?.name, email: user?.email },
+                      notes: { internal_order_id: order.id },
+                      onSuccess: () => router.push(`/payments/${po.payment.id}/status`),
+                      onDismiss: () => {
+                        toast.info('Checkout dismissed.')
+                        setRetrying(false)
+                      },
+                    })
+                  } else {
+                    setRetryMock({
+                      open: true,
+                      razorpayOrderID: po.razorpay_order_id,
+                      paymentID: po.payment.id,
+                      amount: po.amount,
+                    })
+                  }
+                } catch (e) {
+                  const msg = e instanceof HTTPError
+                    ? (await e.response.json().catch(() => ({} as { error?: string }))).error
+                    : (e instanceof Error ? e.message : 'Retry failed')
+                  toast.error(msg || 'Retry failed')
+                  setRetrying(false)
+                }
+              }}
+            >
+              {retrying && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              <CreditCard className="mr-2 h-4 w-4" /> {payment ? 'Retry payment' : 'Pay now'}
+            </Button>
+          )}
           {(order.status === 'delivered' || order.status === 'completed') && (
             <Button
               variant="outline"
@@ -464,10 +524,29 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
                   </div>
                 )}
                 {(order.discount ?? 0) > 0 && (
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Discount</span>
+                  <div className="flex justify-between text-emerald-700 dark:text-emerald-400">
+                    <span>Discount</span>
                     <span>−{formatPrice(order.discount || 0)}</span>
                   </div>
+                )}
+                {(order.tax_amount ?? 0) > 0 && (
+                  order.is_inter_state ? (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">IGST</span>
+                      <span>{formatPrice(order.tax_igst || 0)}</span>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">CGST</span>
+                        <span>{formatPrice(order.tax_cgst || 0)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">SGST</span>
+                        <span>{formatPrice(order.tax_sgst || 0)}</span>
+                      </div>
+                    </>
+                  )
                 )}
                 <div className="flex justify-between pt-2 text-base font-semibold border-t mt-2">
                   <span>Total</span>
@@ -723,6 +802,28 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {retryMock && (
+        <MockCheckoutDialog
+          open={retryMock.open}
+          onOpenChange={(next) => setRetryMock((s) => (s ? { ...s, open: next } : null))}
+          razorpayOrderID={retryMock.razorpayOrderID}
+          amount={retryMock.amount}
+          onSuccess={() => {
+            const pid = retryMock.paymentID
+            setRetryMock(null)
+            setRetrying(false)
+            router.push(`/payments/${pid}/status`)
+          }}
+          onFailure={() => {
+            setRetryMock(null)
+            setRetrying(false)
+            toast.info('Payment failed. You can retry from this page.')
+            qc.invalidateQueries({ queryKey: ['order', id] })
+            qc.invalidateQueries({ queryKey: ['payments'] })
+          }}
+        />
+      )}
     </div>
   )
 }

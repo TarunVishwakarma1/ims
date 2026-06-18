@@ -49,6 +49,7 @@ const productSchema = z.object({
   category_id: z.string().min(1, 'Category is required'),
   description: z.string().optional(),
   price: z.number().min(0, 'Price must be a positive number'),
+  gst_rate: z.number().int().min(0).max(28),
 })
 type ProductFormValues = z.infer<typeof productSchema>
 
@@ -116,6 +117,7 @@ export default function ProductsPage() {
       category_id: '',
       description: '',
       price: 0,
+      gst_rate: 0,
     }
   })
 
@@ -128,6 +130,7 @@ export default function ProductsPage() {
       category_id: '',
       description: '',
       price: 0,
+      gst_rate: 0,
     })
     setIsDialogOpen(true)
   }
@@ -202,6 +205,7 @@ export default function ProductsPage() {
                               category_id: product.category_id,
                               description: product.description,
                               price: product.price / 100,
+                              gst_rate: product.gst_rate ?? 0,
                             })
                             setIsDialogOpen(true)
                           }}>
@@ -257,6 +261,34 @@ export default function ProductsPage() {
                 <Input id="price" type="number" step="0.01" {...register('price', { valueAsNumber: true })} />
                 {errors.price && <p className="text-xs text-red-500">{errors.price.message}</p>}
               </div>
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="gst_rate">GST Rate</Label>
+              <Controller
+                name="gst_rate"
+                control={control}
+                render={({ field }) => (
+                  <Select
+                    onValueChange={(v) => field.onChange(parseInt(v, 10))}
+                    value={String(field.value ?? 0)}
+                  >
+                    <SelectTrigger id="gst_rate">
+                      <SelectValue placeholder="GST rate" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="0">Exempt (0%)</SelectItem>
+                      <SelectItem value="5">5%</SelectItem>
+                      <SelectItem value="12">12%</SelectItem>
+                      <SelectItem value="18">18%</SelectItem>
+                      <SelectItem value="28">28%</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+              <p className="text-xs text-muted-foreground">
+                Applied at checkout as CGST+SGST (intra-state) or IGST (inter-state).
+              </p>
             </div>
 
             <div className="grid gap-2">

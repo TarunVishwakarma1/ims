@@ -20,5 +20,13 @@ export const marketplaceApi = {
   addToCart: (data: AddToCartRequest) => api.post('cart/items', { json: data }).json<CartItem>(),
   updateCartItem: (listingId: string, quantity: number) => api.put(`cart/items/${listingId}`, { json: { quantity } }).json<CartItem>(),
   removeFromCart: (listingId: string) => api.delete(`cart/items/${listingId}`),
-  checkout: (deliveryAddressId?: string) => api.post('cart/checkout', { json: { delivery_address_id: deliveryAddressId } }).json<Order[]>(),
+  checkout: (params?: { deliveryAddressId?: string; couponsBySupplier?: Record<string, string> }) =>
+    api
+      .post('cart/checkout', {
+        json: {
+          delivery_address_id: params?.deliveryAddressId,
+          coupons_by_supplier: params?.couponsBySupplier || {},
+        },
+      })
+      .json<Order[]>(),
 }

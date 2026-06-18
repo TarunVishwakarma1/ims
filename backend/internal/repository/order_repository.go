@@ -55,6 +55,7 @@ func (r *orderRepository) BeginTx(ctx context.Context) (pgx.Tx, error) {
 const orderCols = `id, org_id, user_id, status, total_amount, created_at, updated_at,
 	order_type, buyer_org_id, supplier_org_id, supplier_location_id, customer_id,
 	delivery_address_id, subtotal, delivery_fee, discount,
+	tax_amount, tax_cgst, tax_sgst, tax_igst, is_inter_state,
 	payment_status, payment_id,
 	accepted_at, shipped_at, delivered_at, completed_at, cancelled_at`
 
@@ -66,6 +67,7 @@ func scanOrder(scanner interface {
 		&o.ID, &o.OrgID, &o.UserID, &o.Status, &o.TotalAmount, &o.CreatedAt, &o.UpdatedAt,
 		&o.OrderType, &o.BuyerOrgID, &o.SupplierOrgID, &o.SupplierLocationID, &o.CustomerID,
 		&o.DeliveryAddressID, &o.Subtotal, &o.DeliveryFee, &o.Discount,
+		&o.TaxAmount, &o.TaxCGST, &o.TaxSGST, &o.TaxIGST, &o.IsInterState,
 		&o.PaymentStatus, &o.PaymentID,
 		&o.AcceptedAt, &o.ShippedAt, &o.DeliveredAt, &o.CompletedAt, &o.CancelledAt,
 	)
@@ -80,16 +82,21 @@ func (r *orderRepository) Create(ctx context.Context, order *domain.Order) error
 		INSERT INTO orders (
 			id, org_id, user_id, status, total_amount, created_at, updated_at,
 			order_type, buyer_org_id, supplier_org_id, supplier_location_id, customer_id,
-			delivery_address_id, subtotal, delivery_fee, discount, payment_status, payment_id
+			delivery_address_id, subtotal, delivery_fee, discount,
+			tax_amount, tax_cgst, tax_sgst, tax_igst, is_inter_state,
+			payment_status, payment_id
 		) VALUES (
 			$1, $2, $3, $4, $5, $6, $7,
 			$8, $9, $10, $11, $12,
-			$13, $14, $15, $16, $17, $18
+			$13, $14, $15, $16,
+			$17, $18, $19, $20, $21,
+			$22, $23
 		)
 	`,
 		order.ID, order.OrgID, order.UserID, order.Status, order.TotalAmount, order.CreatedAt, order.UpdatedAt,
 		order.OrderType, order.BuyerOrgID, order.SupplierOrgID, order.SupplierLocationID, order.CustomerID,
 		order.DeliveryAddressID, order.Subtotal, order.DeliveryFee, order.Discount,
+		order.TaxAmount, order.TaxCGST, order.TaxSGST, order.TaxIGST, order.IsInterState,
 		nullIfEmpty(order.PaymentStatus, "unpaid"), order.PaymentID,
 	)
 	return err
@@ -110,14 +117,16 @@ func (r *orderRepository) GetByID(ctx context.Context, id uuid.UUID, orgID uuid.
 func (r *orderRepository) Update(ctx context.Context, order *domain.Order) error {
 	_, err := r.db.Exec(ctx, `
 		UPDATE orders SET
-			status = $3, total_amount = $4, subtotal = $5,
-			payment_status = $6, payment_id = $7,
-			accepted_at = $8, shipped_at = $9, delivered_at = $10,
-			completed_at = $11, cancelled_at = $12,
-			updated_at = $13
+			status = $3, total_amount = $4, subtotal = $5, discount = $6,
+			tax_amount = $7, tax_cgst = $8, tax_sgst = $9, tax_igst = $10, is_inter_state = $11,
+			payment_status = $12, payment_id = $13,
+			accepted_at = $14, shipped_at = $15, delivered_at = $16,
+			completed_at = $17, cancelled_at = $18,
+			updated_at = $19
 		WHERE id = $1 AND org_id = $2
 	`,
-		order.ID, order.OrgID, order.Status, order.TotalAmount, order.Subtotal,
+		order.ID, order.OrgID, order.Status, order.TotalAmount, order.Subtotal, order.Discount,
+		order.TaxAmount, order.TaxCGST, order.TaxSGST, order.TaxIGST, order.IsInterState,
 		nullIfEmpty(order.PaymentStatus, "unpaid"), order.PaymentID,
 		order.AcceptedAt, order.ShippedAt, order.DeliveredAt,
 		order.CompletedAt, order.CancelledAt,

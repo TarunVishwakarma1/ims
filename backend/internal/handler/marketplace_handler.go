@@ -320,6 +320,9 @@ func (h *MarketplaceHandler) RemoveFromCart(w http.ResponseWriter, r *http.Reque
 
 type checkoutReq struct {
 	DeliveryAddressID *uuid.UUID `json:"delivery_address_id"`
+	// CouponsBySupplier maps a supplier_org_id (UUID string) to a coupon
+	// code. Empty / missing entries mean no discount for that supplier.
+	CouponsBySupplier map[string]string `json:"coupons_by_supplier"`
 }
 
 func (h *MarketplaceHandler) Checkout(w http.ResponseWriter, r *http.Request) {
@@ -350,7 +353,13 @@ func (h *MarketplaceHandler) Checkout(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	orders, err := h.service.Checkout(r.Context(), cart.ID, req.DeliveryAddressID, orgID, userID)
+	couponMap := make(map[uuid.UUID]string, len(req.CouponsBySupplier))
+	for k, v := range req.CouponsBySupplier {
+		if id, err := uuid.Parse(k); err == nil && v != "" {
+			couponMap[id] = v
+		}
+	}
+	orders, err := h.service.Checkout(r.Context(), cart.ID, req.DeliveryAddressID, orgID, userID, couponMap)
 	if err != nil {
 		if err.Error() == "cart is empty" {
 			writeError(w, http.StatusBadRequest, "cart is empty")

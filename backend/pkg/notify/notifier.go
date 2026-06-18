@@ -31,6 +31,32 @@ type Notifier interface {
 	// PasswordReset sends the password-reset link with the raw token
 	// embedded in the URL. Subject + body use the password_reset template.
 	PasswordReset(ctx context.Context, email, rawToken string, ttlMinutes int)
+
+	// PaymentReceipt is sent after a payment is captured. Includes order
+	// summary + line items + payment ID + a link to the in-app receipt.
+	PaymentReceipt(ctx context.Context, data PaymentReceiptData)
+}
+
+// PaymentReceiptLine is one row in the receipt items table.
+type PaymentReceiptLine struct {
+	Name  string
+	Qty   int
+	Total string // pre-formatted money string
+}
+
+// PaymentReceiptData is the payload for the receipt email + the in-app
+// receipt page. Caller pre-resolves all the joins so the template stays dumb.
+type PaymentReceiptData struct {
+	ToEmail         string
+	BuyerName       string
+	OrgName         string
+	OrderID         uuid.UUID
+	PaymentID       uuid.UUID
+	RazorpayPayment string
+	Method          string
+	AmountPaise     int64
+	CapturedAt      time.Time
+	Items           []PaymentReceiptLine
 }
 
 type notifier struct {
@@ -351,6 +377,69 @@ func (n *notifier) PasswordReset(ctx context.Context, email, rawToken string, tt
 	}
 	fallback := fmt.Sprintf("Reset your IMS password: %s (expires in %d minutes)", resetURL, ttlMinutes)
 	n.dispatchHTML(ctx, email, subj, "password_reset", data, fallback)
+}
+
+func (n *notifier) PaymentReceipt(ctx context.Context, d PaymentReceiptData) {
+	if d.ToEmail == "" {
+		return
+	}
+	method := d.Method
+	if method == "" {
+		method = "—"
+	}
+	rzpID := d.RazorpayPayment
+	if rzpID == "" {
+		rzpID = "—"
+	}
+	receiptURL := fmt.Sprintf("%s/payments/%s/receipt", n.appURL, d.PaymentID)
+	subj := fmt.Sprintf("Payment receipt — Order #%s", short(d.OrderID))
+	data := struct {
+		baseData
+		Hero   hero
+		Amount amount
+		Rows   []kv
+		Items  []PaymentReceiptLine
+		Alert  alert
+		CTA    cta
+	}{
+		baseData: newBase(subj, "RECEIPT"),
+		Hero: hero{
+			Title:    "Payment received",
+			Subtitle: fmt.Sprintf("Thanks, %s. Your payment has been confirmed.", firstWord(d.BuyerName)),
+		},
+		Amount: amount{
+			Label:  "Amount paid",
+			Amount: money(d.AmountPaise),
+			Sub:    fmt.Sprintf("via %s", method),
+		},
+		Rows: []kv{
+			{"Order ID", "#" + short(d.OrderID)},
+			{"Payment ID", "#" + short(d.PaymentID)},
+			{"Razorpay payment", rzpID},
+			{"Captured", d.CapturedAt.UTC().Format("2 Jan 2006, 15:04 UTC")},
+			{"Method", method},
+		},
+		Items: d.Items,
+		Alert: alert{
+			Title: "Captured successfully",
+			Body:  "Funds have been received. We have notified the supplier and your order will be processed shortly.",
+		},
+		CTA: cta{URL: receiptURL, Label: "View full receipt"},
+	}
+	fallback := fmt.Sprintf("Payment of %s received for Order #%s. Receipt: %s",
+		money(d.AmountPaise), short(d.OrderID), receiptURL)
+	n.dispatchHTML(ctx, d.ToEmail, subj, "payment_receipt", data, fallback)
+}
+
+func firstWord(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "there"
+	}
+	if i := strings.IndexByte(s, ' '); i > 0 {
+		return s[:i]
+	}
+	return s
 }
 
 // short returns the first uuid block — easier to read in subject lines.

@@ -147,7 +147,9 @@ func main() {
 	authService.SetNotifier(notifier)
 	roleService := service.NewRoleService(roleRepo)
 	locationService := service.NewLocationService(locationRepo, cacheClient)
-	marketService := service.NewMarketplaceService(marketRepo, inventoryRepo, orderRepo, productRepo, locationRepo, cacheClient, eventBus, pool)
+	couponRepo := repository.NewCouponRepository(pool)
+	couponService := service.NewCouponService(couponRepo)
+	marketService := service.NewMarketplaceService(marketRepo, inventoryRepo, orderRepo, productRepo, locationRepo, couponService, cacheClient, eventBus, pool)
 	partnerService := service.NewPartnerService(partnerRepo, orgRepo)
 
 	// Encryption for payment payloads / webhook bodies (PII protection).
@@ -161,7 +163,9 @@ func main() {
 
 	paymentRepo := repository.NewPaymentRepository(pool, encryptor)
 	webhookRepo := repository.NewWebhookRepository(pool, encryptor)
-	paymentService := service.NewPaymentService(paymentRepo, webhookRepo, orderRepo, auditLogRepo, eventBus, cacheClient,
+	paymentService := service.NewPaymentService(paymentRepo, webhookRepo, orderRepo, auditLogRepo,
+		userRepo, orgRepo, productRepo, notifier,
+		eventBus, cacheClient,
 		cfg.RazorpayKeyID, cfg.RazorpayKeySecret, cfg.RazorpayWebhookSecret, cfg.RazorpayWebhookSecretPrev, cfg.RazorpayMockMode)
 
 	// Wire payment → order back-reference so Cancel can auto-refund paid orders.
@@ -187,6 +191,7 @@ func main() {
 	notificationH := handler.NewNotificationHandler(notificationService)
 	auditH := handler.NewAuditHandler(auditLogRepo)
 	totpH := handler.NewTOTPHandler(totpService, authService, userRepo)
+	couponH := handler.NewCouponHandler(couponService)
 	mode := "test"
 	switch {
 	case cfg.RazorpayMockMode:
@@ -199,7 +204,7 @@ func main() {
 	webhookH := handler.NewWebhookHandler(paymentService)
 	eventsH := handler.NewEventsHandler(eventBus)
 
-	router := NewRouter(authH, userH, categoryH, productH, inventoryH, orderH, roleH, locationH, marketH, eventsH, paymentH, webhookH, partnerH, returnH, notificationH, auditH, totpH, cfg, pool, cacheClient)
+	router := NewRouter(authH, userH, categoryH, productH, inventoryH, orderH, roleH, locationH, marketH, eventsH, paymentH, webhookH, partnerH, returnH, notificationH, auditH, totpH, couponH, cfg, pool, cacheClient)
 
 	server := &http.Server{
 		Addr:         ":" + cfg.Port,
