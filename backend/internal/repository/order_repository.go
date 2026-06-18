@@ -28,6 +28,11 @@ type OrderRepository interface {
 	GetOrderItems(ctx context.Context, orderID uuid.UUID, orgID uuid.UUID) ([]*domain.OrderItem, error)
 	WithTx(tx pgx.Tx) OrderRepository
 	BeginTx(ctx context.Context) (pgx.Tx, error)
+
+	// AllocateInvoiceNumber atomically bumps the org's invoice sequence for
+	// the given financial-year label and stamps the result on the order. No-op
+	// if invoice_number is already set. Returns the allocated number.
+	AllocateInvoiceNumber(ctx context.Context, orderID, orgID uuid.UUID, fyLabel string) (string, error)
 }
 
 type orderRepository struct {
@@ -57,7 +62,8 @@ const orderCols = `id, org_id, user_id, status, total_amount, created_at, update
 	delivery_address_id, subtotal, delivery_fee, discount,
 	tax_amount, tax_cgst, tax_sgst, tax_igst, is_inter_state,
 	payment_status, payment_id,
-	accepted_at, shipped_at, delivered_at, completed_at, cancelled_at`
+	accepted_at, shipped_at, delivered_at, completed_at, cancelled_at,
+	invoice_number`
 
 func scanOrder(scanner interface {
 	Scan(dest ...any) error
@@ -70,6 +76,7 @@ func scanOrder(scanner interface {
 		&o.TaxAmount, &o.TaxCGST, &o.TaxSGST, &o.TaxIGST, &o.IsInterState,
 		&o.PaymentStatus, &o.PaymentID,
 		&o.AcceptedAt, &o.ShippedAt, &o.DeliveredAt, &o.CompletedAt, &o.CancelledAt,
+		&o.InvoiceNumber,
 	)
 	if err != nil {
 		return nil, err
@@ -227,6 +234,45 @@ func (r *orderRepository) GetOrderItems(ctx context.Context, orderID uuid.UUID, 
 	}
 
 	return list, nil
+}
+
+// AllocateInvoiceNumber bumps org_invoice_sequences.last_seq atomically via
+// UPSERT (DO UPDATE locks the row implicitly), then stamps the formatted
+// number on the order. If the order already has an invoice_number, returns
+// the existing one without consuming a sequence value (idempotent).
+func (r *orderRepository) AllocateInvoiceNumber(ctx context.Context, orderID, orgID uuid.UUID, fyLabel string) (string, error) {
+	// Short-circuit: if already allocated, return current value.
+	var existing *string
+	if err := r.db.QueryRow(ctx,
+		`SELECT invoice_number FROM orders WHERE id = $1 AND org_id = $2`, orderID, orgID,
+	).Scan(&existing); err != nil {
+		return "", err
+	}
+	if existing != nil && *existing != "" {
+		return *existing, nil
+	}
+
+	// Atomic increment-and-return for this org/FY pair.
+	var seq int64
+	err := r.db.QueryRow(ctx, `
+		INSERT INTO org_invoice_sequences (org_id, fy_label, last_seq, updated_at)
+		VALUES ($1, $2, 1, NOW())
+		ON CONFLICT (org_id, fy_label) DO UPDATE
+		SET last_seq = org_invoice_sequences.last_seq + 1, updated_at = NOW()
+		RETURNING last_seq
+	`, orgID, fyLabel).Scan(&seq)
+	if err != nil {
+		return "", err
+	}
+
+	number := fmt.Sprintf("INV/%s/%05d", fyLabel, seq)
+	if _, err := r.db.Exec(ctx,
+		`UPDATE orders SET invoice_number = $1, updated_at = NOW() WHERE id = $2 AND org_id = $3`,
+		number, orderID, orgID,
+	); err != nil {
+		return "", err
+	}
+	return number, nil
 }
 
 // ListFiltered builds a dynamic WHERE clause from the filter struct and

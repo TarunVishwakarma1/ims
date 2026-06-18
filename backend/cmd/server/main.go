@@ -174,6 +174,12 @@ func main() {
 	// Daily payment reconciliation — catches drift from missed RazorPay webhooks.
 	jobs.StartPaymentReconciliation(ctx, paymentService, 24*time.Hour)
 
+	// Short-cycle stuck-payment reconciliation — every 5 min, asks Razorpay
+	// whether a payment was actually captured on orders we still see as
+	// 'created'. Marks long-abandoned (>24h) attempts failed so the retry
+	// button reactivates on the order.
+	jobs.StartStuckPaymentReconciliation(ctx, paymentService, 5*time.Minute, 15)
+
 	returnService := service.NewReturnService(returnRepo, orderRepo, inventoryRepo, auditLogRepo, paymentService, eventBus, notifier)
 	notificationService := service.NewNotificationService(notificationRepo)
 

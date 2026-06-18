@@ -112,3 +112,41 @@ func runReconciliation(ctx context.Context, p service.PaymentService) {
 		zap.L().Info("payment reconciliation corrected drift", zap.Int("corrected", corrected))
 	}
 }
+
+// StartStuckPaymentReconciliation polls Razorpay for payments stuck in the
+// 'created' state past the grace window. Catches users who completed payment
+// while the capture webhook never arrived, and marks long-abandoned attempts
+// as failed so the order's retry button reactivates.
+func StartStuckPaymentReconciliation(ctx context.Context, paymentService service.PaymentService, interval time.Duration, graceMinutes int) {
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		runStuck(ctx, paymentService, graceMinutes)
+
+		for {
+			select {
+			case <-ctx.Done():
+				zap.L().Info("stuck-payment reconciliation job stopped")
+				return
+			case <-ticker.C:
+				runStuck(ctx, paymentService, graceMinutes)
+			}
+		}
+	}()
+	zap.L().Info("stuck-payment reconciliation job started",
+		zap.Duration("interval", interval),
+		zap.Int("grace_minutes", graceMinutes))
+}
+
+func runStuck(ctx context.Context, p service.PaymentService, graceMinutes int) {
+	corrected, failed, err := p.ReconcileStuck(ctx, graceMinutes, 200)
+	if err != nil {
+		zap.L().Error("stuck-payment reconciliation failed", zap.Error(err))
+		return
+	}
+	if corrected > 0 || failed > 0 {
+		zap.L().Info("stuck-payment reconciliation pass",
+			zap.Int("corrected", corrected), zap.Int("failed", failed))
+	}
+}

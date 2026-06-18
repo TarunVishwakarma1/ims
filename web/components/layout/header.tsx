@@ -3,8 +3,8 @@
 import { useAuthStore } from '@/lib/stores/auth-store'
 import { Building2 } from 'lucide-react'
 
-// Single logout lives in the sidebar user dropdown. Header just shows the
-// org context — page title + breadcrumbs can layer in later.
+import { CartButton } from '@/components/cart/cart-button'
+
 export function Header() {
   const { organization } = useAuthStore()
 
@@ -13,6 +13,9 @@ export function Header() {
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <Building2 className="h-4 w-4" />
         <span>{organization?.name ?? 'Loading…'}</span>
+      </div>
+      <div className="flex items-center gap-2">
+        <CartButton />
       </div>
     </header>
   )

@@ -2,6 +2,7 @@ import { Sidebar } from '@/components/layout/sidebar'
 import { Header } from '@/components/layout/header'
 import { ErrorBoundary } from '@/components/error-boundary'
 import { VerifyEmailBanner } from '@/components/auth/verify-email-banner'
+import { CartDrawer } from '@/components/cart/cart-drawer'
 
 export default function DashboardLayout({
   children,
@@ -23,6 +24,7 @@ export default function DashboardLayout({
           <ErrorBoundary>{children}</ErrorBoundary>
         </main>
       </div>
+      <CartDrawer />
     </div>
   )
 }

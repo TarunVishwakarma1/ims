@@ -222,6 +222,7 @@ func (h *PaymentHandler) Receipt(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"payment_id":          data.PaymentID,
 		"order_id":            data.OrderID,
+		"invoice_number":      data.InvoiceNumber,
 		"razorpay_payment_id": data.RazorpayPayment,
 		"method":              data.Method,
 		"amount":              data.AmountPaise,
@@ -232,6 +233,32 @@ func (h *PaymentHandler) Receipt(w http.ResponseWriter, r *http.Request) {
 		"org_name":            data.OrgName,
 		"items":               data.Items,
 	})
+}
+
+// ReceiptPDF — GET /api/payments/{id}/receipt.pdf
+// Returns the receipt as a downloadable PDF. Generated server-side via
+// gofpdf so the buyer can archive it for tax records.
+func (h *PaymentHandler) ReceiptPDF(w http.ResponseWriter, r *http.Request) {
+	orgID, ok := middleware.GetOrgIDFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing org context")
+		return
+	}
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid payment id")
+		return
+	}
+	pdfBytes, err := h.service.BuildReceiptPDF(r.Context(), id, orgID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not render pdf")
+		return
+	}
+	filename := fmt.Sprintf("receipt-%s.pdf", id.String()[:8])
+	w.Header().Set("Content-Type", "application/pdf")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(pdfBytes)))
+	_, _ = w.Write(pdfBytes)
 }
 
 // RefundPayment — POST /api/payments/{id}/refund
