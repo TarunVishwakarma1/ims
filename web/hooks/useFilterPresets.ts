@@ -26,6 +26,7 @@ export function useFilterPresets(pageKey: string) {
     if (typeof window === 'undefined') return
     try {
       const raw = window.localStorage.getItem(storageKey(pageKey))
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       if (raw) setPresets(JSON.parse(raw))
     } catch {
       // Corrupted JSON — drop the bucket so the user isn't stuck.

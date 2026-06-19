@@ -31,6 +31,7 @@ export function VerifyEmailBanner() {
   useEffect(() => {
     if (typeof window === 'undefined') return
     const stored = window.localStorage.getItem(OPEN_KEY)
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setShowInput(stored === null ? true : stored === '1')
     setOtp(window.localStorage.getItem(OTP_KEY) ?? '')
     setHydrated(true)

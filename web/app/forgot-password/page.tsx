@@ -40,7 +40,7 @@ export default function ForgotPasswordPage() {
         </div>
         <div className="relative space-y-3">
           <h1 className="text-4xl font-bold text-white leading-tight">Reset your password</h1>
-          <p className="text-zinc-400">We'll email you a secure link to set a new one.</p>
+          <p className="text-zinc-400">We&apos;ll email you a secure link to set a new one.</p>
         </div>
         <p className="relative text-zinc-600 text-sm">© 2026 IMS. All rights reserved.</p>
       </div>
@@ -54,7 +54,7 @@ export default function ForgotPasswordPage() {
           <div className="space-y-2">
             <h2 className="text-3xl font-bold tracking-tight">Forgot your password?</h2>
             <p className="text-muted-foreground">
-              Enter your email and we'll send a link to reset it.
+              Enter your email and we&apos;ll send a link to reset it.
             </p>
           </div>
 
@@ -62,7 +62,7 @@ export default function ForgotPasswordPage() {
             <Alert className="bg-emerald-50 text-emerald-900 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-200 dark:border-emerald-900">
               <CheckCircle2 className="h-4 w-4" />
               <AlertDescription>
-                If <strong>{email}</strong> is registered, we've sent a reset link.
+                If <strong>{email}</strong> is registered, we&apos;ve sent a reset link.
                 Check your inbox (and spam folder) in the next minute or two.
               </AlertDescription>
             </Alert>
