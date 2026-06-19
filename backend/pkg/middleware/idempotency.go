@@ -76,7 +76,7 @@ func Idempotency(pool *pgxpool.Pool) func(http.Handler) http.Handler {
 			}
 			r.Body = io.NopCloser(bytes.NewReader(body))
 
-			hashStr := requestHash(r.URL.Path, body)
+			hashStr := requestHash(r.URL.Path, r.URL.RawQuery, body)
 
 			cached, err := lookupIdempotent(r.Context(), pool, scopeID, key)
 			if err == nil && cached != nil {
@@ -110,9 +110,11 @@ type idempotentRecord struct {
 	Body        []byte
 }
 
-func requestHash(path string, body []byte) string {
+func requestHash(path, rawQuery string, body []byte) string {
 	h := sha256.New()
 	h.Write([]byte(path))
+	h.Write([]byte{0})
+	h.Write([]byte(rawQuery))
 	h.Write([]byte{0})
 	h.Write(body)
 	return hex.EncodeToString(h.Sum(nil))
