@@ -36,8 +36,11 @@ func ParseShopJWT(secret, token string) (uuid.UUID, error) {
 		}
 		return []byte(secret), nil
 	})
-	if err != nil || !tok.Valid {
+	if err != nil {
 		return uuid.Nil, err
+	}
+	if tok == nil || !tok.Valid {
+		return uuid.Nil, errors.New("invalid token")
 	}
 	if !hasAudience(c.Audience, ShopAudience) {
 		return uuid.Nil, errors.New("wrong audience")
