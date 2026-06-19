@@ -57,7 +57,13 @@ func Idempotency(pool *pgxpool.Pool) func(http.Handler) http.Handler {
 				next.ServeHTTP(w, r)
 				return
 			}
-			orgID, ok := GetOrgIDFromContext(r.Context())
+			// scopeID is either an org_id or a customer_id — both are UUIDs
+			// and stored in the same org_id column. Try org first; fall back
+			// to customer for B2C shop routes that use RequireCustomer middleware.
+			scopeID, ok := GetOrgIDFromContext(r.Context())
+			if !ok {
+				scopeID, ok = GetCustomerIDFromContext(r.Context())
+			}
 			if !ok {
 				next.ServeHTTP(w, r)
 				return
@@ -72,7 +78,7 @@ func Idempotency(pool *pgxpool.Pool) func(http.Handler) http.Handler {
 
 			hashStr := requestHash(r.URL.Path, body)
 
-			cached, err := lookupIdempotent(r.Context(), pool, orgID, key)
+			cached, err := lookupIdempotent(r.Context(), pool, scopeID, key)
 			if err == nil && cached != nil {
 				if cached.RequestHash != hashStr {
 					http.Error(w, "idempotency key reused with different payload", http.StatusConflict)
@@ -89,7 +95,7 @@ func Idempotency(pool *pgxpool.Pool) func(http.Handler) http.Handler {
 			next.ServeHTTP(cw, r)
 
 			if cw.status >= 200 && cw.status < 300 {
-				if err := saveIdempotent(r.Context(), pool, orgID, key, hashStr, cw.status, cw.body.Bytes()); err != nil {
+				if err := saveIdempotent(r.Context(), pool, scopeID, key, hashStr, cw.status, cw.body.Bytes()); err != nil {
 					zap.L().Warn("idempotency: persist failed",
 						zap.String("key", key), zap.Error(err))
 				}
@@ -112,13 +118,16 @@ func requestHash(path string, body []byte) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-func lookupIdempotent(ctx context.Context, pool *pgxpool.Pool, orgID uuid.UUID, key string) (*idempotentRecord, error) {
+// lookupIdempotent fetches a cached response keyed by (scopeID, key).
+// scopeID is either an org_id or a customer_id — the column is named org_id
+// but stores any UUID scope; no schema change is needed.
+func lookupIdempotent(ctx context.Context, pool *pgxpool.Pool, scopeID uuid.UUID, key string) (*idempotentRecord, error) {
 	rec := &idempotentRecord{}
 	row := pool.QueryRow(ctx, `
 		SELECT request_hash, status_code, response_body
 		FROM payment_idempotency_keys
 		WHERE org_id = $1 AND key = $2 AND expires_at > NOW()
-	`, orgID, key)
+	`, scopeID, key)
 	if err := row.Scan(&rec.RequestHash, &rec.StatusCode, &rec.Body); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
@@ -128,12 +137,14 @@ func lookupIdempotent(ctx context.Context, pool *pgxpool.Pool, orgID uuid.UUID, 
 	return rec, nil
 }
 
-func saveIdempotent(ctx context.Context, pool *pgxpool.Pool, orgID uuid.UUID, key, hashStr string, status int, body []byte) error {
+// saveIdempotent persists a response under (scopeID, key) so future identical
+// requests can be replayed without re-executing the handler.
+func saveIdempotent(ctx context.Context, pool *pgxpool.Pool, scopeID uuid.UUID, key, hashStr string, status int, body []byte) error {
 	_, err := pool.Exec(ctx, `
 		INSERT INTO payment_idempotency_keys (
 			key, org_id, request_hash, status_code, response_body, expires_at
 		) VALUES ($1, $2, $3, $4, $5, NOW() + $6::interval)
 		ON CONFLICT (org_id, key) DO NOTHING
-	`, key, orgID, hashStr, status, body, idempotencyTTL.String())
+	`, key, scopeID, hashStr, status, body, idempotencyTTL.String())
 	return err
 }
