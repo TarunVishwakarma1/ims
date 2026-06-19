@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/TarunVishwakarma1/ims/backend/internal/domain"
+	"github.com/TarunVishwakarma1/ims/backend/internal/repository"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -124,4 +126,55 @@ func MainOrgIDFromSeed(t *testing.T, pool *pgxpool.Pool) uuid.UUID {
 		t.Fatalf("MainOrgIDFromSeed: no organization found: %v", err)
 	}
 	return orgID
+}
+
+// StockOf returns the current inventory quantity for a product. Fails the test
+// if no inventory row exists.
+func StockOf(t *testing.T, pool *pgxpool.Pool, productID uuid.UUID) int {
+	t.Helper()
+	var qty int
+	if err := pool.QueryRow(context.Background(),
+		`SELECT quantity FROM inventory WHERE product_id = $1`, productID,
+	).Scan(&qty); err != nil {
+		t.Fatalf("StockOf: %v", err)
+	}
+	return qty
+}
+
+// SetStock sets the inventory quantity for a product directly. Useful to
+// simulate out-of-stock conditions between AddOrSet and Place.
+func SetStock(t *testing.T, pool *pgxpool.Pool, productID uuid.UUID, qty int) {
+	t.Helper()
+	if _, err := pool.Exec(context.Background(),
+		`UPDATE inventory SET quantity = $1 WHERE product_id = $2`, qty, productID,
+	); err != nil {
+		t.Fatalf("SetStock: %v", err)
+	}
+}
+
+// SeedAddress creates a customer_address row and registers cleanup. Returns the address ID.
+func SeedAddress(t *testing.T, pool *pgxpool.Pool, customerID uuid.UUID) uuid.UUID {
+	t.Helper()
+	addrRepo := repository.NewCustomerAddressRepository(pool)
+	id, err := addrRepo.Create(context.Background(), &domain.CustomerAddress{
+		CustomerID: customerID,
+		Label:      "Home",
+		Line1:      "123 Test Street",
+		City:       "Mumbai",
+		State:      "MH",
+		PostalCode: "400001",
+	})
+	if err != nil {
+		t.Fatalf("SeedAddress: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(),
+			`DELETE FROM customer_addresses WHERE id = $1`, id)
+	})
+	return id
+}
+
+// OrderRepo returns a new OrderRepository backed by pool, for use in tests.
+func OrderRepo(pool *pgxpool.Pool) repository.OrderRepository {
+	return repository.NewOrderRepository(pool)
 }
