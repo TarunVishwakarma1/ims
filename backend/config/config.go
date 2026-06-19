@@ -36,6 +36,13 @@ type Config struct {
 	SMTPFromEmail string // e.g. "no-reply@example.com"
 	SMTPFromName  string // e.g. "IMS Notifications"
 	WebAppURL     string // for action links in emails (e.g. https://app.example.com)
+
+	// B2C Shop
+	ShopEnabled     bool
+	ShopOrgID       string
+	MSG91AuthKey    string
+	MSG91TemplateID string
+	MSG91SenderID   string
 }
 
 func LoadConfig() (*Config, error) {
@@ -128,6 +135,12 @@ func LoadConfig() (*Config, error) {
 	metricsEnabled := os.Getenv("METRICS_ENABLED") != "false"
 	metricsToken := os.Getenv("METRICS_TOKEN")
 
+	shopEnabled := os.Getenv("SHOP_ENABLED") == "true"
+	msg91SenderID := os.Getenv("MSG91_SENDER_ID")
+	if msg91SenderID == "" {
+		msg91SenderID = "IMSHOP"
+	}
+
 	return &Config{
 		ENV:                       env,
 		Port:                      port,
@@ -153,6 +166,11 @@ func LoadConfig() (*Config, error) {
 		SMTPFromEmail:             os.Getenv("SMTP_FROM_EMAIL"),
 		SMTPFromName:              os.Getenv("SMTP_FROM_NAME"),
 		WebAppURL:                 os.Getenv("WEB_APP_URL"),
+		ShopEnabled:               shopEnabled,
+		ShopOrgID:                 os.Getenv("SHOP_ORG_ID"),
+		MSG91AuthKey:              os.Getenv("MSG91_AUTH_KEY"),
+		MSG91TemplateID:           os.Getenv("MSG91_TEMPLATE_ID"),
+		MSG91SenderID:             msg91SenderID,
 	}, nil
 }
 

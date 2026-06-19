@@ -5,6 +5,7 @@ import (
 
 	"github.com/TarunVishwakarma1/ims/backend/config"
 	"github.com/TarunVishwakarma1/ims/backend/internal/handler"
+	shophandler "github.com/TarunVishwakarma1/ims/backend/internal/handler/shop"
 	"github.com/TarunVishwakarma1/ims/backend/pkg/cache"
 	"github.com/TarunVishwakarma1/ims/backend/pkg/metrics"
 	"github.com/TarunVishwakarma1/ims/backend/pkg/middleware"
@@ -37,6 +38,12 @@ func NewRouter(
 	cfg *config.Config,
 	pool *pgxpool.Pool,
 	cacheClient cache.Cache,
+	shopEnabled bool,
+	jwtSecret string,
+	shopAuthH *shophandler.AuthHandler,
+	shopCustH *shophandler.CustomerHandler,
+	shopCartH *shophandler.CartHandler,
+	shopCheckH *shophandler.CheckoutHandler,
 ) http.Handler {
 	r := chi.NewRouter()
 
@@ -222,6 +229,35 @@ func NewRouter(
 		r.Delete("/api/cart/items/{listing_id}", marketH.RemoveFromCart)
 		r.Post("/api/cart/checkout", marketH.Checkout)
 	})
+
+	// B2C Shop routes
+	if shopEnabled {
+		r.Route("/api/shop", func(r chi.Router) {
+			r.Post("/auth/otp/send", shopAuthH.Send)
+			r.Post("/auth/otp/verify", shopAuthH.Verify)
+
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.RequireCustomer(jwtSecret))
+
+				r.Get("/me", shopCustH.GetMe)
+				r.Patch("/me", shopCustH.UpdateMe)
+
+				r.Get("/addresses", shopCustH.ListAddresses)
+				r.Post("/addresses", shopCustH.AddAddress)
+				r.Patch("/addresses/{id}", shopCustH.UpdateAddress)
+				r.Delete("/addresses/{id}", shopCustH.DeleteAddress)
+				r.Post("/addresses/{id}/default", shopCustH.SetDefaultAddress)
+
+				r.Get("/cart", shopCartH.Get)
+				r.Post("/cart/items", shopCartH.AddItem)
+				r.Delete("/cart/items/{product_id}", shopCartH.RemoveItem)
+				r.Post("/cart/merge", shopCartH.Merge)
+
+				r.Get("/checkout/summary", shopCheckH.Summary)
+				r.With(middleware.Idempotency(pool)).Post("/checkout/place", shopCheckH.Place)
+			})
+		})
+	}
 
 	// otelhttp wraps the whole router so every incoming request gets a
 	// server span. Route-template name (e.g. "/api/orders/{id}") shows up

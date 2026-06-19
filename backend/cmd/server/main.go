@@ -12,21 +12,25 @@ import (
 
 	"github.com/TarunVishwakarma1/ims/backend/config"
 	"github.com/TarunVishwakarma1/ims/backend/internal/handler"
+	shophandler "github.com/TarunVishwakarma1/ims/backend/internal/handler/shop"
 	"github.com/TarunVishwakarma1/ims/backend/internal/repository"
 	"github.com/TarunVishwakarma1/ims/backend/internal/service"
+	shopsvc "github.com/TarunVishwakarma1/ims/backend/internal/service/shop"
 	"github.com/TarunVishwakarma1/ims/backend/migrations"
-	"github.com/TarunVishwakarma1/ims/backend/pkg/logger"
 	"github.com/TarunVishwakarma1/ims/backend/pkg/cache"
 	"github.com/TarunVishwakarma1/ims/backend/pkg/crypto"
 	"github.com/TarunVishwakarma1/ims/backend/pkg/events"
 	"github.com/TarunVishwakarma1/ims/backend/pkg/jobs"
+	"github.com/TarunVishwakarma1/ims/backend/pkg/logger"
 	"github.com/TarunVishwakarma1/ims/backend/pkg/notify"
 	"github.com/TarunVishwakarma1/ims/backend/pkg/rbac"
+	"github.com/TarunVishwakarma1/ims/backend/pkg/sms"
 	"github.com/TarunVishwakarma1/ims/backend/pkg/tracing"
 
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/pgx/v5"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
@@ -109,6 +113,7 @@ func main() {
 	partnerRepo := repository.NewPartnerRepository(pool)
 	returnRepo := repository.NewReturnRepository(pool)
 	notificationRepo := repository.NewNotificationRepository(pool)
+	customerRepo := repository.NewCustomerRepository(pool)
 
 	// Load permissions cache on startup
 	rolePerms, err := roleRepo.LoadRolePermissions(ctx)
@@ -183,6 +188,45 @@ func main() {
 	returnService := service.NewReturnService(returnRepo, orderRepo, inventoryRepo, auditLogRepo, paymentService, eventBus, notifier)
 	notificationService := service.NewNotificationService(notificationRepo)
 
+	// B2C Shop services and handlers
+	var (
+		shopAuthH  *shophandler.AuthHandler
+		shopCustH  *shophandler.CustomerHandler
+		shopCartH  *shophandler.CartHandler
+		shopCheckH *shophandler.CheckoutHandler
+	)
+	if cfg.ShopEnabled {
+		if cfg.ShopOrgID == "" {
+			zap.L().Fatal("SHOP_ENABLED=true requires SHOP_ORG_ID")
+		}
+		shopOrgID, err := uuid.Parse(cfg.ShopOrgID)
+		if err != nil {
+			zap.L().Fatal("invalid SHOP_ORG_ID", zap.Error(err))
+		}
+
+		var smsSender sms.Sender
+		if cfg.MSG91AuthKey != "" {
+			smsSender = sms.NewMSG91(cfg.MSG91AuthKey, cfg.MSG91TemplateID, cfg.MSG91SenderID, &http.Client{Timeout: 10 * time.Second})
+		} else {
+			smsSender = &sms.MockSender{}
+			zap.L().Warn("SHOP_ENABLED=true but MSG91_AUTH_KEY empty — using MockSender (dev only)")
+		}
+
+		otpRepo := repository.NewOTPRepository(pool)
+		addrRepo := repository.NewCustomerAddressRepository(pool)
+		cartRepo := repository.NewCartRepository(pool)
+
+		otpSvc := shopsvc.NewOTPService(otpRepo, customerRepo, smsSender, cfg.JWTSecret)
+		custSvc := shopsvc.NewCustomerService(customerRepo, addrRepo)
+		cartSvc := shopsvc.NewCartService(cartRepo, pool, shopOrgID)
+		checkSvc := shopsvc.NewCheckoutService(pool, shopOrgID, cartRepo, paymentService, orderRepo, cfg.RazorpayKeyID)
+
+		shopAuthH = shophandler.NewAuthHandler(otpSvc)
+		shopCustH = shophandler.NewCustomerHandler(custSvc)
+		shopCartH = shophandler.NewCartHandler(cartSvc)
+		shopCheckH = shophandler.NewCheckoutHandler(checkSvc)
+	}
+
 	userH := handler.NewUserHandler(userService)
 	categoryH := handler.NewCategoryHandler(categoryService)
 	productH := handler.NewProductHandler(productService)
@@ -210,7 +254,7 @@ func main() {
 	webhookH := handler.NewWebhookHandler(paymentService)
 	eventsH := handler.NewEventsHandler(eventBus)
 
-	router := NewRouter(authH, userH, categoryH, productH, inventoryH, orderH, roleH, locationH, marketH, eventsH, paymentH, webhookH, partnerH, returnH, notificationH, auditH, totpH, couponH, cfg, pool, cacheClient)
+	router := NewRouter(authH, userH, categoryH, productH, inventoryH, orderH, roleH, locationH, marketH, eventsH, paymentH, webhookH, partnerH, returnH, notificationH, auditH, totpH, couponH, cfg, pool, cacheClient, cfg.ShopEnabled, cfg.JWTSecret, shopAuthH, shopCustH, shopCartH, shopCheckH)
 
 	server := &http.Server{
 		Addr:         ":" + cfg.Port,
