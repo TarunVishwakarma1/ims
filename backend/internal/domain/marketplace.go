@@ -31,16 +31,16 @@ type MarketplaceListing struct {
 	DistanceKM    *float64 `json:"distance_km,omitempty"`
 }
 
-type Cart struct {
+type MarketplaceCart struct {
 	ID         uuid.UUID  `json:"id"`
 	BuyerOrgID *uuid.UUID `json:"buyer_org_id"`
 	CustomerID *uuid.UUID `json:"customer_id"`
 	ExpiresAt  time.Time  `json:"expires_at"`
 	CreatedAt  time.Time  `json:"created_at"`
-	Items      []CartItem `json:"items,omitempty"`
+	Items      []MarketplaceCartItem `json:"items,omitempty"`
 }
 
-type CartItem struct {
+type MarketplaceCartItem struct {
 	ID        uuid.UUID           `json:"id"`
 	CartID    uuid.UUID           `json:"cart_id"`
 	ListingID uuid.UUID           `json:"listing_id"`

@@ -3,7 +3,9 @@
 import { use } from 'react'
 import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, Printer, CircleCheck, Package, RotateCcw } from 'lucide-react'
+import { useState } from 'react'
+import { ArrowLeft, Printer, CircleCheck, Package, RotateCcw, FileDown, Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
 
 import { paymentsApi } from '@/lib/api/payments'
 import { ordersApi } from '@/lib/api/orders'
@@ -14,6 +16,17 @@ import { Card, CardContent } from '@/components/ui/card'
 
 export default function ReceiptPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
+  const [downloadingPdf, setDownloadingPdf] = useState(false)
+  const downloadPdf = async () => {
+    setDownloadingPdf(true)
+    try {
+      await paymentsApi.downloadReceiptPdf(id)
+    } catch {
+      toast.error('Could not download PDF')
+    } finally {
+      setDownloadingPdf(false)
+    }
+  }
   const { data, isLoading } = useQuery({
     queryKey: ['receipt', id],
     queryFn: () => paymentsApi.getReceipt(id),
@@ -56,16 +69,34 @@ export default function ReceiptPage({ params }: { params: Promise<{ id: string }
         <Link href={`/payments/${data.payment_id}`} className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground">
           <ArrowLeft className="mr-1.5 h-3.5 w-3.5" /> Back to payment
         </Link>
-        <Button variant="outline" size="sm" onClick={() => window.print()}>
-          <Printer className="mr-2 h-4 w-4" /> Print
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={downloadPdf} disabled={downloadingPdf}>
+            {downloadingPdf ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <FileDown className="mr-2 h-4 w-4" />
+            )}
+            Download PDF
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => window.print()}>
+            <Printer className="mr-2 h-4 w-4" /> Print
+          </Button>
+        </div>
       </div>
 
       <Card className="overflow-hidden print:border-0 print:shadow-none">
         <div className="bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-600 px-8 py-8 text-white">
-          <div className="flex items-center gap-2 mb-4">
-            <Package className="h-6 w-6" />
-            <span className="text-lg font-bold tracking-tight">IMS</span>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Package className="h-6 w-6" />
+              <span className="text-lg font-bold tracking-tight">IMS</span>
+            </div>
+            {data.invoice_number && (
+              <div className="text-right">
+                <div className="text-[10px] uppercase tracking-widest opacity-75">Tax invoice</div>
+                <div className="text-sm font-mono font-semibold">{data.invoice_number}</div>
+              </div>
+            )}
           </div>
           <div className="text-xs uppercase tracking-widest opacity-80 mb-1">Payment Receipt</div>
           <div className="text-3xl font-bold">{formatPrice(data.amount)}</div>

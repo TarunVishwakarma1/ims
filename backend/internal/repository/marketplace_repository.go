@@ -24,12 +24,12 @@ type MarketplaceRepository interface {
 	Search(ctx context.Context, query string, lat, lng, radiusKM *float64, filters map[string]any) ([]*domain.MarketplaceListing, error)
 
 	// Carts
-	CreateCart(ctx context.Context, cart *domain.Cart) error
-	GetActiveCart(ctx context.Context, buyerOrgID, customerID *uuid.UUID) (*domain.Cart, error)
-	AddCartItem(ctx context.Context, item *domain.CartItem) error
-	UpdateCartItem(ctx context.Context, item *domain.CartItem) error
+	CreateCart(ctx context.Context, cart *domain.MarketplaceCart) error
+	GetActiveCart(ctx context.Context, buyerOrgID, customerID *uuid.UUID) (*domain.MarketplaceCart, error)
+	AddCartItem(ctx context.Context, item *domain.MarketplaceCartItem) error
+	UpdateCartItem(ctx context.Context, item *domain.MarketplaceCartItem) error
 	RemoveCartItem(ctx context.Context, cartID, listingID uuid.UUID) error
-	GetCartWithItems(ctx context.Context, cartID uuid.UUID) (*domain.Cart, error)
+	GetCartWithItems(ctx context.Context, cartID uuid.UUID) (*domain.MarketplaceCart, error)
 
 	// Reservations
 	CreateReservation(ctx context.Context, res *domain.InventoryReservation) error
@@ -280,7 +280,7 @@ func (r *marketplaceRepository) Search(ctx context.Context, query string, lat, l
 
 // --- Carts ---
 
-func (r *marketplaceRepository) CreateCart(ctx context.Context, cart *domain.Cart) error {
+func (r *marketplaceRepository) CreateCart(ctx context.Context, cart *domain.MarketplaceCart) error {
 	query := `
 		INSERT INTO carts (id, buyer_org_id, customer_id, expires_at, created_at)
 		VALUES ($1, $2, $3, $4, $5)
@@ -289,7 +289,7 @@ func (r *marketplaceRepository) CreateCart(ctx context.Context, cart *domain.Car
 	return err
 }
 
-func (r *marketplaceRepository) GetActiveCart(ctx context.Context, buyerOrgID, customerID *uuid.UUID) (*domain.Cart, error) {
+func (r *marketplaceRepository) GetActiveCart(ctx context.Context, buyerOrgID, customerID *uuid.UUID) (*domain.MarketplaceCart, error) {
 	query := `
 		SELECT id, buyer_org_id, customer_id, expires_at, created_at
 		FROM carts
@@ -298,7 +298,7 @@ func (r *marketplaceRepository) GetActiveCart(ctx context.Context, buyerOrgID, c
 		  AND expires_at > NOW()
 		ORDER BY created_at DESC LIMIT 1
 	`
-	var c domain.Cart
+	var c domain.MarketplaceCart
 	err := r.db.QueryRow(ctx, query, buyerOrgID, customerID).Scan(
 		&c.ID, &c.BuyerOrgID, &c.CustomerID, &c.ExpiresAt, &c.CreatedAt,
 	)
@@ -311,7 +311,7 @@ func (r *marketplaceRepository) GetActiveCart(ctx context.Context, buyerOrgID, c
 	return &c, nil
 }
 
-func (r *marketplaceRepository) AddCartItem(ctx context.Context, item *domain.CartItem) error {
+func (r *marketplaceRepository) AddCartItem(ctx context.Context, item *domain.MarketplaceCartItem) error {
 	query := `
 		INSERT INTO cart_items (id, cart_id, listing_id, quantity, added_at)
 		VALUES ($1, $2, $3, $4, $5)
@@ -321,7 +321,7 @@ func (r *marketplaceRepository) AddCartItem(ctx context.Context, item *domain.Ca
 	return err
 }
 
-func (r *marketplaceRepository) UpdateCartItem(ctx context.Context, item *domain.CartItem) error {
+func (r *marketplaceRepository) UpdateCartItem(ctx context.Context, item *domain.MarketplaceCartItem) error {
 	query := `UPDATE cart_items SET quantity = $1 WHERE cart_id = $2 AND listing_id = $3`
 	res, err := r.db.Exec(ctx, query, item.Quantity, item.CartID, item.ListingID)
 	if err != nil {
@@ -339,10 +339,10 @@ func (r *marketplaceRepository) RemoveCartItem(ctx context.Context, cartID, list
 	return err
 }
 
-func (r *marketplaceRepository) GetCartWithItems(ctx context.Context, cartID uuid.UUID) (*domain.Cart, error) {
+func (r *marketplaceRepository) GetCartWithItems(ctx context.Context, cartID uuid.UUID) (*domain.MarketplaceCart, error) {
 	// First get cart
 	queryCart := `SELECT id, buyer_org_id, customer_id, expires_at, created_at FROM carts WHERE id = $1`
-	var c domain.Cart
+	var c domain.MarketplaceCart
 	err := r.db.QueryRow(ctx, queryCart, cartID).Scan(&c.ID, &c.BuyerOrgID, &c.CustomerID, &c.ExpiresAt, &c.CreatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -369,7 +369,7 @@ func (r *marketplaceRepository) GetCartWithItems(ctx context.Context, cartID uui
 	defer rows.Close()
 
 	for rows.Next() {
-		var item domain.CartItem
+		var item domain.MarketplaceCartItem
 		var listing domain.MarketplaceListing
 		if err := rows.Scan(
 			&item.ID, &item.CartID, &item.ListingID, &item.Quantity, &item.AddedAt,

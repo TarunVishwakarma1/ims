@@ -80,6 +80,7 @@ export interface Order {
   tax_sgst?: number;
   tax_igst?: number;
   is_inter_state?: boolean;
+  invoice_number?: string | null;
   buyer_org_id?: UUID | null;
   supplier_org_id?: UUID | null;
   buyer_org_name?: string;

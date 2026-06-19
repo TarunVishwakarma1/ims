@@ -15,7 +15,16 @@ type CustomerRepository interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*domain.Customer, error)
 	GetByEmail(ctx context.Context, email string) (*domain.Customer, error)
 	GetByPhone(ctx context.Context, phone string) (*domain.Customer, error)
+	// FindByPhone looks up a customer by phone. Returns (nil, nil) if not found.
+	FindByPhone(ctx context.Context, phone string) (*domain.Customer, error)
+	// UpsertByPhone inserts a customer with the given phone (name='', is_verified=TRUE)
+	// if none exists, otherwise sets is_verified=TRUE and updated_at=NOW().
+	// Always returns the full row.
+	UpsertByPhone(ctx context.Context, phone string) (*domain.Customer, error)
 	UpdateVerified(ctx context.Context, id uuid.UUID, isVerified bool) error
+	// UpdateProfile sets the customer's name and email (email may be empty string,
+	// which is stored as NULL to avoid UNIQUE collisions).
+	UpdateProfile(ctx context.Context, id uuid.UUID, name, email string) error
 	CreateAddress(ctx context.Context, address *domain.CustomerAddress) error
 	ListAddresses(ctx context.Context, customerID uuid.UUID) ([]*domain.CustomerAddress, error)
 	WithTx(tx pgx.Tx) CustomerRepository
@@ -53,17 +62,17 @@ func (r *customerRepository) Create(ctx context.Context, customer *domain.Custom
 }
 
 func (r *customerRepository) GetByID(ctx context.Context, id uuid.UUID) (*domain.Customer, error) {
-	query := `SELECT id, name, email, phone, password_hash, is_verified, is_guest, created_at, updated_at FROM customers WHERE id = $1`
+	query := `SELECT id, name, email, phone, COALESCE(password_hash, ''), is_verified, is_guest, created_at, updated_at FROM customers WHERE id = $1`
 	return r.scanCustomer(r.db.QueryRow(ctx, query, id))
 }
 
 func (r *customerRepository) GetByEmail(ctx context.Context, email string) (*domain.Customer, error) {
-	query := `SELECT id, name, email, phone, password_hash, is_verified, is_guest, created_at, updated_at FROM customers WHERE email = $1`
+	query := `SELECT id, name, email, phone, COALESCE(password_hash, ''), is_verified, is_guest, created_at, updated_at FROM customers WHERE email = $1`
 	return r.scanCustomer(r.db.QueryRow(ctx, query, email))
 }
 
 func (r *customerRepository) GetByPhone(ctx context.Context, phone string) (*domain.Customer, error) {
-	query := `SELECT id, name, email, phone, password_hash, is_verified, is_guest, created_at, updated_at FROM customers WHERE phone = $1`
+	query := `SELECT id, name, email, phone, COALESCE(password_hash, ''), is_verified, is_guest, created_at, updated_at FROM customers WHERE phone = $1`
 	return r.scanCustomer(r.db.QueryRow(ctx, query, phone))
 }
 
@@ -133,4 +142,63 @@ func (r *customerRepository) ListAddresses(ctx context.Context, customerID uuid.
 		addresses = append(addresses, &a)
 	}
 	return addresses, nil
+}
+
+// FindByPhone returns the customer with the given phone, or (nil, nil) if none exists.
+func (r *customerRepository) FindByPhone(ctx context.Context, phone string) (*domain.Customer, error) {
+	query := `
+		SELECT id, name, email, phone, COALESCE(password_hash, ''), is_verified, is_guest, created_at, updated_at
+		FROM customers
+		WHERE phone = $1
+	`
+	c := &domain.Customer{}
+	err := r.db.QueryRow(ctx, query, phone).Scan(
+		&c.ID, &c.Name, &c.Email, &c.Phone, &c.PasswordHash,
+		&c.IsVerified, &c.IsGuest, &c.CreatedAt, &c.UpdatedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+// UpdateProfile sets name and email for the customer. An empty email is mapped to
+// NULL (via NULLIF) so that the UNIQUE constraint on the nullable email column is
+// not violated when multiple customers have no email set.
+func (r *customerRepository) UpdateProfile(ctx context.Context, id uuid.UUID, name, email string) error {
+	query := `UPDATE customers SET name = $2, email = NULLIF($3, ''), updated_at = NOW() WHERE id = $1`
+	res, err := r.db.Exec(ctx, query, id, name, email)
+	if err != nil {
+		return err
+	}
+	if res.RowsAffected() == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}
+
+// UpsertByPhone inserts a new customer row with the given phone (name='', is_verified=TRUE)
+// if no row with that phone exists; otherwise updates is_verified=TRUE and updated_at=NOW().
+// Returns the full customer row.
+func (r *customerRepository) UpsertByPhone(ctx context.Context, phone string) (*domain.Customer, error) {
+	query := `
+		INSERT INTO customers (name, phone, is_verified)
+		VALUES ('', $1, TRUE)
+		ON CONFLICT (phone) DO UPDATE
+		  SET is_verified = TRUE,
+		      updated_at  = NOW()
+		RETURNING id, name, email, phone, COALESCE(password_hash, ''), is_verified, is_guest, created_at, updated_at
+	`
+	c := &domain.Customer{}
+	err := r.db.QueryRow(ctx, query, phone).Scan(
+		&c.ID, &c.Name, &c.Email, &c.Phone, &c.PasswordHash,
+		&c.IsVerified, &c.IsGuest, &c.CreatedAt, &c.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return c, nil
 }

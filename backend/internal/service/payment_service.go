@@ -65,6 +65,10 @@ type PaymentOperations interface {
 	// receipt page and by the email send in markOrderPaid.
 	BuildReceipt(ctx context.Context, paymentID, orgID uuid.UUID) (notify.PaymentReceiptData, error)
 
+	// BuildReceiptPDF renders the same receipt data as a downloadable PDF.
+	// Used by the in-app "Download PDF" button on the receipt page.
+	BuildReceiptPDF(ctx context.Context, paymentID, orgID uuid.UUID) ([]byte, error)
+
 	// ListRefunds returns the refund history for a payment, newest first.
 	ListRefunds(ctx context.Context, paymentID, orgID uuid.UUID) ([]*domain.Refund, error)
 }
@@ -100,6 +104,12 @@ type WebhookProcessor interface {
 	// webhook never landed), local records are flipped to match. Returns
 	// the number of records corrected. Idempotent. No-op in mock mode.
 	Reconcile(ctx context.Context, limit int) (corrected int, err error)
+
+	// ReconcileStuck walks payments still in 'created' status past a grace
+	// window and asks RazorPay whether a payment was actually attempted on
+	// that order. If captured upstream, syncs locally. If long-abandoned
+	// (>24h), marks failed so the order can be retried. No-op in mock mode.
+	ReconcileStuck(ctx context.Context, graceMinutes int, limit int) (corrected int, failed int, err error)
 }
 
 // PaymentService preserves the original union for callers that legitimately
@@ -740,6 +750,42 @@ func (s *paymentService) handleRefundProcessed(ctx context.Context, env rzpEnvel
 		"amount_refunded": newTotal,
 		"status":          newStatus,
 	}))
+
+	// Best-effort refund email. Uses BuildReceipt to reuse buyer+org+invoice
+	// resolution; tacks on the refund-specific fields. Failures here must not
+	// roll back the refund.
+	if s.notifier != nil {
+		reasonStr := ""
+		if reasonPtr != nil {
+			reasonStr = *reasonPtr
+		}
+		go func(pid uuid.UUID, orgID uuid.UUID, refundAmt, original, totalRefunded int64, isFull bool, reason string) {
+			rctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			receipt, err := s.BuildReceipt(rctx, pid, orgID)
+			if err != nil {
+				zap.L().Warn("refund email: receipt build failed", zap.Error(err))
+				return
+			}
+			s.notifier.RefundIssued(rctx, notify.RefundIssuedData{
+				ToEmail:             receipt.ToEmail,
+				BuyerName:           receipt.BuyerName,
+				OrgName:             receipt.OrgName,
+				OrderID:             receipt.OrderID,
+				PaymentID:           receipt.PaymentID,
+				InvoiceNumber:       receipt.InvoiceNumber,
+				RefundAmountPaise:   refundAmt,
+				OriginalAmountPaise: original,
+				TotalRefundedPaise:  totalRefunded,
+				NetPaidPaise:        original - totalRefunded,
+				IsFullRefund:        isFull,
+				Reason:              reason,
+				IssuedAt:            time.Now().UTC(),
+			})
+		}(payment.ID, payment.OrgID, delta, payment.Amount, newTotal,
+			newStatus == domain.PaymentStatusRefunded, reasonStr)
+	}
+
 	return nil
 }
 
@@ -782,6 +828,15 @@ func (s *paymentService) markOrderPaid(ctx context.Context, orderID, orgID uuid.
 	if err := s.orderRepo.Update(ctx, order); err != nil {
 		return err
 	}
+
+	// Allocate the invoice number on first capture. Idempotent — re-runs of
+	// this code path (webhook replay, manual capture) keep the same number.
+	if _, err := s.orderRepo.AllocateInvoiceNumber(ctx, orderID, orgID, indianFYLabel(now)); err != nil {
+		// Don't block payment confirmation if numbering hiccups — log and move on.
+		zap.L().Warn("invoice: number allocation failed",
+			zap.String("order_id", orderID.String()), zap.Error(err))
+	}
+
 	s.invalidateOrgOrders(ctx, orgID)
 	s.writeOrderAudit(ctx, orgID, orderID, "payment.captured")
 
@@ -863,12 +918,18 @@ func (s *paymentService) BuildReceipt(ctx context.Context, paymentID, orgID uuid
 		capturedAt = time.Now().UTC()
 	}
 
+	invoiceNum := ""
+	if order.InvoiceNumber != nil {
+		invoiceNum = *order.InvoiceNumber
+	}
+
 	return notify.PaymentReceiptData{
 		ToEmail:         buyer.Email,
 		BuyerName:       buyer.Name,
 		OrgName:         org.Name,
 		OrderID:         order.ID,
 		PaymentID:       payment.ID,
+		InvoiceNumber:   invoiceNum,
 		RazorpayPayment: rzpPayment,
 		Method:          method,
 		AmountPaise:     payment.Amount,
@@ -882,6 +943,17 @@ func (s *paymentService) BuildReceipt(ctx context.Context, paymentID, orgID uuid
 func formatPaiseINR(paise int64) string {
 	rupees := float64(paise) / 100.0
 	return fmt.Sprintf("₹%.2f", rupees)
+}
+
+// indianFYLabel returns the financial year label for a given moment, using
+// India's Apr 1 → Mar 31 cycle. E.g. 2026-04-01 → "2026-27", 2026-03-15 →
+// "2025-26".
+func indianFYLabel(t time.Time) string {
+	year := t.Year()
+	if t.Month() < time.April {
+		year--
+	}
+	return fmt.Sprintf("%d-%02d", year, (year+1)%100)
 }
 
 func (s *paymentService) GetByID(ctx context.Context, id, orgID uuid.UUID) (*domain.Payment, error) {
@@ -1128,6 +1200,136 @@ func (s *paymentService) Reconcile(ctx context.Context, limit int) (int, error) 
 	zap.L().Info("payment reconciliation pass complete",
 		zap.Int("walked", walked), zap.Int("corrected", corrected))
 	return corrected, nil
+}
+
+// ReconcileStuck walks payments in 'created' status that have been sitting
+// past the grace window without a webhook update. For each, asks Razorpay
+// for the payments on that order. If a captured payment exists, plays it
+// through the normal capture sync path. Payments older than 24h with no
+// upstream activity are marked failed so the order can be retried. No-op in
+// mock mode.
+func (s *paymentService) ReconcileStuck(ctx context.Context, graceMinutes int, limit int) (int, int, error) {
+	if s.rzpClient == nil {
+		return 0, 0, nil
+	}
+	if graceMinutes <= 0 {
+		graceMinutes = 15
+	}
+	if limit <= 0 {
+		limit = 200
+	}
+	cutoff := time.Now().UTC().Add(-time.Duration(graceMinutes) * time.Minute)
+	abandonCutoff := time.Now().UTC().Add(-24 * time.Hour)
+
+	cursor := time.Time{}
+	const batch = 100
+	corrected, failed, walked := 0, 0, 0
+
+	for walked < limit {
+		want := batch
+		if remaining := limit - walked; remaining < want {
+			want = remaining
+		}
+		payments, err := s.paymentRepo.ListByStatus(ctx, domain.PaymentStatusCreated, want, cursor)
+		if err != nil {
+			return corrected, failed, err
+		}
+		if len(payments) == 0 {
+			break
+		}
+
+		for _, p := range payments {
+			walked++
+			cursor = p.CreatedAt
+
+			// Only consider payments past the grace window.
+			if p.CreatedAt.After(cutoff) {
+				continue
+			}
+			if p.RazorpayOrderID == "" {
+				continue
+			}
+
+			body, err := s.rzpClient.Order.Payments(p.RazorpayOrderID, nil, nil)
+			if err != nil {
+				zap.L().Warn("reconcile-stuck fetch failed",
+					zap.String("payment_id", p.ID.String()),
+					zap.Error(err))
+				continue
+			}
+			items, _ := body["items"].([]any)
+
+			// Find the first captured payment if any. We don't try to
+			// merge multiple — Razorpay should only have one captured per
+			// order in normal flow.
+			var capturedItem map[string]any
+			for _, raw := range items {
+				it, ok := raw.(map[string]any)
+				if !ok {
+					continue
+				}
+				status, _ := it["status"].(string)
+				if status == "captured" {
+					capturedItem = it
+					break
+				}
+			}
+
+			if capturedItem != nil {
+				if err := s.applyCapturedFromRazorpay(ctx, p, capturedItem); err != nil {
+					zap.L().Warn("reconcile-stuck apply failed",
+						zap.String("payment_id", p.ID.String()), zap.Error(err))
+					continue
+				}
+				corrected++
+				continue
+			}
+
+			// No upstream activity AND past the abandonment window — mark
+			// failed locally so the retry button reactivates.
+			if p.CreatedAt.Before(abandonCutoff) {
+				if err := s.paymentRepo.UpdateStatus(ctx, p.ID,
+					domain.PaymentStatusFailed, "", "",
+					"abandoned: no payment activity within 24h", nil); err != nil {
+					zap.L().Warn("reconcile-stuck mark-failed failed",
+						zap.String("payment_id", p.ID.String()), zap.Error(err))
+					continue
+				}
+				failed++
+				zap.L().Info("payment marked abandoned-failed",
+					zap.String("payment_id", p.ID.String()))
+			}
+		}
+
+		if len(payments) < want {
+			break
+		}
+	}
+	zap.L().Info("stuck-payment reconciliation pass complete",
+		zap.Int("walked", walked),
+		zap.Int("corrected", corrected),
+		zap.Int("failed", failed))
+	return corrected, failed, nil
+}
+
+// applyCapturedFromRazorpay mirrors the webhook capture path for a payment
+// we discovered through polling instead of webhook. Sets razorpay_payment_id,
+// method, flips status, runs markOrderPaid.
+func (s *paymentService) applyCapturedFromRazorpay(ctx context.Context, p *domain.Payment, entity map[string]any) error {
+	rzpPayID, _ := entity["id"].(string)
+	if rzpPayID == "" {
+		return errors.New("razorpay payment entity missing id")
+	}
+	method, _ := entity["method"].(string)
+
+	if err := s.paymentRepo.UpdateStatus(ctx, p.ID,
+		domain.PaymentStatusCaptured, method, rzpPayID, "", nil); err != nil {
+		return fmt.Errorf("update payment row: %w", err)
+	}
+	if p.OrderID != nil {
+		return s.markOrderPaid(ctx, *p.OrderID, p.OrgID, rzpPayID)
+	}
+	return nil
 }
 
 // isAlreadyRefundedErr matches the RazorPay error string for an attempted

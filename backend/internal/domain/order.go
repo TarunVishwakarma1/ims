@@ -53,6 +53,10 @@ type Order struct {
 	CompletedAt            *time.Time      `json:"completed_at"`
 	CancelledAt            *time.Time      `json:"cancelled_at"`
 
+	// Sequential per-org per-FY invoice number. Allocated at payment capture;
+	// nil until the order is paid.
+	InvoiceNumber *string `json:"invoice_number,omitempty"`
+
 	// Optional display names — populated only by endpoints that JOIN the
 	// organizations table (partner detail recent-orders). Empty for normal
 	// list/get paths; UI falls back to UUID prefix when blank.

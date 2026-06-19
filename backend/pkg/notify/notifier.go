@@ -35,6 +35,11 @@ type Notifier interface {
 	// PaymentReceipt is sent after a payment is captured. Includes order
 	// summary + line items + payment ID + a link to the in-app receipt.
 	PaymentReceipt(ctx context.Context, data PaymentReceiptData)
+
+	// RefundIssued is sent after a (partial or full) refund is processed.
+	// Includes refund amount, cumulative refunded amount, and link back to
+	// the receipt page so the buyer sees the updated history.
+	RefundIssued(ctx context.Context, data RefundIssuedData)
 }
 
 // PaymentReceiptLine is one row in the receipt items table.
@@ -52,11 +57,30 @@ type PaymentReceiptData struct {
 	OrgName         string
 	OrderID         uuid.UUID
 	PaymentID       uuid.UUID
+	InvoiceNumber   string // Sequential per-org per-FY tax invoice number.
 	RazorpayPayment string
 	Method          string
 	AmountPaise     int64
 	CapturedAt      time.Time
 	Items           []PaymentReceiptLine
+}
+
+// RefundIssuedData is the payload for the refund notification email. Caller
+// resolves the buyer + order + payment + refund amounts.
+type RefundIssuedData struct {
+	ToEmail            string
+	BuyerName          string
+	OrgName            string
+	OrderID            uuid.UUID
+	PaymentID          uuid.UUID
+	InvoiceNumber      string
+	RefundAmountPaise  int64
+	OriginalAmountPaise int64
+	TotalRefundedPaise int64
+	NetPaidPaise       int64
+	IsFullRefund       bool
+	Reason             string
+	IssuedAt           time.Time
 }
 
 type notifier struct {
@@ -412,13 +436,13 @@ func (n *notifier) PaymentReceipt(ctx context.Context, d PaymentReceiptData) {
 			Amount: money(d.AmountPaise),
 			Sub:    fmt.Sprintf("via %s", method),
 		},
-		Rows: []kv{
+		Rows: append(invoiceRow(d.InvoiceNumber), []kv{
 			{"Order ID", "#" + short(d.OrderID)},
 			{"Payment ID", "#" + short(d.PaymentID)},
 			{"Razorpay payment", rzpID},
 			{"Captured", d.CapturedAt.UTC().Format("2 Jan 2006, 15:04 UTC")},
 			{"Method", method},
-		},
+		}...),
 		Items: d.Items,
 		Alert: alert{
 			Title: "Captured successfully",
@@ -429,6 +453,73 @@ func (n *notifier) PaymentReceipt(ctx context.Context, d PaymentReceiptData) {
 	fallback := fmt.Sprintf("Payment of %s received for Order #%s. Receipt: %s",
 		money(d.AmountPaise), short(d.OrderID), receiptURL)
 	n.dispatchHTML(ctx, d.ToEmail, subj, "payment_receipt", data, fallback)
+}
+
+func (n *notifier) RefundIssued(ctx context.Context, d RefundIssuedData) {
+	if d.ToEmail == "" {
+		return
+	}
+	receiptURL := fmt.Sprintf("%s/payments/%s/receipt", n.appURL, d.PaymentID)
+
+	headline := "Refund issued"
+	subBody := fmt.Sprintf("We have refunded %s to your account.", money(d.RefundAmountPaise))
+	if !d.IsFullRefund {
+		headline = "Partial refund issued"
+		subBody = fmt.Sprintf("We have refunded %s of %s to your account.",
+			money(d.RefundAmountPaise), money(d.OriginalAmountPaise))
+	}
+	reason := d.Reason
+	if reason == "" {
+		reason = "—"
+	}
+	subj := fmt.Sprintf("%s — Order #%s", headline, short(d.OrderID))
+	rows := append(invoiceRow(d.InvoiceNumber), []kv{
+		{"Order ID", "#" + short(d.OrderID)},
+		{"Payment ID", "#" + short(d.PaymentID)},
+		{"Reason", reason},
+		{"Issued", d.IssuedAt.UTC().Format("2 Jan 2006, 15:04 UTC")},
+		{"Original amount", money(d.OriginalAmountPaise)},
+		{"Total refunded so far", money(d.TotalRefundedPaise)},
+		{"Net retained", money(d.NetPaidPaise)},
+	}...)
+
+	data := struct {
+		baseData
+		Hero   hero
+		Amount amount
+		Rows   []kv
+		Alert  alert
+		CTA    cta
+	}{
+		baseData: newBase(subj, "REFUND"),
+		Hero: hero{
+			Title:    headline,
+			Subtitle: fmt.Sprintf("Hi %s, %s It typically takes 3–5 business days to reflect on your statement.", firstWord(d.BuyerName), subBody),
+		},
+		Amount: amount{
+			Label:  "Refund amount",
+			Amount: money(d.RefundAmountPaise),
+			Sub:    "Credited to original payment method",
+		},
+		Rows: rows,
+		Alert: alert{
+			Title: "Processed",
+			Body:  "RazorPay has acknowledged this refund. Your bank may take a few business days to reflect the credit.",
+		},
+		CTA: cta{URL: receiptURL, Label: "View updated receipt"},
+	}
+	fallback := fmt.Sprintf("Refund of %s issued for Order #%s. Receipt: %s",
+		money(d.RefundAmountPaise), short(d.OrderID), receiptURL)
+	n.dispatchHTML(ctx, d.ToEmail, subj, "refund_issued", data, fallback)
+}
+
+// invoiceRow prepends a leading "Invoice no." row when an invoice number is
+// present. Returns nil otherwise so it can be safely spread into Rows.
+func invoiceRow(num string) []kv {
+	if num == "" {
+		return nil
+	}
+	return []kv{{"Invoice no.", num}}
 }
 
 func firstWord(s string) string {

@@ -10,8 +10,18 @@ export interface PaymentConfig {
 export const paymentsApi = {
   getConfig: () => api.get('payments/config').json<PaymentConfig>(),
 
+  // Stable per-(order_id,amount) idempotency key. Network retries from the
+  // same checkout click share a key, so the backend dedupes them into a
+  // single Razorpay order. Different orders / amounts get distinct keys.
   createOrder: (data: { order_id: UUID; amount: number }) =>
-    api.post('payments/orders', { json: data }).json<CreatePaymentOrderResponse>(),
+    api
+      .post('payments/orders', {
+        json: data,
+        headers: {
+          'X-Idempotency-Key': `pay-create:${data.order_id}:${data.amount}`,
+        },
+      })
+      .json<CreatePaymentOrderResponse>(),
 
   list: () => api.get('payments').json<Payment[]>(),
 
@@ -33,6 +43,20 @@ export const paymentsApi = {
     const a = document.createElement('a')
     a.href = url
     a.download = `payments_${new Date().toISOString().slice(0, 10)}.csv`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  },
+
+  // Downloads the server-rendered PDF receipt. Same auth/cookies as JSON
+  // endpoints because we go through ky.
+  downloadReceiptPdf: async (id: string) => {
+    const blob = await api.get(`payments/${id}/receipt.pdf`).blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `receipt-${id.slice(0, 8)}.pdf`
     document.body.appendChild(a)
     a.click()
     a.remove()
@@ -86,6 +110,7 @@ export interface ReceiptLine {
 export interface Receipt {
   payment_id: string
   order_id: string
+  invoice_number?: string
   razorpay_payment_id: string
   method: string
   amount: number

@@ -173,7 +173,7 @@ func (h *MarketplaceHandler) Search(w http.ResponseWriter, r *http.Request) {
 
 // --- Cart ---
 
-func (h *MarketplaceHandler) getActiveCart(r *http.Request) (*domain.Cart, error) {
+func (h *MarketplaceHandler) getActiveCart(r *http.Request) (*domain.MarketplaceCart, error) {
 	orgID, hasOrg := middleware.GetOrgIDFromContext(r.Context())
 
 	var buyerOrgID *uuid.UUID
@@ -207,9 +207,9 @@ func (h *MarketplaceHandler) GetCart(w http.ResponseWriter, r *http.Request) {
 	fullCart, err := h.service.GetCart(r.Context(), cart.ID)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
-			fullCart = &domain.Cart{
+			fullCart = &domain.MarketplaceCart{
 				ID:    cart.ID,
-				Items: []domain.CartItem{},
+				Items: []domain.MarketplaceCartItem{},
 			}
 		} else {
 			writeError(w, http.StatusInternalServerError, err.Error())
@@ -218,7 +218,7 @@ func (h *MarketplaceHandler) GetCart(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if fullCart.Items == nil {
-		fullCart.Items = []domain.CartItem{}
+		fullCart.Items = []domain.MarketplaceCartItem{}
 	}
 
 	writeJSON(w, http.StatusOK, fullCart)

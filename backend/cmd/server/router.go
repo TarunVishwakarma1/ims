@@ -88,7 +88,7 @@ func NewRouter(
 
 		// Payments
 		r.Get("/api/payments/config", paymentH.Config)
-		r.Post("/api/payments/orders", paymentH.CreateOrder)
+		r.With(middleware.Idempotency(pool)).Post("/api/payments/orders", paymentH.CreateOrder)
 		r.With(middleware.RequirePermission(rbac.PaymentsView)).Get("/api/payments", paymentH.ListPayments)
 		r.With(middleware.RequirePermission(rbac.PaymentsView)).Get("/api/payments/export.csv", paymentH.ExportPayments)
 
@@ -102,6 +102,7 @@ func NewRouter(
 		r.Post("/api/coupons/validate", couponH.Validate)
 		r.Get("/api/payments/{id}", paymentH.GetPayment)
 		r.Get("/api/payments/{id}/receipt", paymentH.Receipt)
+		r.Get("/api/payments/{id}/receipt.pdf", paymentH.ReceiptPDF)
 		r.Get("/api/payments/{id}/refunds", paymentH.ListRefunds)
 		r.With(middleware.RequirePermission(rbac.PaymentsRefund)).Post("/api/payments/{id}/refund", paymentH.RefundPayment)
 		// Mock-only endpoints — service rejects when mockMode = false
