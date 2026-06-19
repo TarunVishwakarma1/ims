@@ -134,7 +134,7 @@ function ResetPasswordInner() {
                     required
                   />
                   {confirm.length > 0 && password !== confirm && (
-                    <p className="text-xs text-red-500">Passwords don't match.</p>
+                    <p className="text-xs text-red-500">Passwords don&apos;t match.</p>
                   )}
                 </div>
                 <Button type="submit" className="w-full" disabled={!valid || loading}>

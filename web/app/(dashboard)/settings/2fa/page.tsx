@@ -62,6 +62,7 @@ export default function TwoFactorPage() {
 
   useEffect(() => {
     if (!enrollment) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setQrDataUrl('')
       return
     }
@@ -199,9 +200,14 @@ export default function TwoFactorPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex justify-center bg-white p-4 rounded-md min-h-[252px] items-center">
-              {qrDataUrl
-                ? <img src={qrDataUrl} alt="TOTP QR code" width={220} height={220} />
-                : <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />}
+              {qrDataUrl ? (
+                <>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={qrDataUrl} alt="TOTP QR code" width={220} height={220} />
+                </>
+              ) : (
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              )}
             </div>
             <div className="flex items-center gap-2 text-xs flex-wrap">
               <span className="text-muted-foreground">Manual secret:</span>
