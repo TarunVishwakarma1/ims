@@ -24,11 +24,11 @@ type MarketplaceService interface {
 	Search(ctx context.Context, query string, lat, lng, radiusKM *float64, filters map[string]any) ([]*domain.MarketplaceListing, error)
 
 	// Cart
-	GetOrCreateCart(ctx context.Context, buyerOrgID, customerID *uuid.UUID) (*domain.Cart, error)
+	GetOrCreateCart(ctx context.Context, buyerOrgID, customerID *uuid.UUID) (*domain.MarketplaceCart, error)
 	AddToCart(ctx context.Context, cartID, listingID uuid.UUID, quantity int) error
 	UpdateCartItem(ctx context.Context, cartID, listingID uuid.UUID, quantity int) error
 	RemoveFromCart(ctx context.Context, cartID, listingID uuid.UUID) error
-	GetCart(ctx context.Context, cartID uuid.UUID) (*domain.Cart, error)
+	GetCart(ctx context.Context, cartID uuid.UUID) (*domain.MarketplaceCart, error)
 
 	// Checkout — most complex, atomic
 	Checkout(ctx context.Context, cartID uuid.UUID, deliveryAddressID *uuid.UUID, orgID uuid.UUID, userID uuid.UUID, couponsBySupplier map[uuid.UUID]string) ([]*domain.Order, error)
@@ -224,7 +224,7 @@ func (s *marketplaceService) Search(ctx context.Context, query string, lat, lng,
 
 // --- Cart ---
 
-func (s *marketplaceService) GetOrCreateCart(ctx context.Context, buyerOrgID, customerID *uuid.UUID) (*domain.Cart, error) {
+func (s *marketplaceService) GetOrCreateCart(ctx context.Context, buyerOrgID, customerID *uuid.UUID) (*domain.MarketplaceCart, error) {
 	cart, err := s.marketRepo.GetActiveCart(ctx, buyerOrgID, customerID)
 	if err == nil {
 		return cart, nil
@@ -234,7 +234,7 @@ func (s *marketplaceService) GetOrCreateCart(ctx context.Context, buyerOrgID, cu
 	}
 
 	// Create new cart
-	newCart := &domain.Cart{
+	newCart := &domain.MarketplaceCart{
 		ID:         uuid.New(),
 		BuyerOrgID: buyerOrgID,
 		CustomerID: customerID,
@@ -275,7 +275,7 @@ func (s *marketplaceService) AddToCart(ctx context.Context, cartID, listingID uu
 		return fmt.Errorf("only %d in stock", inv.Quantity)
 	}
 
-	item := &domain.CartItem{
+	item := &domain.MarketplaceCartItem{
 		ID:        uuid.New(),
 		CartID:    cartID,
 		ListingID: listingID,
@@ -310,7 +310,7 @@ func (s *marketplaceService) UpdateCartItem(ctx context.Context, cartID, listing
 		return fmt.Errorf("only %d in stock", inv.Quantity)
 	}
 
-	item := &domain.CartItem{
+	item := &domain.MarketplaceCartItem{
 		CartID:    cartID,
 		ListingID: listingID,
 		Quantity:  quantity,
@@ -322,7 +322,7 @@ func (s *marketplaceService) RemoveFromCart(ctx context.Context, cartID, listing
 	return s.marketRepo.RemoveCartItem(ctx, cartID, listingID)
 }
 
-func (s *marketplaceService) GetCart(ctx context.Context, cartID uuid.UUID) (*domain.Cart, error) {
+func (s *marketplaceService) GetCart(ctx context.Context, cartID uuid.UUID) (*domain.MarketplaceCart, error) {
 	return s.marketRepo.GetCartWithItems(ctx, cartID)
 }
 
@@ -339,7 +339,7 @@ func (s *marketplaceService) Checkout(ctx context.Context, cartID uuid.UUID, del
 	}
 
 	// 2. Group items by listing.OrgID (supplier)
-	supplierGroups := make(map[uuid.UUID][]domain.CartItem)
+	supplierGroups := make(map[uuid.UUID][]domain.MarketplaceCartItem)
 	for _, item := range cart.Items {
 		if item.Listing == nil {
 			return nil, errors.New("cart item missing listing data")
