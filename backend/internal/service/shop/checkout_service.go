@@ -247,13 +247,18 @@ func (s *checkoutService) Place(ctx context.Context, in PlaceOrderInput) (*Place
 	}
 
 	// --- Payment dispatch (Razorpay only) ---
-	if in.PaymentMethod == "razorpay" && s.paymentSvc != nil {
+	if in.PaymentMethod == "razorpay" {
+		if s.paymentSvc == nil {
+			return nil, fmt.Errorf("payment service not configured")
+		}
 		payment, err := s.paymentSvc.CreateOrder(ctx, s.orgID, orderID, total)
 		if err != nil {
-			return nil, fmt.Errorf("create razorpay order: %w", err)
+			return nil, fmt.Errorf("razorpay create: %w", err)
 		}
-		res.RazorpayOrderID = payment.RazorpayOrderID
-		res.RazorpayKeyID = s.razorpayKeyID
+		if payment != nil {
+			res.RazorpayOrderID = payment.RazorpayOrderID
+			res.RazorpayKeyID = s.razorpayKeyID
+		}
 	}
 
 	return res, nil
