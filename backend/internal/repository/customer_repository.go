@@ -15,6 +15,12 @@ type CustomerRepository interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*domain.Customer, error)
 	GetByEmail(ctx context.Context, email string) (*domain.Customer, error)
 	GetByPhone(ctx context.Context, phone string) (*domain.Customer, error)
+	// FindByPhone looks up a customer by phone. Returns (nil, nil) if not found.
+	FindByPhone(ctx context.Context, phone string) (*domain.Customer, error)
+	// UpsertByPhone inserts a customer with the given phone (name='', is_verified=TRUE)
+	// if none exists, otherwise sets is_verified=TRUE and updated_at=NOW().
+	// Always returns the full row.
+	UpsertByPhone(ctx context.Context, phone string) (*domain.Customer, error)
 	UpdateVerified(ctx context.Context, id uuid.UUID, isVerified bool) error
 	CreateAddress(ctx context.Context, address *domain.CustomerAddress) error
 	ListAddresses(ctx context.Context, customerID uuid.UUID) ([]*domain.CustomerAddress, error)
@@ -133,4 +139,48 @@ func (r *customerRepository) ListAddresses(ctx context.Context, customerID uuid.
 		addresses = append(addresses, &a)
 	}
 	return addresses, nil
+}
+
+// FindByPhone returns the customer with the given phone, or (nil, nil) if none exists.
+func (r *customerRepository) FindByPhone(ctx context.Context, phone string) (*domain.Customer, error) {
+	query := `
+		SELECT id, name, email, phone, COALESCE(password_hash, ''), is_verified, is_guest, created_at, updated_at
+		FROM customers
+		WHERE phone = $1
+	`
+	c := &domain.Customer{}
+	err := r.db.QueryRow(ctx, query, phone).Scan(
+		&c.ID, &c.Name, &c.Email, &c.Phone, &c.PasswordHash,
+		&c.IsVerified, &c.IsGuest, &c.CreatedAt, &c.UpdatedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+// UpsertByPhone inserts a new customer row with the given phone (name='', is_verified=TRUE)
+// if no row with that phone exists; otherwise updates is_verified=TRUE and updated_at=NOW().
+// Returns the full customer row.
+func (r *customerRepository) UpsertByPhone(ctx context.Context, phone string) (*domain.Customer, error) {
+	query := `
+		INSERT INTO customers (name, phone, is_verified)
+		VALUES ('', $1, TRUE)
+		ON CONFLICT (phone) DO UPDATE
+		  SET is_verified = TRUE,
+		      updated_at  = NOW()
+		RETURNING id, name, email, phone, COALESCE(password_hash, ''), is_verified, is_guest, created_at, updated_at
+	`
+	c := &domain.Customer{}
+	err := r.db.QueryRow(ctx, query, phone).Scan(
+		&c.ID, &c.Name, &c.Email, &c.Phone, &c.PasswordHash,
+		&c.IsVerified, &c.IsGuest, &c.CreatedAt, &c.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return c, nil
 }
