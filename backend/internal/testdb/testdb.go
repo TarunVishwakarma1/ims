@@ -48,6 +48,7 @@ func SeedProduct(t *testing.T, pool *pgxpool.Pool, name string, pricePaise int64
 		`, "Test Org", slug).Scan(&orgID); err2 != nil {
 			t.Fatalf("seed: create org: %v", err2)
 		}
+		// Only register cleanup for orgs that SeedProduct created
 		t.Cleanup(func() {
 			_, _ = pool.Exec(ctx, `DELETE FROM organizations WHERE id=$1`, orgID)
 		})
@@ -62,6 +63,7 @@ func SeedProduct(t *testing.T, pool *pgxpool.Pool, name string, pricePaise int64
 		`, orgID, "test_"+name).Scan(&categoryID); err2 != nil {
 			t.Fatalf("seed: pick/create category: %v", err2)
 		}
+		// Only register cleanup for categories that SeedProduct created
 		t.Cleanup(func() {
 			_, _ = pool.Exec(ctx, `DELETE FROM categories WHERE id=$1`, categoryID)
 		})

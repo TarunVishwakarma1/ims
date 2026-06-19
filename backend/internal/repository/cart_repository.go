@@ -2,8 +2,10 @@ package repository
 
 import (
 	"context"
+	"errors"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/TarunVishwakarma1/ims/backend/internal/domain"
@@ -82,10 +84,12 @@ func (r *cartRepository) Get(ctx context.Context, customerID uuid.UUID) (*domain
 		Items:      []domain.CartItem{},
 	}
 	// Scan updated_at if the cart row exists; ignore ErrNoRows (cart not yet created)
-	_ = r.pool.QueryRow(ctx,
+	if err := r.pool.QueryRow(ctx,
 		`SELECT updated_at FROM customer_carts WHERE customer_id = $1`,
 		customerID,
-	).Scan(&cart.UpdatedAt)
+	).Scan(&cart.UpdatedAt); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return nil, err
+	}
 
 	rows, err := r.pool.Query(ctx, `
 		SELECT product_id, qty, unit_price_paise, added_at
