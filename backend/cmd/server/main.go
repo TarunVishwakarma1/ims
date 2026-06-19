@@ -113,7 +113,6 @@ func main() {
 	partnerRepo := repository.NewPartnerRepository(pool)
 	returnRepo := repository.NewReturnRepository(pool)
 	notificationRepo := repository.NewNotificationRepository(pool)
-	customerRepo := repository.NewCustomerRepository(pool)
 
 	// Load permissions cache on startup
 	rolePerms, err := roleRepo.LoadRolePermissions(ctx)
@@ -212,6 +211,7 @@ func main() {
 			zap.L().Warn("SHOP_ENABLED=true but MSG91_AUTH_KEY empty — using MockSender (dev only)")
 		}
 
+		customerRepo := repository.NewCustomerRepository(pool)
 		otpRepo := repository.NewOTPRepository(pool)
 		addrRepo := repository.NewCustomerAddressRepository(pool)
 		cartRepo := repository.NewCartRepository(pool)
@@ -254,7 +254,7 @@ func main() {
 	webhookH := handler.NewWebhookHandler(paymentService)
 	eventsH := handler.NewEventsHandler(eventBus)
 
-	router := NewRouter(authH, userH, categoryH, productH, inventoryH, orderH, roleH, locationH, marketH, eventsH, paymentH, webhookH, partnerH, returnH, notificationH, auditH, totpH, couponH, cfg, pool, cacheClient, cfg.ShopEnabled, cfg.JWTSecret, shopAuthH, shopCustH, shopCartH, shopCheckH)
+	router := NewRouter(authH, userH, categoryH, productH, inventoryH, orderH, roleH, locationH, marketH, eventsH, paymentH, webhookH, partnerH, returnH, notificationH, auditH, totpH, couponH, cfg, pool, cacheClient, cfg.ShopEnabled, shopAuthH, shopCustH, shopCartH, shopCheckH)
 
 	server := &http.Server{
 		Addr:         ":" + cfg.Port,

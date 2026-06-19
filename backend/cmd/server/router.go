@@ -39,7 +39,6 @@ func NewRouter(
 	pool *pgxpool.Pool,
 	cacheClient cache.Cache,
 	shopEnabled bool,
-	jwtSecret string,
 	shopAuthH *shophandler.AuthHandler,
 	shopCustH *shophandler.CustomerHandler,
 	shopCartH *shophandler.CartHandler,
@@ -237,7 +236,7 @@ func NewRouter(
 			r.Post("/auth/otp/verify", shopAuthH.Verify)
 
 			r.Group(func(r chi.Router) {
-				r.Use(middleware.RequireCustomer(jwtSecret))
+				r.Use(middleware.RequireCustomer(cfg.JWTSecret))
 
 				r.Get("/me", shopCustH.GetMe)
 				r.Patch("/me", shopCustH.UpdateMe)
