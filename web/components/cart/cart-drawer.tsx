@@ -12,7 +12,7 @@ export function CartDrawer() {
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetContent
-        side="left"
+        side="right"
         className="w-full sm:max-w-md p-0 flex flex-col gap-0"
       >
         <SheetHeader className="px-4 py-3 border-b bg-white dark:bg-zinc-950 gap-0.5">
