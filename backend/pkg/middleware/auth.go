@@ -78,6 +78,14 @@ func Auth(jwtSecret string) func(http.Handler) http.Handler {
 				return
 			}
 
+			// reject shop-audience tokens on B2B routes
+			for _, a := range claims.RegisteredClaims.Audience {
+				if a == "shop" {
+					http.Error(w, "Unauthorized: wrong audience", http.StatusUnauthorized)
+					return
+				}
+			}
+
 			if claims.UserID == "" {
 				http.Error(w, "Unauthorized: invalid token claims", http.StatusUnauthorized)
 				return
