@@ -83,3 +83,45 @@ func SeedProduct(t *testing.T, pool *pgxpool.Pool, name string, pricePaise int64
 	})
 	return prodID
 }
+
+// SeedProductWithStock seeds a product (auto-creating an org and category if
+// needed, just like SeedProduct) AND seeds an inventory row with the given
+// quantity. Registers cleanup for both. Returns product id and the org id
+// it used.
+func SeedProductWithStock(t *testing.T, pool *pgxpool.Pool, name string, pricePaise int64, stockQty int) (uuid.UUID, uuid.UUID) {
+	t.Helper()
+	prodID := SeedProduct(t, pool, name, pricePaise)
+	ctx := context.Background()
+
+	var orgID uuid.UUID
+	if err := pool.QueryRow(ctx, `SELECT org_id FROM products WHERE id=$1`, prodID).Scan(&orgID); err != nil {
+		t.Fatalf("seed-stock: lookup org: %v", err)
+	}
+	_, err := pool.Exec(ctx, `
+		INSERT INTO inventory (org_id, product_id, quantity, low_stock_threshold)
+		VALUES ($1, $2, $3, 0)
+		ON CONFLICT (product_id) DO UPDATE SET quantity = EXCLUDED.quantity
+	`, orgID, prodID, stockQty)
+	if err != nil {
+		t.Fatalf("seed-stock: insert inventory: %v", err)
+	}
+
+	t.Cleanup(func() {
+		_, _ = pool.Exec(ctx, `DELETE FROM inventory WHERE product_id=$1`, prodID)
+	})
+	return prodID, orgID
+}
+
+// MainOrgIDFromSeed picks the org that owns the most recently seeded product,
+// useful when a test needs the org id for service construction.
+// In V1 the main shop org is "any existing org" — for tests, you can use
+// SeedProductWithStock's returned orgID directly.
+func MainOrgIDFromSeed(t *testing.T, pool *pgxpool.Pool) uuid.UUID {
+	t.Helper()
+	ctx := context.Background()
+	var orgID uuid.UUID
+	if err := pool.QueryRow(ctx, `SELECT id FROM organizations LIMIT 1`).Scan(&orgID); err != nil {
+		t.Fatalf("MainOrgIDFromSeed: no organization found: %v", err)
+	}
+	return orgID
+}
