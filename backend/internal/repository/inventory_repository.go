@@ -11,12 +11,12 @@ import (
 
 type InventoryRepository interface {
 	Create(ctx context.Context, inventory *domain.Inventory) error
-	GetByID(ctx context.Context, id uuid.UUID) (*domain.Inventory, error)
-	GetByProductID(ctx context.Context, productID uuid.UUID) (*domain.Inventory, error)
+	GetByID(ctx context.Context, id uuid.UUID, orgID uuid.UUID) (*domain.Inventory, error)
+	GetByProductID(ctx context.Context, productID uuid.UUID, orgID uuid.UUID) (*domain.Inventory, error)
 	Update(ctx context.Context, inventory *domain.Inventory) error
-	Delete(ctx context.Context, id uuid.UUID) error
-	List(ctx context.Context) ([]*domain.Inventory, error)
-	ListLowStock(ctx context.Context) ([]*domain.Inventory, error)
+	Delete(ctx context.Context, id uuid.UUID, orgID uuid.UUID) error
+	List(ctx context.Context, orgID uuid.UUID) ([]*domain.Inventory, error)
+	ListLowStock(ctx context.Context, orgID uuid.UUID) ([]*domain.Inventory, error)
 	WithTx(tx pgx.Tx) InventoryRepository
 }
 
@@ -34,21 +34,21 @@ func (r *inventoryRepository) WithTx(tx pgx.Tx) InventoryRepository {
 
 func (r *inventoryRepository) Create(ctx context.Context, inventory *domain.Inventory) error {
 	query := `
-		INSERT INTO inventory (id, product_id, quantity, low_stock_threshold, updated_at)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO inventory (id, org_id, product_id, quantity, low_stock_threshold, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6)
 	`
-	_, err := r.db.Exec(ctx, query, inventory.ID, inventory.ProductID, inventory.Quantity, inventory.LowStockThreshold, inventory.UpdatedAt)
+	_, err := r.db.Exec(ctx, query, inventory.ID, inventory.OrgID, inventory.ProductID, inventory.Quantity, inventory.LowStockThreshold, inventory.UpdatedAt)
 	return err
 }
 
-func (r *inventoryRepository) GetByID(ctx context.Context, id uuid.UUID) (*domain.Inventory, error) {
+func (r *inventoryRepository) GetByID(ctx context.Context, id uuid.UUID, orgID uuid.UUID) (*domain.Inventory, error) {
 	query := `
-		SELECT id, product_id, quantity, low_stock_threshold, updated_at
+		SELECT id, org_id, product_id, quantity, low_stock_threshold, updated_at
 		FROM inventory
-		WHERE id = $1
+		WHERE id = $1 AND org_id = $2
 	`
 	inventory := &domain.Inventory{}
-	err := r.db.QueryRow(ctx, query, id).Scan(&inventory.ID, &inventory.ProductID, &inventory.Quantity, &inventory.LowStockThreshold, &inventory.UpdatedAt)
+	err := r.db.QueryRow(ctx, query, id, orgID).Scan(&inventory.ID, &inventory.OrgID, &inventory.ProductID, &inventory.Quantity, &inventory.LowStockThreshold, &inventory.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, domain.ErrNotFound
@@ -58,14 +58,14 @@ func (r *inventoryRepository) GetByID(ctx context.Context, id uuid.UUID) (*domai
 	return inventory, nil
 }
 
-func (r *inventoryRepository) GetByProductID(ctx context.Context, productID uuid.UUID) (*domain.Inventory, error) {
+func (r *inventoryRepository) GetByProductID(ctx context.Context, productID uuid.UUID, orgID uuid.UUID) (*domain.Inventory, error) {
 	query := `
-		SELECT id, product_id, quantity, low_stock_threshold, updated_at
+		SELECT id, org_id, product_id, quantity, low_stock_threshold, updated_at
 		FROM inventory
-		WHERE product_id = $1
+		WHERE product_id = $1 AND org_id = $2
 	`
 	inventory := &domain.Inventory{}
-	err := r.db.QueryRow(ctx, query, productID).Scan(&inventory.ID, &inventory.ProductID, &inventory.Quantity, &inventory.LowStockThreshold, &inventory.UpdatedAt)
+	err := r.db.QueryRow(ctx, query, productID, orgID).Scan(&inventory.ID, &inventory.OrgID, &inventory.ProductID, &inventory.Quantity, &inventory.LowStockThreshold, &inventory.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, domain.ErrNotFound
@@ -78,29 +78,30 @@ func (r *inventoryRepository) GetByProductID(ctx context.Context, productID uuid
 func (r *inventoryRepository) Update(ctx context.Context, inventory *domain.Inventory) error {
 	query := `
 		UPDATE inventory
-		SET product_id = $2, quantity = $3, low_stock_threshold = $4, updated_at = $5
-		WHERE id = $1
+		SET product_id = $3, quantity = $4, low_stock_threshold = $5, updated_at = $6
+		WHERE id = $1 AND org_id = $2
 	`
-	_, err := r.db.Exec(ctx, query, inventory.ID, inventory.ProductID, inventory.Quantity, inventory.LowStockThreshold, inventory.UpdatedAt)
+	_, err := r.db.Exec(ctx, query, inventory.ID, inventory.OrgID, inventory.ProductID, inventory.Quantity, inventory.LowStockThreshold, inventory.UpdatedAt)
 	return err
 }
 
-func (r *inventoryRepository) Delete(ctx context.Context, id uuid.UUID) error {
+func (r *inventoryRepository) Delete(ctx context.Context, id uuid.UUID, orgID uuid.UUID) error {
 	query := `
 		DELETE FROM inventory
-		WHERE id = $1
+		WHERE id = $1 AND org_id = $2
 	`
-	_, err := r.db.Exec(ctx, query, id)
+	_, err := r.db.Exec(ctx, query, id, orgID)
 	return err
 }
 
-func (r *inventoryRepository) List(ctx context.Context) ([]*domain.Inventory, error) {
+func (r *inventoryRepository) List(ctx context.Context, orgID uuid.UUID) ([]*domain.Inventory, error) {
 	query := `
-		SELECT id, product_id, quantity, low_stock_threshold, updated_at
+		SELECT id, org_id, product_id, quantity, low_stock_threshold, updated_at
 		FROM inventory
+		WHERE org_id = $1
 		ORDER BY updated_at DESC
 	`
-	rows, err := r.db.Query(ctx, query)
+	rows, err := r.db.Query(ctx, query, orgID)
 	if err != nil {
 		return nil, err
 	}
@@ -109,7 +110,7 @@ func (r *inventoryRepository) List(ctx context.Context) ([]*domain.Inventory, er
 	list := make([]*domain.Inventory, 0)
 	for rows.Next() {
 		inv := &domain.Inventory{}
-		err := rows.Scan(&inv.ID, &inv.ProductID, &inv.Quantity, &inv.LowStockThreshold, &inv.UpdatedAt)
+		err := rows.Scan(&inv.ID, &inv.OrgID, &inv.ProductID, &inv.Quantity, &inv.LowStockThreshold, &inv.UpdatedAt)
 		if err != nil {
 			return nil, err
 		}
@@ -123,14 +124,14 @@ func (r *inventoryRepository) List(ctx context.Context) ([]*domain.Inventory, er
 	return list, nil
 }
 
-func (r *inventoryRepository) ListLowStock(ctx context.Context) ([]*domain.Inventory, error) {
+func (r *inventoryRepository) ListLowStock(ctx context.Context, orgID uuid.UUID) ([]*domain.Inventory, error) {
 	query := `
-		SELECT id, product_id, quantity, low_stock_threshold, updated_at
+		SELECT id, org_id, product_id, quantity, low_stock_threshold, updated_at
 		FROM inventory
-		WHERE quantity <= low_stock_threshold
+		WHERE quantity <= low_stock_threshold AND org_id = $1
 		ORDER BY quantity ASC
 	`
-	rows, err := r.db.Query(ctx, query)
+	rows, err := r.db.Query(ctx, query, orgID)
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +140,7 @@ func (r *inventoryRepository) ListLowStock(ctx context.Context) ([]*domain.Inven
 	list := make([]*domain.Inventory, 0)
 	for rows.Next() {
 		inv := &domain.Inventory{}
-		err := rows.Scan(&inv.ID, &inv.ProductID, &inv.Quantity, &inv.LowStockThreshold, &inv.UpdatedAt)
+		err := rows.Scan(&inv.ID, &inv.OrgID, &inv.ProductID, &inv.Quantity, &inv.LowStockThreshold, &inv.UpdatedAt)
 		if err != nil {
 			return nil, err
 		}

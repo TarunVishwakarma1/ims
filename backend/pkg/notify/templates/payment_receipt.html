@@ -1,0 +1,35 @@
+{{define "body"}}
+{{template "hero" .Hero}}
+{{template "amount_box" .Amount}}
+{{template "key_value_table" .Rows}}
+
+{{if .Items}}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="background:#ffffff;border:1px solid #eef2f7;border-radius:10px;margin:16px 0;">
+  <thead>
+    <tr>
+      <th align="left" style="padding:12px 16px;color:#64748b;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;border-bottom:1px solid #eef2f7;">Item</th>
+      <th align="right" style="padding:12px 16px;color:#64748b;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;border-bottom:1px solid #eef2f7;width:80px;">Qty</th>
+      <th align="right" style="padding:12px 16px;color:#64748b;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;border-bottom:1px solid #eef2f7;width:120px;">Amount</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{range .Items}}
+    <tr>
+      <td style="padding:12px 16px;color:#0f172a;font-size:14px;border-bottom:1px solid #f1f5f9;">{{.Name}}</td>
+      <td align="right" style="padding:12px 16px;color:#475569;font-size:14px;border-bottom:1px solid #f1f5f9;">{{.Qty}}</td>
+      <td align="right" style="padding:12px 16px;color:#0f172a;font-size:14px;font-weight:500;border-bottom:1px solid #f1f5f9;">{{.Total}}</td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+{{end}}
+
+{{template "alert_success" .Alert}}
+
+<p class="muted" style="margin:18px 0 0 0;color:#64748b;font-size:12px;line-height:18px;">
+  Keep this receipt for your records. For refunds or queries, reply to this email or contact your administrator with the payment ID above.
+</p>
+
+{{template "cta_button" .CTA}}
+{{end}}

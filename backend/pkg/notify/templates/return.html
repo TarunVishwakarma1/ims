@@ -1,0 +1,7 @@
+{{define "body"}}
+{{template "hero" .Hero}}
+<p style="margin:0 0 14px 0;">{{.Intro}}</p>
+{{if .Amount}}{{template "amount_box" .Amount}}{{end}}
+{{template "key_value_table" .Rows}}
+{{template "cta_button" .CTA}}
+{{end}}

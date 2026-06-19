@@ -50,48 +50,63 @@ export const api: KyInstance = ky.create({
     ],
     afterResponse: [
       async ({ request, response }) => {
-        if (response.status === 401) {
-          if (isRefreshing) {
-            clearTokens();
-            if (typeof window !== 'undefined') {
-              window.location.href = '/login';
-            }
-            return;
+        if (response.status !== 401) return;
+
+        // Public auth endpoints handle their own errors (bad credentials,
+        // expired reset link, invalid OTP, etc). Don't refresh + don't
+        // redirect — let the caller's catch block surface the real error.
+        const url = new URL(request.url);
+        if (
+          url.pathname.includes('/auth/login') ||
+          url.pathname.includes('/auth/register') ||
+          url.pathname.includes('/auth/refresh') ||
+          url.pathname.includes('/auth/password-reset/') ||
+          url.pathname.includes('/auth/verify-email') ||
+          url.pathname.includes('/auth/resend-verification')
+        ) {
+          return; // let ky raise the HTTPError as normal
+        }
+
+        if (isRefreshing) {
+          clearTokens();
+          if (typeof window !== 'undefined') {
+            window.location.href = '/login';
           }
+          return;
+        }
 
-          isRefreshing = true;
+        isRefreshing = true;
 
-          const refreshToken = getRefreshToken();
-          if (!refreshToken) {
-            clearTokens();
-            isRefreshing = false;
-            if (typeof window !== 'undefined') {
-              window.location.href = '/login';
-            }
-            return;
+        const refreshToken = getRefreshToken();
+        if (!refreshToken) {
+          clearTokens();
+          isRefreshing = false;
+          if (typeof window !== 'undefined') {
+            window.location.href = '/login';
           }
+          return;
+        }
 
-          try {
-            // Refresh call must use plain ky (not api) to avoid infinite loop
-            const res = await ky.post('auth/refresh', {
-              prefix: process.env.NEXT_PUBLIC_API_URL,
-              json: { refresh_token: refreshToken },
-            }).json<{ access_token: string; refresh_token: string }>();
+        try {
+          // Refresh call must use plain ky (not api) to avoid infinite loop
+          const res = await ky.post('auth/refresh', {
+            prefix: process.env.NEXT_PUBLIC_API_URL,
+            json: { refresh_token: refreshToken },
+          }).json<{ access_token: string; refresh_token: string }>();
 
-            setTokens(res.access_token, res.refresh_token);
+          setTokens(res.access_token, res.refresh_token);
 
-            // Retry the original request with the new access token
-            request.headers.set('Authorization', `Bearer ${res.access_token}`);
-            return await api(request);
-          } catch (error) {
-            clearTokens();
-            if (typeof window !== 'undefined') {
-              window.location.href = '/login';
-            }
-            throw error;
-          } finally {
-            isRefreshing = false;
+          // Retry the original request with the new access token
+          request.headers.set('Authorization', `Bearer ${res.access_token}`);
+          return await api(request);
+        } catch (error) {
+          clearTokens();
+          if (typeof window !== 'undefined') {
+            window.location.href = '/login';
           }
+          throw error;
+        } finally {
+          isRefreshing = false;
         }
       },
     ],

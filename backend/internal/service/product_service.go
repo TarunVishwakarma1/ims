@@ -7,34 +7,47 @@ import (
 
 	"github.com/TarunVishwakarma1/ims/backend/internal/domain"
 	"github.com/TarunVishwakarma1/ims/backend/internal/repository"
+	"github.com/TarunVishwakarma1/ims/backend/pkg/cache"
+	"github.com/TarunVishwakarma1/ims/backend/pkg/events"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
 type ProductService interface {
 	Create(ctx context.Context, product *domain.Product, ipAddress string) error
-	GetByID(ctx context.Context, id uuid.UUID) (*domain.Product, error)
-	GetBySKU(ctx context.Context, sku string) (*domain.Product, error)
+	GetByID(ctx context.Context, id uuid.UUID, orgID uuid.UUID) (*domain.Product, error)
+	GetBySKU(ctx context.Context, sku string, orgID uuid.UUID) (*domain.Product, error)
 	Update(ctx context.Context, product *domain.Product) error
-	Delete(ctx context.Context, id uuid.UUID, ipAddress string) error
-	List(ctx context.Context) ([]*domain.Product, error)
-	ListByCategory(ctx context.Context, categoryID uuid.UUID) ([]*domain.Product, error)
+	Delete(ctx context.Context, id uuid.UUID, orgID uuid.UUID, ipAddress string) error
+	List(ctx context.Context, orgID uuid.UUID) ([]*domain.Product, error)
+	ListByCategory(ctx context.Context, categoryID uuid.UUID, orgID uuid.UUID) ([]*domain.Product, error)
 }
 
 type productService struct {
-	repo         repository.ProductRepository
-	auditLogRepo repository.AuditLogRepository
+	repo          repository.ProductRepository
+	inventoryRepo repository.InventoryRepository
+	auditLogRepo  repository.AuditLogRepository
+	cache         cache.Cache
+	bus           events.Bus
 }
 
-func NewProductService(repo repository.ProductRepository, auditLogRepo repository.AuditLogRepository) ProductService {
+func NewProductService(repo repository.ProductRepository, inventoryRepo repository.InventoryRepository, auditLogRepo repository.AuditLogRepository, c cache.Cache, bus events.Bus) ProductService {
 	return &productService{
-		repo:         repo,
-		auditLogRepo: auditLogRepo,
+		repo:          repo,
+		inventoryRepo: inventoryRepo,
+		auditLogRepo:  auditLogRepo,
+		cache:         c,
+		bus:           bus,
 	}
 }
 
+func (s *productService) invalidate(ctx context.Context, orgID uuid.UUID) {
+	_ = s.cache.DeleteByPattern(ctx, cache.ProductsListPattern(orgID))
+	_ = s.cache.DeleteByPattern(ctx, cache.MarketplaceSearchPattern())
+}
+
 func (s *productService) Create(ctx context.Context, product *domain.Product, ipAddress string) error {
-	existing, err := s.repo.GetBySKU(ctx, product.SKU)
+	existing, err := s.repo.GetBySKU(ctx, product.SKU, product.OrgID)
 	if err == nil && existing != nil {
 		return domain.ErrConflict
 	}
@@ -51,8 +64,21 @@ func (s *productService) Create(ctx context.Context, product *domain.Product, ip
 		return err
 	}
 
+	inv := &domain.Inventory{
+		ID:                uuid.New(),
+		OrgID:             product.OrgID,
+		ProductID:         product.ID,
+		Quantity:          0,
+		LowStockThreshold: 10,
+		UpdatedAt:         now,
+	}
+	if err := s.inventoryRepo.Create(ctx, inv); err != nil {
+		zap.L().Error("failed to create inventory record", zap.Error(err))
+	}
+
 	audit := &domain.AuditLog{
 		ID:        uuid.New(),
+		OrgID:     product.OrgID,
 		UserID:    nil,
 		Action:    "product.created",
 		Entity:    "products",
@@ -64,29 +90,44 @@ func (s *productService) Create(ctx context.Context, product *domain.Product, ip
 		zap.L().Error("audit log failed", zap.Error(err))
 	}
 
+	s.invalidate(ctx, product.OrgID)
+	_ = s.bus.Publish(ctx, events.NewEvent(events.TopicProductCreated, product.OrgID.String(), "", map[string]any{
+		"id":   product.ID,
+		"name": product.Name,
+		"sku":  product.SKU,
+	}))
 	return nil
 }
 
-func (s *productService) GetByID(ctx context.Context, id uuid.UUID) (*domain.Product, error) {
-	return s.repo.GetByID(ctx, id)
+func (s *productService) GetByID(ctx context.Context, id uuid.UUID, orgID uuid.UUID) (*domain.Product, error) {
+	return s.repo.GetByID(ctx, id, orgID)
 }
 
-func (s *productService) GetBySKU(ctx context.Context, sku string) (*domain.Product, error) {
-	return s.repo.GetBySKU(ctx, sku)
+func (s *productService) GetBySKU(ctx context.Context, sku string, orgID uuid.UUID) (*domain.Product, error) {
+	return s.repo.GetBySKU(ctx, sku, orgID)
 }
 
 func (s *productService) Update(ctx context.Context, product *domain.Product) error {
 	product.UpdatedAt = time.Now().UTC()
-	return s.repo.Update(ctx, product)
+	if err := s.repo.Update(ctx, product); err != nil {
+		return err
+	}
+	_ = s.bus.Publish(ctx, events.NewEvent(events.TopicProductUpdated, product.OrgID.String(), "", map[string]any{
+		"id":   product.ID,
+		"name": product.Name,
+	}))
+	s.invalidate(ctx, product.OrgID)
+	return nil
 }
 
-func (s *productService) Delete(ctx context.Context, id uuid.UUID, ipAddress string) error {
-	if err := s.repo.Delete(ctx, id); err != nil {
+func (s *productService) Delete(ctx context.Context, id uuid.UUID, orgID uuid.UUID, ipAddress string) error {
+	if err := s.repo.Delete(ctx, id, orgID); err != nil {
 		return err
 	}
 
 	audit := &domain.AuditLog{
 		ID:        uuid.New(),
+		OrgID:     orgID,
 		UserID:    nil,
 		Action:    "product.deleted",
 		Entity:    "products",
@@ -98,13 +139,28 @@ func (s *productService) Delete(ctx context.Context, id uuid.UUID, ipAddress str
 		zap.L().Error("audit log failed", zap.Error(err))
 	}
 
+	s.invalidate(ctx, orgID)
+	_ = s.bus.Publish(ctx, events.NewEvent(events.TopicProductDeleted, orgID.String(), "", map[string]any{
+		"id": id,
+	}))
 	return nil
 }
 
-func (s *productService) List(ctx context.Context) ([]*domain.Product, error) {
-	return s.repo.List(ctx)
+func (s *productService) List(ctx context.Context, orgID uuid.UUID) ([]*domain.Product, error) {
+	key := cache.ProductsListKey(orgID)
+	var cached []*domain.Product
+	if err := s.cache.Get(ctx, key, &cached); err == nil {
+		return cached, nil
+	}
+
+	products, err := s.repo.List(ctx, orgID)
+	if err != nil {
+		return nil, err
+	}
+	_ = s.cache.Set(ctx, key, products, cache.TTLMedium)
+	return products, nil
 }
 
-func (s *productService) ListByCategory(ctx context.Context, categoryID uuid.UUID) ([]*domain.Product, error) {
-	return s.repo.ListByCategory(ctx, categoryID)
+func (s *productService) ListByCategory(ctx context.Context, categoryID uuid.UUID, orgID uuid.UUID) ([]*domain.Product, error) {
+	return s.repo.ListByCategory(ctx, categoryID, orgID)
 }

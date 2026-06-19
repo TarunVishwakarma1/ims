@@ -1,0 +1,14 @@
+{{define "body"}}
+{{template "hero" .Hero}}
+{{template "amount_box" .Amount}}
+{{template "key_value_table" .Rows}}
+
+{{template "alert_success" .Alert}}
+
+<p class="muted" style="margin:18px 0 0 0;color:#64748b;font-size:12px;line-height:18px;">
+  Keep this email for your records. If you have questions about this refund,
+  reply with the order ID above and our team will help.
+</p>
+
+{{template "cta_button" .CTA}}
+{{end}}

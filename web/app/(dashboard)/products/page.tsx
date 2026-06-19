@@ -2,15 +2,18 @@
 
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useForm } from 'react-hook-form'
+import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Plus, Edit, Trash2, Loader2 } from 'lucide-react'
+import { TableSkeleton } from '@/components/ui/table-skeleton'
 
 import { productsApi } from '@/lib/api/products'
 import { categoriesApi } from '@/lib/api/categories'
 import { formatPrice } from '@/lib/utils'
-import type { Product, Category } from '@/types/api'
+import { usePermission } from '@/hooks/usePermission'
+import { PERMISSIONS } from '@/lib/rbac'
+import type { Product } from '@/types/api'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -46,11 +49,13 @@ const productSchema = z.object({
   category_id: z.string().min(1, 'Category is required'),
   description: z.string().optional(),
   price: z.number().min(0, 'Price must be a positive number'),
+  gst_rate: z.number().int().min(0).max(28),
 })
 type ProductFormValues = z.infer<typeof productSchema>
 
 export default function ProductsPage() {
   const queryClient = useQueryClient()
+  const { can } = usePermission()
   
   // State for dialogs
   const [isDialogOpen, setIsDialogOpen] = useState(false)
@@ -101,8 +106,7 @@ export default function ProductsPage() {
   const {
     register,
     handleSubmit,
-    setValue,
-    watch,
+    control,
     reset,
     formState: { errors, isSubmitting }
   } = useForm<ProductFormValues>({
@@ -113,11 +117,9 @@ export default function ProductsPage() {
       category_id: '',
       description: '',
       price: 0,
+      gst_rate: 0,
     }
   })
-
-  const categoryIdValue = watch('category_id')
-
 
   // Handlers
   const handleOpenCreate = () => {
@@ -128,6 +130,7 @@ export default function ProductsPage() {
       category_id: '',
       description: '',
       price: 0,
+      gst_rate: 0,
     })
     setIsDialogOpen(true)
   }
@@ -160,9 +163,11 @@ export default function ProductsPage() {
           <h2 className="text-2xl font-bold tracking-tight">Products</h2>
           <p className="text-muted-foreground">Manage your product catalog.</p>
         </div>
-        <Button onClick={handleOpenCreate}>
-          <Plus className="mr-2 h-4 w-4" /> Add Product
-        </Button>
+        {can(PERMISSIONS.PRODUCTS_MANAGE) && (
+          <Button onClick={handleOpenCreate}>
+            <Plus className="mr-2 h-4 w-4" /> Add Product
+          </Button>
+        )}
       </div>
 
       <div className="rounded-md border bg-white dark:bg-zinc-950">
@@ -178,11 +183,7 @@ export default function ProductsPage() {
           </TableHeader>
           <TableBody>
             {isLoadingProducts || isLoadingCategories ? (
-              <TableRow>
-                <TableCell colSpan={5} className="h-24 text-center">
-                  <Loader2 className="w-6 h-6 animate-spin mx-auto text-muted-foreground" />
-                </TableCell>
-              </TableRow>
+              <TableSkeleton columns={5} rows={6} />
             ) : products.length > 0 ? (
               products.map((product) => (
                 <TableRow key={product.id}>
@@ -194,25 +195,30 @@ export default function ProductsPage() {
                   <TableCell>{formatPrice(product.price)}</TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
-                      <Button variant="ghost" size="icon" onClick={() => {
-                        setSelectedProduct(product)
-                        reset({
-                          name: product.name,
-                          sku: product.sku,
-                          category_id: product.category_id,
-                          description: product.description,
-                          price: product.price / 100,
-                        })
-                        setIsDialogOpen(true)
-                      }}>
-                        <Edit className="w-4 h-4 text-blue-600" />
-                      </Button>
-                      <Button variant="ghost" size="icon" onClick={() => {
-                        setSelectedProduct(product)
-                        setIsDeleteDialogOpen(true)
-                      }}>
-                        <Trash2 className="w-4 h-4 text-red-600" />
-                      </Button>
+                      {can(PERMISSIONS.PRODUCTS_MANAGE) && (
+                        <>
+                          <Button variant="ghost" size="icon" onClick={() => {
+                            setSelectedProduct(product)
+                            reset({
+                              name: product.name,
+                              sku: product.sku,
+                              category_id: product.category_id,
+                              description: product.description,
+                              price: product.price / 100,
+                              gst_rate: product.gst_rate ?? 0,
+                            })
+                            setIsDialogOpen(true)
+                          }}>
+                            <Edit className="w-4 h-4 text-blue-600" />
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => {
+                            setSelectedProduct(product)
+                            setIsDeleteDialogOpen(true)
+                          }}>
+                            <Trash2 className="w-4 h-4 text-red-600" />
+                          </Button>
+                        </>
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>
@@ -258,22 +264,56 @@ export default function ProductsPage() {
             </div>
 
             <div className="grid gap-2">
+              <Label htmlFor="gst_rate">GST Rate</Label>
+              <Controller
+                name="gst_rate"
+                control={control}
+                render={({ field }) => (
+                  <Select
+                    onValueChange={(v) => field.onChange(parseInt(v, 10))}
+                    value={String(field.value ?? 0)}
+                  >
+                    <SelectTrigger id="gst_rate">
+                      <SelectValue placeholder="GST rate" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="0">Exempt (0%)</SelectItem>
+                      <SelectItem value="5">5%</SelectItem>
+                      <SelectItem value="12">12%</SelectItem>
+                      <SelectItem value="18">18%</SelectItem>
+                      <SelectItem value="28">28%</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+              <p className="text-xs text-muted-foreground">
+                Applied at checkout as CGST+SGST (intra-state) or IGST (inter-state).
+              </p>
+            </div>
+
+            <div className="grid gap-2">
               <Label htmlFor="category">Category</Label>
-              <Select
-                value={categoryIdValue}
-                onValueChange={(val) => setValue('category_id', val)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a category" />
-                </SelectTrigger>
-                <SelectContent>
-                  {categories.map((cat) => (
-                    <SelectItem key={cat.id} value={cat.id}>
-                      {cat.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Controller
+                name="category_id"
+                control={control}
+                render={({ field }) => (
+                  <Select
+                    value={field.value}
+                    onValueChange={field.onChange}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {categories.map((cat) => (
+                        <SelectItem key={cat.id} value={cat.id}>
+                          {cat.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              />
               {errors.category_id && <p className="text-xs text-red-500">{errors.category_id.message}</p>}
             </div>
 

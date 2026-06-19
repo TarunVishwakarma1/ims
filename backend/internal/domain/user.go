@@ -7,20 +7,29 @@ import (
 )
 
 type User struct {
-	ID           uuid.UUID `json:"id" db:"id"`
-	Name         string    `json:"name" db:"name" validate:"required"`
-	Email        string    `json:"email" db:"email" validate:"required,email"`
-	PasswordHash string    `json:"-" db:"password_hash" validate:"required"`
-	Role         Role      `json:"role" db:"role" validate:"required,oneof=admin manager staff"`
-	IsActive     bool      `json:"is_active" db:"is_active"`
-	CreatedAt    time.Time `json:"created_at" db:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at" db:"updated_at"`
+	ID                uuid.UUID  `json:"id" db:"id"`
+	OrgID             uuid.UUID  `json:"org_id" db:"org_id"`
+	Name              string     `json:"name" db:"name" validate:"required"`
+	Email             string     `json:"email" db:"email" validate:"required,email"`
+	PasswordHash      string     `json:"-" db:"password_hash" validate:"required"`
+	Role              string     `json:"role" db:"role" validate:"required"`
+	IsActive          bool       `json:"is_active" db:"is_active"`
+	EmailVerified     bool       `json:"email_verified" db:"email_verified"`
+	FailedLoginCount  int        `json:"-" db:"failed_login_count"`
+	LockedUntil       *time.Time `json:"-" db:"locked_until"`
+	LastLoginAt       *time.Time `json:"last_login_at,omitempty" db:"last_login_at"`
+	PasswordChangedAt *time.Time `json:"-" db:"password_changed_at"`
+	CreatedAt         time.Time  `json:"created_at" db:"created_at"`
+	UpdatedAt         time.Time  `json:"updated_at" db:"updated_at"`
+
+	// TOTP-based 2FA. Secret + backup codes never leave the server.
+	TOTPSecret       *string    `json:"-" db:"totp_secret"`
+	TOTPEnabled      bool       `json:"totp_enabled" db:"totp_enabled"`
+	TOTPVerifiedAt   *time.Time `json:"totp_verified_at,omitempty" db:"totp_verified_at"`
+	TOTPBackupCodes  *string    `json:"-" db:"totp_backup_codes"`
+
+	// Email-based second factor. Independent of TOTP — both can be on.
+	EmailTwoFAEnabled bool `json:"email_2fa_enabled" db:"email_2fa_enabled"`
 }
 
-type Role string
 
-const (
-	Admin   Role = "admin"
-	Manager Role = "manager"
-	Staff   Role = "staff"
-)

@@ -14,11 +14,11 @@ import (
 
 type UserService interface {
 	Create(ctx context.Context, user *domain.User, ipAddress string) error
-	GetByID(ctx context.Context, id uuid.UUID) (*domain.User, error)
+	GetByID(ctx context.Context, id uuid.UUID, orgID uuid.UUID) (*domain.User, error)
 	GetByEmail(ctx context.Context, email string) (*domain.User, error)
 	Update(ctx context.Context, user *domain.User) error
-	Delete(ctx context.Context, id uuid.UUID, ipAddress string) error
-	List(ctx context.Context) ([]*domain.User, error)
+	Delete(ctx context.Context, id uuid.UUID, orgID uuid.UUID, ipAddress string) error
+	List(ctx context.Context, orgID uuid.UUID) ([]*domain.User, error)
 }
 
 type userService struct {
@@ -34,6 +34,7 @@ func NewUserService(repo repository.UserRepository, auditLogRepo repository.Audi
 }
 
 func (s *userService) Create(ctx context.Context, user *domain.User, ipAddress string) error {
+	// Note: email uniqueness is checked globally without orgID, per architecture rules
 	existing, err := s.repo.GetByEmail(ctx, user.Email)
 	if err == nil && existing != nil {
 		return domain.ErrConflict
@@ -60,6 +61,7 @@ func (s *userService) Create(ctx context.Context, user *domain.User, ipAddress s
 
 	audit := &domain.AuditLog{
 		ID:        uuid.New(),
+		OrgID:     user.OrgID,
 		UserID:    &user.ID,
 		Action:    "user.created",
 		Entity:    "users",
@@ -74,8 +76,8 @@ func (s *userService) Create(ctx context.Context, user *domain.User, ipAddress s
 	return nil
 }
 
-func (s *userService) GetByID(ctx context.Context, id uuid.UUID) (*domain.User, error) {
-	return s.repo.GetByID(ctx, id)
+func (s *userService) GetByID(ctx context.Context, id uuid.UUID, orgID uuid.UUID) (*domain.User, error) {
+	return s.repo.GetByID(ctx, id, orgID)
 }
 
 func (s *userService) GetByEmail(ctx context.Context, email string) (*domain.User, error) {
@@ -87,14 +89,15 @@ func (s *userService) Update(ctx context.Context, user *domain.User) error {
 	return s.repo.Update(ctx, user)
 }
 
-func (s *userService) Delete(ctx context.Context, id uuid.UUID, ipAddress string) error {
-	if err := s.repo.Delete(ctx, id); err != nil {
+func (s *userService) Delete(ctx context.Context, id uuid.UUID, orgID uuid.UUID, ipAddress string) error {
+	if err := s.repo.Delete(ctx, id, orgID); err != nil {
 		return err
 	}
 
 	audit := &domain.AuditLog{
 		ID:        uuid.New(),
-		UserID:    nil,
+		OrgID:     orgID,
+		UserID:    nil, // or we can pass the requester's user ID here eventually
 		Action:    "user.deleted",
 		Entity:    "users",
 		EntityID:  id,
@@ -108,7 +111,6 @@ func (s *userService) Delete(ctx context.Context, id uuid.UUID, ipAddress string
 	return nil
 }
 
-func (s *userService) List(ctx context.Context) ([]*domain.User, error) {
-	return s.repo.List(ctx)
+func (s *userService) List(ctx context.Context, orgID uuid.UUID) ([]*domain.User, error) {
+	return s.repo.List(ctx, orgID)
 }
-

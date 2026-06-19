@@ -7,6 +7,7 @@ import (
 
 	"github.com/TarunVishwakarma1/ims/backend/internal/domain"
 	"github.com/TarunVishwakarma1/ims/backend/internal/service"
+	"github.com/TarunVishwakarma1/ims/backend/pkg/middleware"
 	"github.com/TarunVishwakarma1/ims/backend/pkg/utils"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-playground/validator/v10"
@@ -27,20 +28,26 @@ func NewUserHandler(service service.UserService) *UserHandler {
 }
 
 type CreateUserRequest struct {
-	Name     string      `json:"name" validate:"required"`
-	Email    string      `json:"email" validate:"required,email"`
-	Password string      `json:"password" validate:"required,min=8"`
-	Role     domain.Role `json:"role" validate:"required,oneof=admin manager staff"`
+	Name     string `json:"name" validate:"required"`
+	Email    string `json:"email" validate:"required,email"`
+	Password string `json:"password" validate:"required,min=8"`
+	Role     string `json:"role" validate:"required"`
 }
 
 type UpdateUserRequest struct {
-	Name     string      `json:"name" validate:"required"`
-	Email    string      `json:"email" validate:"required,email"`
-	Role     domain.Role `json:"role" validate:"required,oneof=admin manager staff"`
-	IsActive bool        `json:"is_active"`
+	Name     string `json:"name" validate:"required"`
+	Email    string `json:"email" validate:"required,email"`
+	Role     string `json:"role" validate:"required"`
+	IsActive bool   `json:"is_active"`
 }
 
 func (h *UserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
+	orgID, ok := middleware.GetOrgIDFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "organization not found in context")
+		return
+	}
+
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1MB
 	var req CreateUserRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -53,9 +60,15 @@ func (h *UserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := utils.ValidatePassword(req.Password); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
 	ipAddress := utils.GetClientIP(r)
 
 	user := &domain.User{
+		OrgID:        orgID,
 		Name:         req.Name,
 		Email:        req.Email,
 		PasswordHash: req.Password,
@@ -77,6 +90,12 @@ func (h *UserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *UserHandler) GetUser(w http.ResponseWriter, r *http.Request) {
+	orgID, ok := middleware.GetOrgIDFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "organization not found in context")
+		return
+	}
+
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
 	if err != nil {
@@ -84,7 +103,7 @@ func (h *UserHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := h.service.GetByID(r.Context(), id)
+	user, err := h.service.GetByID(r.Context(), id, orgID)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "user not found")
@@ -99,6 +118,12 @@ func (h *UserHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *UserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
+	orgID, ok := middleware.GetOrgIDFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "organization not found in context")
+		return
+	}
+
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
 	if err != nil {
@@ -118,7 +143,7 @@ func (h *UserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	existing, err := h.service.GetByID(r.Context(), id)
+	existing, err := h.service.GetByID(r.Context(), id, orgID)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "user not found")
@@ -144,6 +169,12 @@ func (h *UserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *UserHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
+	orgID, ok := middleware.GetOrgIDFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "organization not found in context")
+		return
+	}
+
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
 	if err != nil {
@@ -153,7 +184,7 @@ func (h *UserHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 
 	ipAddress := utils.GetClientIP(r)
 
-	if err := h.service.Delete(r.Context(), id, ipAddress); err != nil {
+	if err := h.service.Delete(r.Context(), id, orgID, ipAddress); err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "user not found")
 			return
@@ -167,7 +198,13 @@ func (h *UserHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *UserHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
-	users, err := h.service.List(r.Context())
+	orgID, ok := middleware.GetOrgIDFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "organization not found in context")
+		return
+	}
+
+	users, err := h.service.List(r.Context(), orgID)
 	if err != nil {
 		zap.L().Error("ListUsers failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "internal server error")

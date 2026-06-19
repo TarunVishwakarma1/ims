@@ -6,8 +6,11 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Plus, Edit, Trash2, Loader2 } from 'lucide-react'
+import { TableSkeleton } from '@/components/ui/table-skeleton'
 
 import { categoriesApi } from '@/lib/api/categories'
+import { usePermission } from '@/hooks/usePermission'
+import { PERMISSIONS } from '@/lib/rbac'
 import type { Category } from '@/types/api'
 
 import { Button } from '@/components/ui/button'
@@ -38,6 +41,7 @@ type CategoryFormValues = z.infer<typeof categorySchema>
 
 export default function CategoriesPage() {
   const queryClient = useQueryClient()
+  const { can } = usePermission()
   
   // State for dialogs
   const [isDialogOpen, setIsDialogOpen] = useState(false)
@@ -128,9 +132,11 @@ export default function CategoriesPage() {
           <h2 className="text-2xl font-bold tracking-tight">Categories</h2>
           <p className="text-muted-foreground">Manage your product categories.</p>
         </div>
-        <Button onClick={handleOpenCreate}>
-          <Plus className="mr-2 h-4 w-4" /> Add Category
-        </Button>
+        {can(PERMISSIONS.CATEGORIES_MANAGE) && (
+          <Button onClick={handleOpenCreate}>
+            <Plus className="mr-2 h-4 w-4" /> Add Category
+          </Button>
+        )}
       </div>
 
       <div className="rounded-md border bg-white dark:bg-zinc-950">
@@ -144,11 +150,7 @@ export default function CategoriesPage() {
           </TableHeader>
           <TableBody>
             {isLoadingCategories ? (
-              <TableRow>
-                <TableCell colSpan={3} className="h-24 text-center">
-                  <Loader2 className="w-6 h-6 animate-spin mx-auto text-muted-foreground" />
-                </TableCell>
-              </TableRow>
+              <TableSkeleton columns={3} rows={5} />
             ) : categories.length > 0 ? (
               categories.map((category) => (
                 <TableRow key={category.id}>
@@ -158,22 +160,26 @@ export default function CategoriesPage() {
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center justify-end gap-2">
-                      <Button variant="ghost" size="icon" onClick={() => {
-                        setSelectedCategory(category)
-                        reset({
-                          name: category.name,
-                          description: category.description,
-                        })
-                        setIsDialogOpen(true)
-                      }}>
-                        <Edit className="w-4 h-4 text-blue-600" />
-                      </Button>
-                      <Button variant="ghost" size="icon" onClick={() => {
-                        setSelectedCategory(category)
-                        setIsDeleteDialogOpen(true)
-                      }}>
-                        <Trash2 className="w-4 h-4 text-red-600" />
-                      </Button>
+                      {can(PERMISSIONS.CATEGORIES_MANAGE) && (
+                        <>
+                          <Button variant="ghost" size="icon" onClick={() => {
+                            setSelectedCategory(category)
+                            reset({
+                              name: category.name,
+                              description: category.description,
+                            })
+                            setIsDialogOpen(true)
+                          }}>
+                            <Edit className="w-4 h-4 text-blue-600" />
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => {
+                            setSelectedCategory(category)
+                            setIsDeleteDialogOpen(true)
+                          }}>
+                            <Trash2 className="w-4 h-4 text-red-600" />
+                          </Button>
+                        </>
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>

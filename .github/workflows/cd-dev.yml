@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - develop
+      - dev/web
+      - dev/backend
 
 jobs:
   backend-test:

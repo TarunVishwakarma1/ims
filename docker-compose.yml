@@ -14,17 +14,37 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
-      
+
+  valkey:
+    image: valkey/valkey:8-alpine
+    command: ["valkey-server", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru", "--appendonly", "no"]
+    ports:
+      - 6379:6379
+    volumes:
+      - valkey_data:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    env_file: 
+    env_file:
       - ./backend/.env.docker
-    ports: 
+      - ./backend/.env.local
+    environment:
+      LOG_FILE_PATH: /var/log/backend/backend.log
+    ports:
       - 8080:8080
+    volumes:
+      - ./backend/logs:/var/log/backend
     depends_on:
       postgres:
+        condition: service_healthy
+      valkey:
         condition: service_healthy
   web:
     build:
@@ -40,8 +60,29 @@ services:
       backend:
         condition: service_started
 
+  # ngrok tunnel — exposes backend:8080 to the public internet so
+  # third-party webhooks (RazorPay, etc) can reach our dev box.
+  # Inspection UI: http://localhost:4040
+  # Public tunnel URL: visible at http://localhost:4040/api/tunnels
+  #
+  # Optional. Disabled by default — start with:
+  #   docker compose --profile webhooks up
+  ngrok:
+    image: ngrok/ngrok:alpine
+    profiles: ["webhooks"]
+    command: ["http", "backend:8080", "--log=stdout"]
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:?Set NGROK_AUTHTOKEN in .env or shell}
+    ports:
+      - 4040:4040
+    depends_on:
+      backend:
+        condition: service_started
+    restart: unless-stopped
+
 volumes:
   postgres_data:
+  valkey_data:
 
 networks:
   default:

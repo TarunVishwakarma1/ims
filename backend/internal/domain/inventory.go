@@ -8,6 +8,7 @@ import (
 
 type Inventory struct {
 	ID                uuid.UUID `json:"id" db:"id"`
+	OrgID             uuid.UUID `json:"org_id" db:"org_id"`
 	ProductID         uuid.UUID `json:"product_id" db:"product_id" validate:"required"`
 	Quantity          int       `json:"quantity" db:"quantity" validate:"min=0"`
 	LowStockThreshold int       `json:"low_stock_threshold" db:"low_stock_threshold" validate:"min=0"`

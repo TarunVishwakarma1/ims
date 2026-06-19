@@ -1,0 +1,7 @@
+{{define "body"}}
+{{template "hero" .Hero}}
+<p style="margin:0 0 6px 0;">Use the code below to {{.Action}}.</p>
+{{template "otp_code" .Code}}
+{{template "alert_warning" .Alert}}
+<p class="muted" style="margin:18px 0 0 0;color:#64748b;font-size:13px;">If you didn't request this, you can ignore this email.</p>
+{{end}}

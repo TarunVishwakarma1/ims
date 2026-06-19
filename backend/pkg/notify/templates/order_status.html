@@ -1,0 +1,6 @@
+{{define "body"}}
+{{template "hero" .Hero}}
+{{if .Alert}}{{template "alert_success" .Alert}}{{end}}
+{{template "key_value_table" .Rows}}
+{{template "cta_button" .CTA}}
+{{end}}

@@ -1,0 +1,9 @@
+{{define "body"}}
+{{template "hero" .Hero}}
+<p style="margin:0 0 8px 0;">Your order has been cancelled.</p>
+{{template "key_value_table" .Rows}}
+{{if .Refund}}{{template "amount_box" .Refund}}{{end}}
+{{if .Alert}}{{template "alert_warning" .Alert}}{{end}}
+{{template "cta_button" .CTA}}
+<p class="muted" style="margin:18px 0 0 0;color:#64748b;font-size:13px;">If this wasn't you, contact your administrator immediately.</p>
+{{end}}

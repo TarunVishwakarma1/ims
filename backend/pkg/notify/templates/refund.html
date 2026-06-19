@@ -1,0 +1,8 @@
+{{define "body"}}
+{{template "hero" .Hero}}
+{{template "amount_box" .Amount}}
+<p style="margin:0 0 14px 0;">{{.Body}}</p>
+{{template "key_value_table" .Rows}}
+{{template "cta_button" .CTA}}
+<p class="muted" style="margin:18px 0 0 0;color:#64748b;font-size:13px;">Refunds typically appear on your statement in 5–7 business days.</p>
+{{end}}

@@ -7,6 +7,7 @@ import (
 
 	"github.com/TarunVishwakarma1/ims/backend/internal/domain"
 	"github.com/TarunVishwakarma1/ims/backend/internal/service"
+	"github.com/TarunVishwakarma1/ims/backend/pkg/middleware"
 	"github.com/TarunVishwakarma1/ims/backend/pkg/utils"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-playground/validator/v10"
@@ -33,12 +34,17 @@ type CreateInventoryRequest struct {
 }
 
 type UpdateInventoryRequest struct {
-	ProductID         uuid.UUID `json:"product_id" validate:"required"`
-	Quantity          int       `json:"quantity" validate:"min=0"`
-	LowStockThreshold int       `json:"low_stock_threshold" validate:"min=0"`
+	Quantity          int `json:"quantity" validate:"min=0"`
+	LowStockThreshold int `json:"low_stock_threshold" validate:"min=0"`
 }
 
 func (h *InventoryHandler) CreateInventory(w http.ResponseWriter, r *http.Request) {
+	orgID, ok := middleware.GetOrgIDFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "organization not found in context")
+		return
+	}
+
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1MB
 	var req CreateInventoryRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -54,6 +60,7 @@ func (h *InventoryHandler) CreateInventory(w http.ResponseWriter, r *http.Reques
 	ipAddress := utils.GetClientIP(r)
 
 	inventory := &domain.Inventory{
+		OrgID:             orgID,
 		ProductID:         req.ProductID,
 		Quantity:          req.Quantity,
 		LowStockThreshold: req.LowStockThreshold,
@@ -73,6 +80,12 @@ func (h *InventoryHandler) CreateInventory(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *InventoryHandler) GetInventoryByProduct(w http.ResponseWriter, r *http.Request) {
+	orgID, ok := middleware.GetOrgIDFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "organization not found in context")
+		return
+	}
+
 	productIDStr := chi.URLParam(r, "product_id")
 	productID, err := uuid.Parse(productIDStr)
 	if err != nil {
@@ -80,7 +93,7 @@ func (h *InventoryHandler) GetInventoryByProduct(w http.ResponseWriter, r *http.
 		return
 	}
 
-	inventory, err := h.service.GetByProductID(r.Context(), productID)
+	inventory, err := h.service.GetByProductID(r.Context(), productID, orgID)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "inventory not found")
@@ -95,6 +108,12 @@ func (h *InventoryHandler) GetInventoryByProduct(w http.ResponseWriter, r *http.
 }
 
 func (h *InventoryHandler) UpdateInventory(w http.ResponseWriter, r *http.Request) {
+	orgID, ok := middleware.GetOrgIDFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "organization not found in context")
+		return
+	}
+
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
 	if err != nil {
@@ -114,7 +133,7 @@ func (h *InventoryHandler) UpdateInventory(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	existing, err := h.service.GetByID(r.Context(), id)
+	existing, err := h.service.GetByID(r.Context(), id, orgID)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "inventory not found")
@@ -125,7 +144,6 @@ func (h *InventoryHandler) UpdateInventory(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	existing.ProductID = req.ProductID
 	existing.Quantity = req.Quantity
 	existing.LowStockThreshold = req.LowStockThreshold
 
@@ -138,8 +156,66 @@ func (h *InventoryHandler) UpdateInventory(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, existing)
 }
 
+// GetByID — GET /api/inventory/{id}
+func (h *InventoryHandler) GetByID(w http.ResponseWriter, r *http.Request) {
+	orgID, ok := middleware.GetOrgIDFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing org context")
+		return
+	}
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid inventory id")
+		return
+	}
+	inv, err := h.service.GetByID(r.Context(), id, orgID)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "inventory not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+	writeJSON(w, http.StatusOK, inv)
+}
+
+// Timeline — GET /api/inventory/{id}/timeline
+func (h *InventoryHandler) Timeline(w http.ResponseWriter, r *http.Request) {
+	orgID, ok := middleware.GetOrgIDFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing org context")
+		return
+	}
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid inventory id")
+		return
+	}
+	events, err := h.service.Timeline(r.Context(), id, orgID)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "inventory not found")
+			return
+		}
+		zap.L().Error("Inventory timeline failed", zap.Error(err))
+		writeError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+	if events == nil {
+		events = []*domain.AuditLog{}
+	}
+	writeJSON(w, http.StatusOK, events)
+}
+
 func (h *InventoryHandler) ListInventory(w http.ResponseWriter, r *http.Request) {
-	list, err := h.service.List(r.Context())
+	orgID, ok := middleware.GetOrgIDFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "organization not found in context")
+		return
+	}
+
+	list, err := h.service.List(r.Context(), orgID)
 	if err != nil {
 		zap.L().Error("ListInventory failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "internal server error")
@@ -150,7 +226,13 @@ func (h *InventoryHandler) ListInventory(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *InventoryHandler) ListLowStock(w http.ResponseWriter, r *http.Request) {
-	list, err := h.service.ListLowStock(r.Context())
+	orgID, ok := middleware.GetOrgIDFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "organization not found in context")
+		return
+	}
+
+	list, err := h.service.ListLowStock(r.Context(), orgID)
 	if err != nil {
 		zap.L().Error("ListLowStock failed", zap.Error(err))
 		writeError(w, http.StatusInternalServerError, "internal server error")
