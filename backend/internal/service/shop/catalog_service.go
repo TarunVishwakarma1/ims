@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
 
@@ -350,7 +351,28 @@ func (s *catalogService) searchProducts(ctx context.Context, q ProductListQuery,
 }
 
 func (s *catalogService) GetProductBySlug(ctx context.Context, slug string) (*ProductDetail, error) {
-	return nil, ErrNotFound
+	var d ProductDetail
+	err := s.pool.QueryRow(ctx, `
+		SELECT p.id, COALESCE(p.shop_slug,''), p.name,
+		       COALESCE(p.shop_price_paise, p.price),
+		       COALESCE(p.shop_image_urls[1], ''),
+		       COALESCE(i.quantity, 0),
+		       COALESCE(c.slug, ''),
+		       COALESCE(p.shop_description, ''),
+		       COALESCE(p.shop_image_urls, '{}'::text[]),
+		       COALESCE(p.gst_rate, 0),
+		       COALESCE(c.name, '')
+		  FROM products p
+		  LEFT JOIN inventory i ON i.product_id = p.id
+		  LEFT JOIN categories c ON c.id = p.category_id
+		 WHERE p.org_id=$1 AND p.shop_slug=$2 AND p.shop_visible=TRUE
+	`, s.orgID, slug).Scan(
+		&d.ID, &d.Slug, &d.Name, &d.PricePaise, &d.ImageURL, &d.AvailableQty, &d.CategorySlug,
+		&d.Description, &d.ImageURLs, &d.GSTRate, &d.CategoryName,
+	)
+	if errors.Is(err, pgx.ErrNoRows) { return nil, ErrNotFound }
+	if err != nil { return nil, err }
+	return &d, nil
 }
 func (s *catalogService) InvalidateCategories(ctx context.Context) error           { return nil }
 func (s *catalogService) InvalidateProductList(ctx context.Context) error          { return nil }

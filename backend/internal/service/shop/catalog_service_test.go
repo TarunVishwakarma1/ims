@@ -2,6 +2,7 @@ package shop_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 
@@ -204,5 +205,35 @@ func TestCatalog_ListProducts_CursorRoundTrip(t *testing.T) {
 		if seen[it.ID] {
 			t.Fatalf("page2 item %s repeats from page1", it.ID)
 		}
+	}
+}
+
+func TestCatalog_GetProductBySlug_Found(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	orgID := testdb.PickOrFakeOrgID(t, pool)
+	cat := testdb.SeedShopCategory(t, pool, orgID, "Snacks", "snacks", 1, true)
+	p, _ := testdb.SeedProductWithStock(t, pool, "Parle G", 1000, 5)
+	_, _ = pool.Exec(context.Background(), `UPDATE products SET category_id=$1 WHERE id=$2`, cat, p)
+	testdb.MarkProductShopVisible(t, pool, p, "parle-g", "Classic biscuit", []string{"u1","u2"}, nil)
+
+	svc := shop.NewCatalogService(pool, cache.NoOp(), orgID)
+	d, err := svc.GetProductBySlug(context.Background(), "parle-g")
+	if err != nil { t.Fatal(err) }
+	if d.Slug != "parle-g" { t.Fatalf("slug wrong: %s", d.Slug) }
+	if d.Description != "Classic biscuit" { t.Fatalf("desc wrong: %s", d.Description) }
+	if len(d.ImageURLs) != 2 { t.Fatalf("images: %v", d.ImageURLs) }
+	if d.CategoryName != "Snacks" { t.Fatalf("cat name: %s", d.CategoryName) }
+}
+
+func TestCatalog_GetProductBySlug_NotShopVisible_404(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	orgID := testdb.PickOrFakeOrgID(t, pool)
+	p, _ := testdb.SeedProductWithStock(t, pool, "Hidden", 1000, 5)
+	_, _ = pool.Exec(context.Background(), `UPDATE products SET shop_slug='hidden' WHERE id=$1`, p)
+
+	svc := shop.NewCatalogService(pool, cache.NoOp(), orgID)
+	d, err := svc.GetProductBySlug(context.Background(), "hidden")
+	if !errors.Is(err, shop.ErrNotFound) || d != nil {
+		t.Fatalf("expected ErrNotFound, got d=%v err=%v", d, err)
 	}
 }
