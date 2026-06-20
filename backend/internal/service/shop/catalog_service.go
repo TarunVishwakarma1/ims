@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.uber.org/zap"
 
 	"github.com/TarunVishwakarma1/ims/backend/pkg/cache"
 )
@@ -217,20 +218,26 @@ func (s *catalogService) buildWhere(q ProductListQuery) (string, []any) {
 	}
 	if q.Cursor != "" {
 		cp, err := decodeCursor(q.Cursor)
-		if err == nil {
+		if err != nil {
+			zap.L().Debug("shop catalog: cursor decode failed, falling back to first page", zap.Error(err))
+		} else {
 			switch q.Sort {
 			case "price_asc":
+				// ASC, ASC — tuple > works
 				args = append(args, cp.SortKey, cp.LastID)
 				clauses = append(clauses,
 					fmt.Sprintf(`(COALESCE(p.shop_price_paise,p.price), p.id) > ($%d, $%d)`, len(args)-1, len(args)))
 			case "price_desc":
+				// DESC, ASC — mixed directions: tuple comparison invalid, expand manually
 				args = append(args, cp.SortKey, cp.LastID)
 				clauses = append(clauses,
-					fmt.Sprintf(`(COALESCE(p.shop_price_paise,p.price), p.id) < ($%d, $%d)`, len(args)-1, len(args)))
-			default: // newest, popular fallback
+					fmt.Sprintf(`(COALESCE(p.shop_price_paise,p.price) < $%d OR (COALESCE(p.shop_price_paise,p.price) = $%d AND p.id > $%d))`, len(args)-1, len(args)-1, len(args)))
+			default:
+				// newest: created_at DESC, id ASC — mixed directions, expand manually.
+				// TODO(Task 9): popular sort needs its own cursor (currently uses created_at).
 				args = append(args, cp.SortKey, cp.LastID)
 				clauses = append(clauses,
-					fmt.Sprintf(`(p.created_at, p.id) < ($%d, $%d)`, len(args)-1, len(args)))
+					fmt.Sprintf(`(p.created_at < $%d OR (p.created_at = $%d AND p.id > $%d))`, len(args)-1, len(args)-1, len(args)))
 			}
 		}
 	}
