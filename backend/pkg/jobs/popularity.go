@@ -12,8 +12,10 @@ import (
 	"github.com/TarunVishwakarma1/ims/backend/pkg/cache"
 )
 
-const popularityWindow = 30 * 24 * time.Hour
 const popularityTTL = 35 * time.Minute // slightly longer than recompute interval (30m) so it never goes cold
+
+// Popularity lookback is hard-coded as `INTERVAL '30 days'` in computePopularity SQL.
+// Kept literal so callers don't pay the Go-duration → Postgres-interval string cast.
 
 // StartPopularityRecompute rebuilds the per-product order-count map every interval
 // for the given shop org. Returns a stop function. Safe to call multiple times.
