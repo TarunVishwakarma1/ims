@@ -51,14 +51,15 @@ func StartPopularityRecompute(ctx context.Context, c cache.Cache, pool *pgxpool.
 }
 
 func computePopularity(ctx context.Context, pool *pgxpool.Pool, orgID uuid.UUID) (map[uuid.UUID]int, error) {
+	// popularityWindow = 30 days; hard-coded literal avoids string→interval cast overhead.
 	rows, err := pool.Query(ctx, `
 		SELECT oi.product_id, COUNT(*)
 		  FROM order_items oi
 		  JOIN orders o ON o.id = oi.order_id
 		 WHERE o.org_id = $1
-		   AND o.created_at > NOW() - $2::interval
+		   AND o.created_at > NOW() - INTERVAL '30 days'
 		 GROUP BY oi.product_id
-	`, orgID, popularityWindow.String())
+	`, orgID)
 	if err != nil {
 		return nil, err
 	}
