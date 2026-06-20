@@ -48,14 +48,14 @@ func (r *bannerRepo) Insert(ctx context.Context, b *domain.Banner) (*domain.Bann
 func (r *bannerRepo) Update(ctx context.Context, b *domain.Banner) (*domain.Banner, error) {
 	row := r.db.QueryRow(ctx, `
 		UPDATE banners SET title=$3, subtitle=$4, image_url=$5, cta_label=$6, cta_link=$7,
-			event_key=$8, starts_at=$9, ends_at=$10, sort_order=$11, is_hero=$12,
-			audience_filter=$13, category_slug=$14, updated_at=NOW()
+			event_key=$8, starts_at=$9, ends_at=$10, status=$11, sort_order=$12, is_hero=$13,
+			audience_filter=$14, category_slug=$15, updated_at=NOW()
 		WHERE id=$1 AND org_id=$2
 		RETURNING updated_at
 	`,
 		b.ID, b.OrgID, b.Title, nullStr(b.Subtitle), nullStr(b.ImageURL),
 		nullStr(b.CTALabel), nullStr(b.CTALink), nullStr(b.EventKey),
-		b.StartsAt, b.EndsAt, b.SortOrder, b.IsHero,
+		b.StartsAt, b.EndsAt, b.Status, b.SortOrder, b.IsHero,
 		nullStr(b.AudienceFilter), nullStr(b.CategorySlug),
 	)
 	if err := row.Scan(&b.UpdatedAt); err != nil {

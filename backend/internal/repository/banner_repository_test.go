@@ -74,3 +74,30 @@ func TestBannerRepo_ListActive(t *testing.T) {
 		t.Fatalf("expected hero first (ORDER BY is_hero DESC); got %+v", got[0])
 	}
 }
+
+func TestBannerRepo_Update_ChangesStatus(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	orgID := testdb.PickOrFakeOrgID(t, pool)
+	now := time.Now().UTC()
+	repo := repository.NewBannerRepository(pool)
+
+	b, err := repo.Insert(context.Background(), &domain.Banner{
+		OrgID:    orgID,
+		Title:    "Status Test",
+		StartsAt: now,
+		EndsAt:   now.Add(48 * time.Hour),
+		Status:   "draft",
+	})
+	if err != nil { t.Fatal(err) }
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), `DELETE FROM banners WHERE id=$1`, b.ID) })
+
+	b.Status = "published"
+	b.ImageURL = "/x.jpg"
+	if _, err := repo.Update(context.Background(), b); err != nil { t.Fatal(err) }
+
+	got, err := repo.GetByID(context.Background(), orgID, b.ID)
+	if err != nil { t.Fatal(err) }
+	if got.Status != "published" {
+		t.Fatalf("expected status=published after Update, got %q", got.Status)
+	}
+}
