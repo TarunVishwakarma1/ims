@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -175,7 +176,8 @@ func (s *catalogService) listProductsFromDB(ctx context.Context, q ProductListQu
 		       COALESCE(p.shop_price_paise, p.price),
 		       COALESCE(p.shop_image_urls[1], ''),
 		       COALESCE(i.quantity, 0),
-		       COALESCE(c.slug, '')
+		       COALESCE(c.slug, ''),
+		       p.created_at
 		  FROM products p
 		  LEFT JOIN inventory i ON i.product_id = p.id
 		  LEFT JOIN categories c ON c.id = p.category_id
@@ -189,12 +191,15 @@ func (s *catalogService) listProductsFromDB(ctx context.Context, q ProductListQu
 	}
 	defer rows.Close()
 	out := []ProductCard{}
+	createdAts := []time.Time{}
 	for rows.Next() {
 		var p ProductCard
-		if err := rows.Scan(&p.ID, &p.Slug, &p.Name, &p.PricePaise, &p.ImageURL, &p.AvailableQty, &p.CategorySlug); err != nil {
+		var ca time.Time
+		if err := rows.Scan(&p.ID, &p.Slug, &p.Name, &p.PricePaise, &p.ImageURL, &p.AvailableQty, &p.CategorySlug, &ca); err != nil {
 			return nil, err
 		}
 		out = append(out, p)
+		createdAts = append(createdAts, ca)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -217,8 +222,8 @@ func (s *catalogService) listProductsFromDB(ctx context.Context, q ProductListQu
 		case "price_asc", "price_desc":
 			key = last.PricePaise
 		default:
-			// Re-fetch created_at for the last row — cheap single point lookup.
-			_ = s.pool.QueryRow(ctx, `SELECT created_at FROM products WHERE id=$1`, last.ID).Scan(&key)
+			// Use created_at already fetched from the main SELECT — no second roundtrip.
+			key = createdAts[len(createdAts)-1]
 		}
 		result.NextCursor = encodeCursor(key, last.ID)
 	}
@@ -292,7 +297,7 @@ func (s *catalogService) buildWhere(q ProductListQuery) (string, []any) {
 				// TODO(Task 9): popular sort needs its own cursor (currently uses created_at).
 				args = append(args, cp.SortKey, cp.LastID)
 				clauses = append(clauses,
-					fmt.Sprintf(`(p.created_at < $%d OR (p.created_at = $%d AND p.id > $%d))`, len(args)-1, len(args)-1, len(args)))
+					fmt.Sprintf(`(p.created_at < $%d::timestamptz OR (p.created_at = $%d::timestamptz AND p.id > $%d))`, len(args)-1, len(args)-1, len(args)))
 			}
 		}
 	}
@@ -306,11 +311,11 @@ func (s *catalogService) buildOrderBy(q ProductListQuery) string {
 	case "price_desc":
 		return `ORDER BY COALESCE(p.shop_price_paise,p.price) DESC, p.id ASC`
 	case "popular":
-		return `ORDER BY (
-		SELECT COUNT(*) FROM order_items oi
-		  JOIN orders o ON o.id = oi.order_id
-		 WHERE oi.product_id = p.id AND o.created_at > NOW() - INTERVAL '30 days'
-	) DESC, p.created_at DESC, p.id ASC`
+		// Cold-start fallback: popularity cache miss. Use newest instead of running
+		// a correlated subquery per row. Popularity is consumed via buildOrderByWithPop
+		// when cache is warm; this branch only fires before the first popularity
+		// recompute completes.
+		return `ORDER BY p.created_at DESC, p.id ASC`
 	}
 	return `ORDER BY p.created_at DESC, p.id ASC` // newest
 }

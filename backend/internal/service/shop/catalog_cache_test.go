@@ -3,6 +3,7 @@ package shop_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -24,7 +25,7 @@ func (c *countingCache) Get(ctx context.Context, key string, dest any) error {
 	err := c.inner.Get(ctx, key, dest)
 	if err == nil {
 		c.hits.Add(1)
-	} else if err == cache.ErrMiss {
+	} else if errors.Is(err, cache.ErrMiss) {
 		c.misses.Add(1)
 	}
 	return err
