@@ -85,10 +85,20 @@ func TestCatalog_ListProducts_InStockOnly(t *testing.T) {
 
 	svc := shop.NewCatalogService(pool, cache.NoOp(), orgID)
 	res, _ := svc.ListProducts(context.Background(), shop.ProductListQuery{InStockOnly: true, Limit: 24})
+	if len(res.Items) == 0 {
+		t.Fatalf("expected at least 1 in-stock item, got 0")
+	}
+	found := false
 	for _, it := range res.Items {
 		if it.AvailableQty == 0 {
 			t.Fatalf("got zero-stock item: %+v", it)
 		}
+		if it.Slug == "in" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected in-stock product 'in' in result; got %+v", res.Items)
 	}
 }
 
