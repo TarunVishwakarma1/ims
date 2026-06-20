@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.uber.org/zap"
 
 	"github.com/TarunVishwakarma1/ims/backend/pkg/cache"
 )
@@ -83,7 +84,11 @@ func (s *feedService) Page(ctx context.Context, cursor, seedCategory string, lim
 	if cursor != "" {
 		c, err := decodeFeedCursor(cursor)
 		if err == nil {
-			cur = c
+			if len(c.Seed) > 64 || len(c.Bucket) > 200 || !validFeedTier(c.Tier) {
+				zap.L().Debug("shop feed: invalid cursor payload, dropping", zap.String("tier", c.Tier))
+			} else {
+				cur = c
+			}
 		}
 	}
 	if cur.Tier == "" {
@@ -310,6 +315,14 @@ func readProductCards(rows pgx.Rows, qerr error, want int) ([]ProductCard, bool,
 		got = got[:want]
 	}
 	return got, exhausted, nil
+}
+
+func validFeedTier(t string) bool {
+	switch t {
+	case "", "category", "related", "popular", "random":
+		return true
+	}
+	return false
 }
 
 func randomSeed() string {
