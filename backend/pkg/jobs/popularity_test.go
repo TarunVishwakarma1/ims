@@ -90,3 +90,14 @@ func TestPopularity_RebuildsMap(t *testing.T) {
 		t.Fatalf("expected counts[%s] > 0, got %v", prodID, counts)
 	}
 }
+
+func TestPopularity_StopIsIdempotent(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	orgID := testdb.PickOrFakeOrgID(t, pool)
+	memc := newMemoryCache(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	stop := jobs.StartPopularityRecompute(ctx, memc, pool, orgID, 5*time.Second)
+	stop()
+	stop() // must not panic
+}

@@ -218,8 +218,8 @@ func SeedOrderForProduct(t *testing.T, pool *pgxpool.Pool, orgID, productID uuid
 	ctx := context.Background()
 	var orderID uuid.UUID
 	if err := pool.QueryRow(ctx, `
-		INSERT INTO orders (org_id, status, total_amount, order_type)
-		VALUES ($1, 'confirmed', 100, 'b2c') RETURNING id
+		INSERT INTO orders (org_id, status, total_amount, order_type, created_at)
+		VALUES ($1, 'confirmed', 100, 'b2c', NOW()) RETURNING id
 	`, orgID).Scan(&orderID); err != nil {
 		t.Fatalf("seed order: %v", err)
 	}

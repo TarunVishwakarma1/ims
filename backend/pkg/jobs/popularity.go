@@ -2,6 +2,7 @@ package jobs
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -18,6 +19,7 @@ const popularityTTL = 35 * time.Minute // slightly longer than recompute interva
 // for the given shop org. Returns a stop function. Safe to call multiple times.
 func StartPopularityRecompute(ctx context.Context, c cache.Cache, pool *pgxpool.Pool, orgID uuid.UUID, interval time.Duration) func() {
 	stop := make(chan struct{})
+	var once sync.Once
 	go func() {
 		t := time.NewTicker(interval)
 		defer t.Stop()
@@ -45,7 +47,7 @@ func StartPopularityRecompute(ctx context.Context, c cache.Cache, pool *pgxpool.
 			}
 		}
 	}()
-	return func() { close(stop) }
+	return func() { once.Do(func() { close(stop) }) }
 }
 
 func computePopularity(ctx context.Context, pool *pgxpool.Pool, orgID uuid.UUID) (map[uuid.UUID]int, error) {

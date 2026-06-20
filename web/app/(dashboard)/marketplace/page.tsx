@@ -110,6 +110,9 @@ export default function MarketplacePage() {
       reset()
       toast.success('Listing created successfully')
     },
+    onError: (err: Error) => {
+      toast.error(err.message)
+    }
   })
 
   const updateMutation = useMutation({
@@ -120,6 +123,9 @@ export default function MarketplacePage() {
       setIsDialogOpen(false)
       toast.success('Listing updated successfully')
     },
+    onError: (err: Error) => {
+      toast.error(err.message)
+    }
   })
 
   const deleteMutation = useMutation({
@@ -130,6 +136,9 @@ export default function MarketplacePage() {
       setIsDeleteDialogOpen(false)
       toast.success('Listing deleted successfully')
     },
+    onError: (err: Error) => {
+      toast.error(err.message)
+    }
   })
 
   const addToCartMutation = useMutation({
@@ -137,6 +146,9 @@ export default function MarketplacePage() {
     onSuccess: () => {
       toast.success('Added to cart')
     },
+    onError: (err: Error) => {
+      toast.error(err.message)
+    }
   })
 
   // Form Setup
