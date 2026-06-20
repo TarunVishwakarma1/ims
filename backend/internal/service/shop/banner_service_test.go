@@ -140,3 +140,60 @@ func TestBanner_CreateGetUpdateDelete(t *testing.T) {
 		t.Fatalf("want ErrBannerNotFound after delete, got %v", err)
 	}
 }
+
+func TestBanner_Publish_RequiresImage(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	orgID := testdb.PickOrFakeOrgID(t, pool)
+	repo := repository.NewBannerRepository(pool)
+	svc := shop.NewBannerService(repo, cache.NoOp(), orgID)
+	now := time.Now().UTC()
+	b, _ := svc.Create(context.Background(), shop.BannerInput{
+		Title: "X", StartsAt: now, EndsAt: now.Add(time.Hour),
+	})
+	t.Cleanup(func() { _ = svc.Delete(context.Background(), b.ID) })
+
+	if err := svc.Publish(context.Background(), b.ID); !errors.Is(err, shop.ErrImageRequired) {
+		t.Fatalf("want ErrImageRequired, got %v", err)
+	}
+}
+
+func TestBanner_Publish_HeroConflict(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	orgID := testdb.PickOrFakeOrgID(t, pool)
+	repo := repository.NewBannerRepository(pool)
+	svc := shop.NewBannerService(repo, cache.NoOp(), orgID)
+	now := time.Now().UTC()
+
+	a, _ := svc.Create(context.Background(), shop.BannerInput{
+		Title: "Hero A", ImageURL: "/x.jpg", IsHero: true,
+		StartsAt: now, EndsAt: now.Add(time.Hour),
+	})
+	t.Cleanup(func() { _ = svc.Delete(context.Background(), a.ID) })
+	if err := svc.Publish(context.Background(), a.ID); err != nil { t.Fatal(err) }
+
+	b, _ := svc.Create(context.Background(), shop.BannerInput{
+		Title: "Hero B", ImageURL: "/y.jpg", IsHero: true,
+		StartsAt: now, EndsAt: now.Add(time.Hour),
+	})
+	t.Cleanup(func() { _ = svc.Delete(context.Background(), b.ID) })
+
+	if err := svc.Publish(context.Background(), b.ID); !errors.Is(err, shop.ErrHeroConflict) {
+		t.Fatalf("want ErrHeroConflict, got %v", err)
+	}
+}
+
+func TestBanner_Archive(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	orgID := testdb.PickOrFakeOrgID(t, pool)
+	repo := repository.NewBannerRepository(pool)
+	svc := shop.NewBannerService(repo, cache.NoOp(), orgID)
+	now := time.Now().UTC()
+	b, _ := svc.Create(context.Background(), shop.BannerInput{
+		Title: "X", ImageURL: "/x.jpg", StartsAt: now, EndsAt: now.Add(time.Hour),
+	})
+	t.Cleanup(func() { _ = svc.Delete(context.Background(), b.ID) })
+	_ = svc.Publish(context.Background(), b.ID)
+	if err := svc.Archive(context.Background(), b.ID); err != nil { t.Fatal(err) }
+	got, _ := svc.Get(context.Background(), b.ID)
+	if got.Status != "archived" { t.Fatalf("status=%s", got.Status) }
+}

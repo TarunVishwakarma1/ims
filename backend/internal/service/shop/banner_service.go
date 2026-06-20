@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/TarunVishwakarma1/ims/backend/internal/domain"
 	"github.com/TarunVishwakarma1/ims/backend/internal/repository"
@@ -143,12 +144,48 @@ func (s *bannerService) Update(ctx context.Context, id uuid.UUID, in BannerInput
 	return out, nil
 }
 
-// Stubs — Task 8 fills these.
-func (s *bannerService) Publish(_ context.Context, _ uuid.UUID) error {
-	return errors.New("not implemented")
+func (s *bannerService) Publish(ctx context.Context, id uuid.UUID) error {
+	current, err := s.repo.GetByID(ctx, s.orgID, id)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) { return ErrBannerNotFound }
+		return err
+	}
+	if current.ImageURL == "" { return ErrImageRequired }
+	if current.IsHero {
+		// Defensive pre-check before relying on DB unique index.
+		others, err := s.repo.List(ctx, s.orgID, "published", "", 100, 0)
+		if err != nil { return err }
+		for _, o := range others {
+			if o.IsHero && o.ID != id { return ErrHeroConflict }
+		}
+	}
+	current.Status = "published"
+	if _, err := s.repo.Update(ctx, current); err != nil {
+		if isUniqueViolation(err) { return ErrHeroConflict }
+		return err
+	}
+	_ = s.InvalidateActive(ctx)
+	return nil
 }
-func (s *bannerService) Archive(_ context.Context, _ uuid.UUID) error {
-	return errors.New("not implemented")
+
+func (s *bannerService) Archive(ctx context.Context, id uuid.UUID) error {
+	current, err := s.repo.GetByID(ctx, s.orgID, id)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) { return ErrBannerNotFound }
+		return err
+	}
+	current.Status = "archived"
+	if _, err := s.repo.Update(ctx, current); err != nil { return err }
+	_ = s.InvalidateActive(ctx)
+	return nil
+}
+
+func isUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return pgErr.Code == "23505"
+	}
+	return false
 }
 
 func (s *bannerService) Delete(ctx context.Context, id uuid.UUID) error {
