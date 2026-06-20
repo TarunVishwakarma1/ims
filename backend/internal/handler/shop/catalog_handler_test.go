@@ -33,6 +33,16 @@ func (f *fakeCatalog) InvalidateCategories(_ context.Context) error        { ret
 func (f *fakeCatalog) InvalidateProductList(_ context.Context) error       { return nil }
 func (f *fakeCatalog) InvalidateProduct(_ context.Context, _ string) error { return nil }
 
+// fakeFeed implements srv.FeedService for handler tests.
+type fakeFeed struct {
+	pg  *srv.FeedPage
+	err error
+}
+
+func (f *fakeFeed) Page(_ context.Context, _ string, _ string, _ int) (*srv.FeedPage, error) {
+	return f.pg, f.err
+}
+
 func TestCatalogHandler_ListCategories_200(t *testing.T) {
 	f := &fakeCatalog{cats: []srv.CategoryView{{Name: "Snacks", Slug: "snacks"}}}
 	h := shophandler.NewCatalogHandler(f, nil)
@@ -102,5 +112,18 @@ func TestCatalogHandler_GetProductBySlug_InvalidSlug_400(t *testing.T) {
 	r.ServeHTTP(rec, httptest.NewRequest("GET", "/products/<script>", nil))
 	if rec.Code != 400 {
 		t.Fatalf("code=%d", rec.Code)
+	}
+}
+
+func TestCatalogHandler_Feed_200(t *testing.T) {
+	pg := &srv.FeedPage{Items: []srv.ProductCard{{Slug: "a"}}, NextCursor: "next", PageInfo: srv.FeedPageInfo{Tier: "category", Page: 1}}
+	h := shophandler.NewCatalogHandler(&fakeCatalog{}, &fakeFeed{pg: pg})
+	rec := httptest.NewRecorder()
+	h.Feed(rec, httptest.NewRequest("GET", "/feed?seed_category=snacks&limit=24", nil))
+	if rec.Code != 200 {
+		t.Fatalf("code=%d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), `"tier":"category"`) {
+		t.Fatalf("body: %s", rec.Body.String())
 	}
 }

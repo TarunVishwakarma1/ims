@@ -135,6 +135,20 @@ func (h *CatalogHandler) GetProductBySlug(w http.ResponseWriter, r *http.Request
 	_, _ = w.Write(body)
 }
 
+func (h *CatalogHandler) Feed(w http.ResponseWriter, r *http.Request) {
+	t0 := time.Now()
+	q := r.URL.Query()
+	limit := atoiOr(q.Get("limit"), 24)
+	pg, err := h.feed.Page(r.Context(), q.Get("cursor"), q.Get("seed_category"), limit)
+	if err != nil {
+		writeErrShop(w, 500, "fetch_failed")
+		return
+	}
+	writeJSONWithHeaders(w, 200, pg,
+		"public, max-age=30, stale-while-revalidate=15",
+		fmt.Sprintf("db;dur=%.1f", float64(time.Since(t0).Microseconds())/1000.0))
+}
+
 func atoiOr(s string, def int) int {
 	n, err := strconv.Atoi(s)
 	if err != nil {
