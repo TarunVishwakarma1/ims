@@ -67,3 +67,28 @@ psql "$DATABASE_URL" -c "SELECT id, customer_id, status, invoice_number, total_a
 ```bash
 psql "$DATABASE_URL" -c "SELECT product_id, quantity FROM inventory WHERE product_id = '<UUID>';"
 ```
+
+## 8. Browse the catalog (Plan 2a)
+
+```bash
+# Categories (cached 60s, gzip if Accept-Encoding: gzip).
+curl -s -H 'Accept-Encoding: gzip' http://localhost:8080/api/shop/categories | gunzip | jq .
+
+# Filter + sort.
+curl -s 'http://localhost:8080/api/shop/products?category=snacks&sort=price_asc&in_stock=true&limit=12' | jq .
+
+# Search.
+curl -s 'http://localhost:8080/api/shop/products?search=biskut' | jq '.items[].name'
+
+# Cursor pagination — copy next_cursor from prior response.
+NEXT=$(curl -s 'http://localhost:8080/api/shop/products?sort=newest&limit=10' | jq -r .next_cursor)
+curl -s "http://localhost:8080/api/shop/products?sort=newest&limit=10&cursor=$NEXT" | jq .
+
+# Detail with ETag.
+ETAG=$(curl -s -D - -o /dev/null http://localhost:8080/api/shop/products/<SLUG> | awk '/^ETag/ {print $2}' | tr -d '\r')
+curl -s -o /dev/null -w '%{http_code}\n' -H "If-None-Match: $ETAG" http://localhost:8080/api/shop/products/<SLUG>
+# → expect 304
+
+# Infinite feed.
+curl -s 'http://localhost:8080/api/shop/feed?seed_category=snacks&limit=12' | jq '{tier:.page_info.tier, count:(.items|length)}'
+```
