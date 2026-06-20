@@ -104,3 +104,19 @@ func sameOrder(a, b []shop.ProductCard) bool {
 	}
 	return true
 }
+
+func TestFeed_EmptyCatalog_DoesNotLoopForever(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	orgID := seedFreshOrg(t, pool)
+	// No products seeded — empty catalog.
+	svc := shop.NewFeedService(pool, cache.NoOp(), orgID)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	pg, err := svc.Page(ctx, "", "snacks", 24)
+	if err != nil {
+		t.Fatalf("page returned error: %v", err)
+	}
+	if len(pg.Items) != 0 {
+		t.Fatalf("expected 0 items, got %d", len(pg.Items))
+	}
+}

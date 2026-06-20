@@ -118,7 +118,14 @@ func (s *feedService) Page(ctx context.Context, cursor, seedCategory string, lim
 		}
 		cur.Skip += len(tierItems)
 		if exhausted {
+			prevTier := cur.Tier
 			cur = s.advance(cur)
+			// Guard: random tier loops back on itself. If we just advanced random→random
+			// AND produced no items this round, the catalog is empty/exhausted — break
+			// to avoid infinite loop.
+			if cur.Tier == prevTier && len(tierItems) == 0 {
+				break
+			}
 		} else {
 			break
 		}
