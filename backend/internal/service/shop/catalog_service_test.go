@@ -141,6 +141,37 @@ func TestCatalog_ListProducts_Pagination(t *testing.T) {
 	}
 }
 
+func TestCatalog_ListProducts_SearchFTS(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	orgID := testdb.PickOrFakeOrgID(t, pool)
+	pA, _ := testdb.SeedProductWithStock(t, pool, "Parle G Biscuit", 1000, 5)
+	pB, _ := testdb.SeedProductWithStock(t, pool, "Brown Bread", 1000, 5)
+	_, _ = pool.Exec(context.Background(), `UPDATE products SET org_id=$1 WHERE id=$2`, orgID, pA)
+	_, _ = pool.Exec(context.Background(), `UPDATE products SET org_id=$1 WHERE id=$2`, orgID, pB)
+	testdb.MarkProductShopVisible(t, pool, pA, "parle-g-biscuit", "", nil, nil)
+	testdb.MarkProductShopVisible(t, pool, pB, "brown-bread", "", nil, nil)
+
+	svc := shop.NewCatalogService(pool, cache.NoOp(), orgID)
+	res, _ := svc.ListProducts(context.Background(), shop.ProductListQuery{Search: "biscuit", Limit: 24})
+	if len(res.Items) == 0 || res.Items[0].Slug != "parle-g-biscuit" {
+		t.Fatalf("expected parle-g-biscuit first, got %+v", res.Items)
+	}
+}
+
+func TestCatalog_ListProducts_SearchFuzzy(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	orgID := testdb.PickOrFakeOrgID(t, pool)
+	p, _ := testdb.SeedProductWithStock(t, pool, "Parle G Biscuit", 1000, 5)
+	_, _ = pool.Exec(context.Background(), `UPDATE products SET org_id=$1 WHERE id=$2`, orgID, p)
+	testdb.MarkProductShopVisible(t, pool, p, "parle-g-biscuit", "", nil, nil)
+
+	svc := shop.NewCatalogService(pool, cache.NoOp(), orgID)
+	res, _ := svc.ListProducts(context.Background(), shop.ProductListQuery{Search: "biskut", Limit: 24})
+	if len(res.Items) == 0 {
+		t.Fatalf("expected fuzzy hit on 'biskut', got 0 items")
+	}
+}
+
 func TestCatalog_ListProducts_CursorRoundTrip(t *testing.T) {
 	pool := testdb.MustOpen(t)
 	orgID := testdb.PickOrFakeOrgID(t, pool)

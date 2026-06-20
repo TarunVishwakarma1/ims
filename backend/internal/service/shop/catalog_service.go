@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/google/uuid"
@@ -16,6 +17,17 @@ import (
 )
 
 var ErrNotFound = errors.New("not found")
+
+var searchSafe = regexp.MustCompile(`[^a-z0-9\s]+`)
+
+func sanitizeSearch(q string) string {
+	q = strings.ToLower(strings.TrimSpace(q))
+	q = searchSafe.ReplaceAllString(q, " ")
+	if len(q) > 100 {
+		q = q[:100]
+	}
+	return strings.TrimSpace(q)
+}
 
 type CategoryView struct {
 	ID      uuid.UUID `json:"id"`
@@ -110,6 +122,13 @@ func (s *catalogService) ListProducts(ctx context.Context, q ProductListQuery) (
 	}
 	if q.PriceMinPaise != nil && q.PriceMaxPaise != nil && *q.PriceMinPaise > *q.PriceMaxPaise {
 		return nil, errors.New("invalid price range")
+	}
+
+	if term := sanitizeSearch(q.Search); len(term) >= 2 {
+		if q.Sort == "" || q.Sort == "newest" {
+			q.Sort = "relevance"
+		}
+		return s.searchProducts(ctx, q, term)
 	}
 
 	whereSQL, args := s.buildWhere(q)
@@ -259,6 +278,77 @@ func (s *catalogService) buildOrderBy(q ProductListQuery) string {
 	}
 	return `ORDER BY p.created_at DESC, p.id ASC` // newest
 }
+func (s *catalogService) searchProducts(ctx context.Context, q ProductListQuery, term string) (*ProductListResult, error) {
+	args := []any{s.orgID, term}
+	clauses := []string{`p.org_id = $1`, `p.shop_visible = TRUE`,
+		`(p.search_vector @@ plainto_tsquery('english', $2) OR word_similarity($2, p.name) > 0.2)`}
+	if q.CategorySlug != "" {
+		args = append(args, q.CategorySlug)
+		clauses = append(clauses, fmt.Sprintf(`c.slug = $%d`, len(args)))
+	}
+	if q.PriceMinPaise != nil {
+		args = append(args, *q.PriceMinPaise)
+		clauses = append(clauses, fmt.Sprintf(`COALESCE(p.shop_price_paise,p.price) >= $%d`, len(args)))
+	}
+	if q.PriceMaxPaise != nil {
+		args = append(args, *q.PriceMaxPaise)
+		clauses = append(clauses, fmt.Sprintf(`COALESCE(p.shop_price_paise,p.price) <= $%d`, len(args)))
+	}
+	if q.InStockOnly {
+		clauses = append(clauses, `COALESCE(i.quantity,0) > 0`)
+	}
+	where := "WHERE " + strings.Join(clauses, " AND ")
+	listSQL := `
+		WITH ranked AS (
+		  SELECT p.id, COALESCE(p.shop_slug,'') AS slug, p.name,
+		         COALESCE(p.shop_price_paise, p.price) AS price_paise,
+		         COALESCE(p.shop_image_urls[1], '') AS image_url,
+		         COALESCE(i.quantity, 0) AS available_qty,
+		         COALESCE(c.slug, '') AS category_slug,
+		         ts_rank(p.search_vector, plainto_tsquery('english', $2)) AS fts_rank,
+		         word_similarity($2, p.name) AS trgm_sim
+		    FROM products p
+		    LEFT JOIN inventory i ON i.product_id = p.id
+		    LEFT JOIN categories c ON c.id = p.category_id
+		    ` + where + `
+		)
+		SELECT id, slug, name, price_paise, image_url, available_qty, category_slug
+		  FROM ranked
+		 ORDER BY (fts_rank * 2 + trgm_sim) DESC, name ASC
+		 LIMIT ` + fmt.Sprintf("$%d", len(args)+1) + ` OFFSET ` + fmt.Sprintf("$%d", len(args)+2)
+	args = append(args, q.Limit, q.Offset)
+
+	rows, err := s.pool.Query(ctx, listSQL, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []ProductCard{}
+	for rows.Next() {
+		var p ProductCard
+		if err := rows.Scan(&p.ID, &p.Slug, &p.Name, &p.PricePaise, &p.ImageURL, &p.AvailableQty, &p.CategorySlug); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	countArgs := args[:len(args)-2]
+	countSQL := `
+		SELECT COUNT(*) FROM products p
+		  LEFT JOIN inventory i ON i.product_id = p.id
+		  LEFT JOIN categories c ON c.id = p.category_id
+		  ` + where
+	var total int
+	if err := s.pool.QueryRow(ctx, countSQL, countArgs...).Scan(&total); err != nil {
+		return nil, err
+	}
+
+	return &ProductListResult{Items: out, TotalCount: total, Limit: q.Limit, Offset: q.Offset}, nil
+}
+
 func (s *catalogService) GetProductBySlug(ctx context.Context, slug string) (*ProductDetail, error) {
 	return nil, ErrNotFound
 }
