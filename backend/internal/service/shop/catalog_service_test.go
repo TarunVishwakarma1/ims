@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/TarunVishwakarma1/ims/backend/internal/service/shop"
 	"github.com/TarunVishwakarma1/ims/backend/internal/testdb"
@@ -235,5 +236,38 @@ func TestCatalog_GetProductBySlug_NotShopVisible_404(t *testing.T) {
 	d, err := svc.GetProductBySlug(context.Background(), "hidden")
 	if !errors.Is(err, shop.ErrNotFound) || d != nil {
 		t.Fatalf("expected ErrNotFound, got d=%v err=%v", d, err)
+	}
+}
+
+func TestCatalog_ListProducts_PopularUsesCache(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	orgID := testdb.PickOrFakeOrgID(t, pool)
+	pA, _ := testdb.SeedProductWithStock(t, pool, "PopA", 100, 5)
+	pB, _ := testdb.SeedProductWithStock(t, pool, "PopB", 100, 5)
+	_, _ = pool.Exec(context.Background(), `UPDATE products SET org_id=$1 WHERE id=$2`, orgID, pA)
+	_, _ = pool.Exec(context.Background(), `UPDATE products SET org_id=$1 WHERE id=$2`, orgID, pB)
+	testdb.MarkProductShopVisible(t, pool, pA, "pop-a", "", nil, nil)
+	testdb.MarkProductShopVisible(t, pool, pB, "pop-b", "", nil, nil)
+
+	memc := newMemCache()
+	_ = memc.Set(context.Background(), "shop:popular:"+orgID.String(), map[uuid.UUID]int{pA: 10, pB: 1}, time.Minute)
+
+	svc := shop.NewCatalogService(pool, memc, orgID)
+	res, err := svc.ListProducts(context.Background(), shop.ProductListQuery{Sort: "popular", Limit: 24})
+	if err != nil {
+		t.Fatalf("ListProducts error: %v", err)
+	}
+	// pA must appear before pB (we tagged pA = 10 counts, pB = 1)
+	var iA, iB int = -1, -1
+	for i, it := range res.Items {
+		if it.ID == pA {
+			iA = i
+		}
+		if it.ID == pB {
+			iB = i
+		}
+	}
+	if iA < 0 || iB < 0 || iA > iB {
+		t.Fatalf("expected pA before pB, got positions iA=%d iB=%d (items=%v)", iA, iB, res.Items)
 	}
 }

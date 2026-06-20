@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/google/uuid"
@@ -161,7 +162,13 @@ func (s *catalogService) listProductsFromDB(ctx context.Context, q ProductListQu
 	}
 
 	whereSQL, args := s.buildWhere(q)
-	orderSQL := s.buildOrderBy(q)
+	// Capture WHERE-only args for the count query (before ORDER BY VALUES args are appended).
+	whereArgCount := len(args)
+	var popMap map[uuid.UUID]int
+	if q.Sort == "popular" {
+		_ = s.cache.Get(ctx, "shop:popular:"+s.orgID.String(), &popMap)
+	}
+	orderSQL := s.buildOrderByWithPop(q, popMap, &args)
 
 	listSQL := `
 		SELECT p.id, COALESCE(p.shop_slug,''), p.name,
@@ -193,8 +200,8 @@ func (s *catalogService) listProductsFromDB(ctx context.Context, q ProductListQu
 		return nil, err
 	}
 
-	// Count (without LIMIT/OFFSET).
-	countArgs := args[:len(args)-2]
+	// Count (without LIMIT/OFFSET or ORDER BY VALUES args).
+	countArgs := args[:whereArgCount]
 	countSQL := `SELECT COUNT(*) FROM products p LEFT JOIN inventory i ON i.product_id=p.id LEFT JOIN categories c ON c.id=p.category_id ` + whereSQL
 	var total int
 	if err := s.pool.QueryRow(ctx, countSQL, countArgs...).Scan(&total); err != nil {
@@ -307,6 +314,36 @@ func (s *catalogService) buildOrderBy(q ProductListQuery) string {
 	}
 	return `ORDER BY p.created_at DESC, p.id ASC` // newest
 }
+func (s *catalogService) buildOrderByWithPop(q ProductListQuery, popMap map[uuid.UUID]int, args *[]any) string {
+	if q.Sort == "popular" && len(popMap) > 0 {
+		// Build a VALUES expression. Cap to top-200 ids to keep SQL bounded.
+		type entry struct {
+			id uuid.UUID
+			n  int
+		}
+		entries := make([]entry, 0, len(popMap))
+		for id, n := range popMap {
+			entries = append(entries, entry{id, n})
+		}
+		sort.Slice(entries, func(i, j int) bool { return entries[i].n > entries[j].n })
+		if len(entries) > 200 {
+			entries = entries[:200]
+		}
+		var b strings.Builder
+		b.WriteString(`ORDER BY COALESCE((SELECT score FROM (VALUES `)
+		for i, e := range entries {
+			if i > 0 {
+				b.WriteString(",")
+			}
+			*args = append(*args, e.id, e.n)
+			fmt.Fprintf(&b, "($%d::uuid,$%d::int)", len(*args)-1, len(*args))
+		}
+		b.WriteString(`) AS popcat(pid,score) WHERE popcat.pid = p.id),0) DESC, p.created_at DESC, p.id ASC`)
+		return b.String()
+	}
+	return s.buildOrderBy(q)
+}
+
 func (s *catalogService) searchProducts(ctx context.Context, q ProductListQuery, term string) (*ProductListResult, error) {
 	args := []any{s.orgID, term}
 	clauses := []string{`p.org_id = $1`, `p.shop_visible = TRUE`,
