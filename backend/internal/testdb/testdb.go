@@ -210,6 +210,32 @@ func MarkProductShopVisible(t *testing.T, pool *pgxpool.Pool, productID uuid.UUI
 	}
 }
 
+// SeedOrderForProduct inserts one confirmed b2c orders row + one order_items row
+// dated NOW() (within the 30-day popularity window). Registers cleanup for both rows.
+// Returns the new order ID.
+func SeedOrderForProduct(t *testing.T, pool *pgxpool.Pool, orgID, productID uuid.UUID) uuid.UUID {
+	t.Helper()
+	ctx := context.Background()
+	var orderID uuid.UUID
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO orders (org_id, status, total_amount, order_type)
+		VALUES ($1, 'confirmed', 100, 'b2c') RETURNING id
+	`, orgID).Scan(&orderID); err != nil {
+		t.Fatalf("seed order: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO order_items (order_id, product_id, quantity, unit_price, org_id)
+		VALUES ($1, $2, 1, 100, $3)
+	`, orderID, productID, orgID); err != nil {
+		t.Fatalf("seed order_item: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(ctx, `DELETE FROM order_items WHERE order_id=$1`, orderID)
+		_, _ = pool.Exec(ctx, `DELETE FROM orders WHERE id=$1`, orderID)
+	})
+	return orderID
+}
+
 // SeedShopCategory inserts a category and registers cleanup. Pass shopVisible=true to expose to shop.
 func SeedShopCategory(t *testing.T, pool *pgxpool.Pool, orgID uuid.UUID, name, slug string, sortOrder int, shopVisible bool) uuid.UUID {
 	t.Helper()
