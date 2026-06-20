@@ -2,6 +2,7 @@ package shop_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/TarunVishwakarma1/ims/backend/internal/service/shop"
@@ -26,5 +27,105 @@ func TestCatalog_ListCategories_OnlyShopVisible(t *testing.T) {
 	}
 	if cats[0].Slug != "snacks" || cats[1].Slug != "bakery" {
 		t.Fatalf("wrong sort order: %+v", cats)
+	}
+}
+
+func TestCatalog_ListProducts_FilterByCategory(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	orgID := testdb.PickOrFakeOrgID(t, pool)
+	catA := testdb.SeedShopCategory(t, pool, orgID, "Snacks", "snacks", 1, true)
+	catB := testdb.SeedShopCategory(t, pool, orgID, "Bakery", "bakery", 2, true)
+
+	pA, _ := testdb.SeedProductWithStock(t, pool, "Snack A", 100, 5)
+	pB, _ := testdb.SeedProductWithStock(t, pool, "Bake B", 100, 5)
+	_, _ = pool.Exec(context.Background(), `UPDATE products SET org_id=$1, category_id=$2 WHERE id=$3`, orgID, catA, pA)
+	_, _ = pool.Exec(context.Background(), `UPDATE products SET org_id=$1, category_id=$2 WHERE id=$3`, orgID, catB, pB)
+	testdb.MarkProductShopVisible(t, pool, pA, "snack-a", "desc A", []string{"u1"}, nil)
+	testdb.MarkProductShopVisible(t, pool, pB, "bake-b", "desc B", []string{"u2"}, nil)
+
+	svc := shop.NewCatalogService(pool, cache.NoOp(), orgID)
+	res, err := svc.ListProducts(context.Background(), shop.ProductListQuery{CategorySlug: "snacks", Limit: 24})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Items) != 1 || res.Items[0].Slug != "snack-a" {
+		t.Fatalf("unexpected: %+v", res.Items)
+	}
+}
+
+func TestCatalog_ListProducts_PriceRange(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	orgID := testdb.PickOrFakeOrgID(t, pool)
+	cat := testdb.SeedShopCategory(t, pool, orgID, "All", "all", 1, true)
+
+	for i, price := range []int64{1000, 5000, 9999} {
+		p, _ := testdb.SeedProductWithStock(t, pool, "P"+string(rune('A'+i)), price, 5)
+		_, _ = pool.Exec(context.Background(), `UPDATE products SET org_id=$1, category_id=$2 WHERE id=$3`, orgID, cat, p)
+		testdb.MarkProductShopVisible(t, pool, p, "p-"+string(rune('a'+i)), "", nil, nil)
+	}
+
+	svc := shop.NewCatalogService(pool, cache.NoOp(), orgID)
+	min := int64(2000)
+	max := int64(8000)
+	res, _ := svc.ListProducts(context.Background(), shop.ProductListQuery{PriceMinPaise: &min, PriceMaxPaise: &max, Limit: 24})
+	if len(res.Items) != 1 || res.Items[0].PricePaise != 5000 {
+		t.Fatalf("expected one 5000-paise item, got %+v", res.Items)
+	}
+}
+
+func TestCatalog_ListProducts_InStockOnly(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	orgID := testdb.PickOrFakeOrgID(t, pool)
+	pIn, _ := testdb.SeedProductWithStock(t, pool, "InStock", 500, 5)
+	pOut, _ := testdb.SeedProductWithStock(t, pool, "OutStock", 500, 0)
+	_, _ = pool.Exec(context.Background(), `UPDATE products SET org_id=$1 WHERE id=$2`, orgID, pIn)
+	_, _ = pool.Exec(context.Background(), `UPDATE products SET org_id=$1 WHERE id=$2`, orgID, pOut)
+	testdb.MarkProductShopVisible(t, pool, pIn, "in", "", nil, nil)
+	testdb.MarkProductShopVisible(t, pool, pOut, "out", "", nil, nil)
+
+	svc := shop.NewCatalogService(pool, cache.NoOp(), orgID)
+	res, _ := svc.ListProducts(context.Background(), shop.ProductListQuery{InStockOnly: true, Limit: 24})
+	for _, it := range res.Items {
+		if it.AvailableQty == 0 {
+			t.Fatalf("got zero-stock item: %+v", it)
+		}
+	}
+}
+
+func TestCatalog_ListProducts_SortPriceAsc(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	orgID := testdb.PickOrFakeOrgID(t, pool)
+	for i, price := range []int64{500, 1500, 1000} {
+		p, _ := testdb.SeedProductWithStock(t, pool, "S"+string(rune('A'+i)), price, 5)
+		_, _ = pool.Exec(context.Background(), `UPDATE products SET org_id=$1 WHERE id=$2`, orgID, p)
+		testdb.MarkProductShopVisible(t, pool, p, "s-"+string(rune('a'+i)), "", nil, nil)
+	}
+	svc := shop.NewCatalogService(pool, cache.NoOp(), orgID)
+	res, _ := svc.ListProducts(context.Background(), shop.ProductListQuery{Sort: "price_asc", Limit: 24})
+	if len(res.Items) < 3 {
+		t.Fatalf("expected ≥3 items, got %d", len(res.Items))
+	}
+	for i := 1; i < len(res.Items); i++ {
+		if res.Items[i-1].PricePaise > res.Items[i].PricePaise {
+			t.Fatalf("not ascending at i=%d: %+v", i, res.Items)
+		}
+	}
+}
+
+func TestCatalog_ListProducts_Pagination(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	orgID := testdb.PickOrFakeOrgID(t, pool)
+	for i := 0; i < 30; i++ {
+		p, _ := testdb.SeedProductWithStock(t, pool, fmt.Sprintf("P%02d", i), 100, 5)
+		_, _ = pool.Exec(context.Background(), `UPDATE products SET org_id=$1 WHERE id=$2`, orgID, p)
+		testdb.MarkProductShopVisible(t, pool, p, fmt.Sprintf("p-%02d", i), "", nil, nil)
+	}
+	svc := shop.NewCatalogService(pool, cache.NoOp(), orgID)
+	res, _ := svc.ListProducts(context.Background(), shop.ProductListQuery{Sort: "newest", Limit: 10, Offset: 10})
+	if len(res.Items) != 10 {
+		t.Fatalf("expected 10, got %d", len(res.Items))
+	}
+	if res.TotalCount < 30 {
+		t.Fatalf("total %d < 30", res.TotalCount)
 	}
 }

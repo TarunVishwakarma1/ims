@@ -195,6 +195,21 @@ func PickOrFakeOrgID(t *testing.T, pool *pgxpool.Pool) uuid.UUID {
 	return id
 }
 
+// MarkProductShopVisible flips an existing product to shop-visible with the
+// supplied slug/description/images. Falls back to nil shopPrice (price column wins).
+func MarkProductShopVisible(t *testing.T, pool *pgxpool.Pool, productID uuid.UUID, slug, description string, imageURLs []string, shopPricePaise *int64) {
+	t.Helper()
+	ctx := context.Background()
+	if _, err := pool.Exec(ctx, `
+		UPDATE products
+		   SET shop_visible=TRUE, shop_slug=$2, shop_description=$3,
+		       shop_image_urls=$4, shop_price_paise=$5
+		 WHERE id=$1
+	`, productID, slug, description, imageURLs, shopPricePaise); err != nil {
+		t.Fatalf("mark visible: %v", err)
+	}
+}
+
 // SeedShopCategory inserts a category and registers cleanup. Pass shopVisible=true to expose to shop.
 func SeedShopCategory(t *testing.T, pool *pgxpool.Pool, orgID uuid.UUID, name, slug string, sortOrder int, shopVisible bool) uuid.UUID {
 	t.Helper()
