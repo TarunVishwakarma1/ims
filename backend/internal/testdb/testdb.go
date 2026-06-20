@@ -178,3 +178,35 @@ func SeedAddress(t *testing.T, pool *pgxpool.Pool, customerID uuid.UUID) uuid.UU
 func OrderRepo(pool *pgxpool.Pool) repository.OrderRepository {
 	return repository.NewOrderRepository(pool)
 }
+
+// PickOrFakeOrgID returns any existing org id, or creates a throwaway one.
+func PickOrFakeOrgID(t *testing.T, pool *pgxpool.Pool) uuid.UUID {
+	t.Helper()
+	ctx := context.Background()
+	var id uuid.UUID
+	if err := pool.QueryRow(ctx, `SELECT id FROM organizations LIMIT 1`).Scan(&id); err == nil {
+		return id
+	}
+	slug := fmt.Sprintf("test-org-%d", time.Now().UnixNano())
+	if err := pool.QueryRow(ctx, `INSERT INTO organizations (name, slug) VALUES ('TestOrg', $1) RETURNING id`, slug).Scan(&id); err != nil {
+		t.Fatalf("create org: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(ctx, `DELETE FROM organizations WHERE id=$1`, id) })
+	return id
+}
+
+// SeedShopCategory inserts a category and registers cleanup. Pass shopVisible=true to expose to shop.
+func SeedShopCategory(t *testing.T, pool *pgxpool.Pool, orgID uuid.UUID, name, slug string, sortOrder int, shopVisible bool) uuid.UUID {
+	t.Helper()
+	ctx := context.Background()
+	var id uuid.UUID
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO categories (org_id, name, slug, sort_order, shop_visible)
+		VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+		orgID, name, slug, sortOrder, shopVisible,
+	).Scan(&id); err != nil {
+		t.Fatalf("seed category: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(ctx, `DELETE FROM categories WHERE id=$1`, id) })
+	return id
+}
