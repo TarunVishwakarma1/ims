@@ -95,6 +95,20 @@ func NewCatalogService(pool *pgxpool.Pool, c cache.Cache, orgID uuid.UUID) Catal
 }
 
 func (s *catalogService) ListCategories(ctx context.Context) ([]CategoryView, error) {
+	key := fmt.Sprintf(keyCategories, s.orgID)
+	var cached []CategoryView
+	if err := s.cache.Get(ctx, key, &cached); err == nil {
+		return cached, nil
+	}
+	out, err := s.listCategoriesFromDB(ctx)
+	if err != nil {
+		return nil, err
+	}
+	_ = s.cache.Set(ctx, key, out, ttlMedium)
+	return out, nil
+}
+
+func (s *catalogService) listCategoriesFromDB(ctx context.Context) ([]CategoryView, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, name, COALESCE(slug,''), COALESCE(icon_url,'')
 		  FROM categories
@@ -125,6 +139,20 @@ func (s *catalogService) ListProducts(ctx context.Context, q ProductListQuery) (
 		return nil, errors.New("invalid price range")
 	}
 
+	key := fmt.Sprintf(keyProductList, s.orgID, plistHash(q))
+	var cached ProductListResult
+	if err := s.cache.Get(ctx, key, &cached); err == nil {
+		return &cached, nil
+	}
+	out, err := s.listProductsFromDB(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	_ = s.cache.Set(ctx, key, out, ttlShort)
+	return out, nil
+}
+
+func (s *catalogService) listProductsFromDB(ctx context.Context, q ProductListQuery) (*ProductListResult, error) {
 	if term := sanitizeSearch(q.Search); len(term) >= 2 {
 		if q.Sort == "" || q.Sort == "newest" {
 			q.Sort = "relevance"
@@ -351,6 +379,20 @@ func (s *catalogService) searchProducts(ctx context.Context, q ProductListQuery,
 }
 
 func (s *catalogService) GetProductBySlug(ctx context.Context, slug string) (*ProductDetail, error) {
+	key := fmt.Sprintf(keyProductDetail, s.orgID, slug)
+	var cached ProductDetail
+	if err := s.cache.Get(ctx, key, &cached); err == nil {
+		return &cached, nil
+	}
+	out, err := s.getProductFromDB(ctx, slug)
+	if err != nil {
+		return nil, err
+	}
+	_ = s.cache.Set(ctx, key, out, ttlMedium)
+	return out, nil
+}
+
+func (s *catalogService) getProductFromDB(ctx context.Context, slug string) (*ProductDetail, error) {
 	var d ProductDetail
 	err := s.pool.QueryRow(ctx, `
 		SELECT p.id, COALESCE(p.shop_slug,''), p.name,
@@ -370,13 +412,24 @@ func (s *catalogService) GetProductBySlug(ctx context.Context, slug string) (*Pr
 		&d.ID, &d.Slug, &d.Name, &d.PricePaise, &d.ImageURL, &d.AvailableQty, &d.CategorySlug,
 		&d.Description, &d.ImageURLs, &d.GSTRate, &d.CategoryName,
 	)
-	if errors.Is(err, pgx.ErrNoRows) { return nil, ErrNotFound }
-	if err != nil { return nil, err }
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
 	return &d, nil
 }
-func (s *catalogService) InvalidateCategories(ctx context.Context) error           { return nil }
-func (s *catalogService) InvalidateProductList(ctx context.Context) error          { return nil }
-func (s *catalogService) InvalidateProduct(ctx context.Context, slug string) error { return nil }
+
+func (s *catalogService) InvalidateCategories(ctx context.Context) error {
+	return s.cache.Delete(ctx, fmt.Sprintf(keyCategories, s.orgID))
+}
+func (s *catalogService) InvalidateProductList(ctx context.Context) error {
+	return s.cache.DeleteByPattern(ctx, fmt.Sprintf("shop:plist:%s:*", s.orgID))
+}
+func (s *catalogService) InvalidateProduct(ctx context.Context, slug string) error {
+	return s.cache.Delete(ctx, fmt.Sprintf(keyProductDetail, s.orgID, slug))
+}
 
 // Cursor helpers.
 
