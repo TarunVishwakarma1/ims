@@ -2,6 +2,7 @@ package shop_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -79,5 +80,63 @@ func TestBanner_CacheHit(t *testing.T) {
 	a3, _ := svc.ListActive(context.Background(), "")
 	if len(a3.Carousel) != 2 {
 		t.Fatalf("post-invalidate expected 2 carousel, got %d", len(a3.Carousel))
+	}
+}
+
+func TestBanner_CreateValidation(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	orgID := testdb.PickOrFakeOrgID(t, pool)
+	repo := repository.NewBannerRepository(pool)
+	svc := shop.NewBannerService(repo, cache.NoOp(), orgID)
+	now := time.Now().UTC()
+
+	// Invalid date range
+	_, err := svc.Create(context.Background(), shop.BannerInput{
+		Title: "Bad", StartsAt: now, EndsAt: now.Add(-1 * time.Hour),
+	})
+	if !errors.Is(err, shop.ErrInvalidDateRange) {
+		t.Fatalf("want ErrInvalidDateRange, got %v", err)
+	}
+
+	// Invalid audience
+	_, err = svc.Create(context.Background(), shop.BannerInput{
+		Title: "Bad", StartsAt: now, EndsAt: now.Add(time.Hour),
+		AudienceFilter: "lolwut",
+	})
+	if !errors.Is(err, shop.ErrInvalidAudience) {
+		t.Fatalf("want ErrInvalidAudience, got %v", err)
+	}
+}
+
+func TestBanner_CreateGetUpdateDelete(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	orgID := testdb.PickOrFakeOrgID(t, pool)
+	repo := repository.NewBannerRepository(pool)
+	svc := shop.NewBannerService(repo, cache.NoOp(), orgID)
+	now := time.Now().UTC()
+
+	created, err := svc.Create(context.Background(), shop.BannerInput{
+		Title: "Diwali", StartsAt: now, EndsAt: now.Add(48 * time.Hour),
+		EventKey: "diwali_2026", AudienceFilter: "all",
+	})
+	if err != nil { t.Fatal(err) }
+	t.Cleanup(func() { _ = svc.Delete(context.Background(), created.ID) })
+
+	got, err := svc.Get(context.Background(), created.ID)
+	if err != nil { t.Fatalf("Get: %v", err) }
+	if got.Title != "Diwali" { t.Fatalf("title: %s", got.Title) }
+
+	updated, err := svc.Update(context.Background(), created.ID, shop.BannerInput{
+		Title: "Diwali Mega", StartsAt: now, EndsAt: now.Add(72 * time.Hour),
+		EventKey: "diwali_2026", AudienceFilter: "all", SortOrder: 5,
+	})
+	if err != nil { t.Fatal(err) }
+	if updated.Title != "Diwali Mega" || updated.SortOrder != 5 {
+		t.Fatalf("update did not apply: %+v", updated)
+	}
+
+	if err := svc.Delete(context.Background(), created.ID); err != nil { t.Fatal(err) }
+	if _, err := svc.Get(context.Background(), created.ID); !errors.Is(err, shop.ErrBannerNotFound) {
+		t.Fatalf("want ErrBannerNotFound after delete, got %v", err)
 	}
 }

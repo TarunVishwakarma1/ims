@@ -89,25 +89,106 @@ func (s *bannerService) InvalidateActive(ctx context.Context) error {
 	return s.cache.DeleteByPattern(ctx, bannerCacheKeyPrefix+s.orgID.String()+"*")
 }
 
-// Stubs — Tasks 7/8 fill these.
-func (s *bannerService) Create(_ context.Context, _ BannerInput) (*domain.Banner, error) {
-	return nil, errors.New("not implemented")
+var validAudiences = map[string]struct{}{"": {}, "all": {}, "new": {}, "returning": {}}
+
+func (s *bannerService) Create(ctx context.Context, in BannerInput) (*domain.Banner, error) {
+	if err := validateInput(in); err != nil { return nil, err }
+	b := &domain.Banner{
+		OrgID:          s.orgID,
+		Title:          in.Title,
+		Subtitle:       in.Subtitle,
+		ImageURL:       in.ImageURL,
+		CTALabel:       in.CTALabel,
+		CTALink:        in.CTALink,
+		EventKey:       in.EventKey,
+		StartsAt:       in.StartsAt,
+		EndsAt:         in.EndsAt,
+		Status:         "draft",
+		SortOrder:      in.SortOrder,
+		IsHero:         in.IsHero,
+		AudienceFilter: normalizeAudience(in.AudienceFilter),
+		CategorySlug:   in.CategorySlug,
+	}
+	out, err := s.repo.Insert(ctx, b)
+	if err != nil { return nil, err }
+	_ = s.InvalidateActive(ctx)
+	return out, nil
 }
-func (s *bannerService) Update(_ context.Context, _ uuid.UUID, _ BannerInput) (*domain.Banner, error) {
-	return nil, errors.New("not implemented")
+
+func (s *bannerService) Update(ctx context.Context, id uuid.UUID, in BannerInput) (*domain.Banner, error) {
+	if err := validateInput(in); err != nil { return nil, err }
+	current, err := s.repo.GetByID(ctx, s.orgID, id)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) { return nil, ErrBannerNotFound }
+		return nil, err
+	}
+	current.Title = in.Title
+	current.Subtitle = in.Subtitle
+	current.ImageURL = in.ImageURL
+	current.CTALabel = in.CTALabel
+	current.CTALink = in.CTALink
+	current.EventKey = in.EventKey
+	current.StartsAt = in.StartsAt
+	current.EndsAt = in.EndsAt
+	current.SortOrder = in.SortOrder
+	current.IsHero = in.IsHero
+	current.AudienceFilter = normalizeAudience(in.AudienceFilter)
+	current.CategorySlug = in.CategorySlug
+	out, err := s.repo.Update(ctx, current)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) { return nil, ErrBannerNotFound }
+		return nil, err
+	}
+	_ = s.InvalidateActive(ctx)
+	return out, nil
 }
+
+// Stubs — Task 8 fills these.
 func (s *bannerService) Publish(_ context.Context, _ uuid.UUID) error {
 	return errors.New("not implemented")
 }
 func (s *bannerService) Archive(_ context.Context, _ uuid.UUID) error {
 	return errors.New("not implemented")
 }
-func (s *bannerService) Delete(_ context.Context, _ uuid.UUID) error {
-	return errors.New("not implemented")
+
+func (s *bannerService) Delete(ctx context.Context, id uuid.UUID) error {
+	if err := s.repo.Delete(ctx, s.orgID, id); err != nil {
+		if errors.Is(err, domain.ErrNotFound) { return ErrBannerNotFound }
+		return err
+	}
+	_ = s.InvalidateActive(ctx)
+	return nil
 }
-func (s *bannerService) Get(_ context.Context, _ uuid.UUID) (*domain.Banner, error) {
-	return nil, ErrBannerNotFound
+
+func (s *bannerService) Get(ctx context.Context, id uuid.UUID) (*domain.Banner, error) {
+	b, err := s.repo.GetByID(ctx, s.orgID, id)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) { return nil, ErrBannerNotFound }
+		return nil, err
+	}
+	return b, nil
 }
-func (s *bannerService) List(_ context.Context, _ BannerListQuery) ([]domain.Banner, error) {
-	return nil, nil
+
+func (s *bannerService) List(ctx context.Context, q BannerListQuery) ([]domain.Banner, error) {
+	limit := q.Limit
+	if limit <= 0 { limit = 24 }
+	if limit > 100 { limit = 100 }
+	if q.Status != "" && !validStatus(q.Status) { return nil, ErrInvalidStatus }
+	return s.repo.List(ctx, s.orgID, q.Status, q.EventKey, limit, q.Offset)
+}
+
+func validateInput(in BannerInput) error {
+	if !in.EndsAt.After(in.StartsAt) { return ErrInvalidDateRange }
+	if _, ok := validAudiences[in.AudienceFilter]; !ok { return ErrInvalidAudience }
+	return nil
+}
+
+func normalizeAudience(a string) string { if a == "" { return "all" }; return a }
+
+func validStatus(s string) bool {
+	switch s {
+	case "draft", "published", "archived":
+		return true
+	}
+	return false
 }
