@@ -43,6 +43,7 @@ func NewRouter(
 	shopCustH *shophandler.CustomerHandler,
 	shopCartH *shophandler.CartHandler,
 	shopCheckH *shophandler.CheckoutHandler,
+	shopCatalogH *shophandler.CatalogHandler,
 ) http.Handler {
 	r := chi.NewRouter()
 
@@ -57,6 +58,7 @@ func NewRouter(
 	r.Use(metrics.HTTPMiddleware) // record request count + latency
 	r.Use(middleware.RateLimiter())
 	r.Use(middleware.CORS(cfg.AllowedOrigins))
+	r.Use(chiMiddleware.Compress(5))
 
 	// Public routes (no auth)
 	r.Get("/health", handler.HealthCheck(pool, cacheClient))
@@ -232,6 +234,11 @@ func NewRouter(
 	// B2C Shop routes
 	if shopEnabled {
 		r.Route("/api/shop", func(r chi.Router) {
+			r.Get("/categories", shopCatalogH.ListCategories)
+			r.Get("/products", shopCatalogH.ListProducts)
+			r.Get("/products/{slug}", shopCatalogH.GetProductBySlug)
+			r.Get("/feed", shopCatalogH.Feed)
+
 			r.Post("/auth/otp/send", shopAuthH.Send)
 			r.Post("/auth/otp/verify", shopAuthH.Verify)
 

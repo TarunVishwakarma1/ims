@@ -189,10 +189,11 @@ func main() {
 
 	// B2C Shop services and handlers
 	var (
-		shopAuthH  *shophandler.AuthHandler
-		shopCustH  *shophandler.CustomerHandler
-		shopCartH  *shophandler.CartHandler
-		shopCheckH *shophandler.CheckoutHandler
+		shopAuthH     *shophandler.AuthHandler
+		shopCustH     *shophandler.CustomerHandler
+		shopCartH     *shophandler.CartHandler
+		shopCheckH    *shophandler.CheckoutHandler
+		shopCatalogH  *shophandler.CatalogHandler
 	)
 	if cfg.ShopEnabled {
 		if cfg.ShopOrgID == "" {
@@ -225,6 +226,17 @@ func main() {
 		shopCustH = shophandler.NewCustomerHandler(custSvc)
 		shopCartH = shophandler.NewCartHandler(cartSvc)
 		shopCheckH = shophandler.NewCheckoutHandler(checkSvc)
+
+		catalogSvc := shopsvc.NewCatalogService(pool, cacheClient, shopOrgID)
+		feedSvc := shopsvc.NewFeedService(pool, cacheClient, shopOrgID)
+		shopCatalogH = shophandler.NewCatalogHandler(catalogSvc, feedSvc)
+
+		// Background popularity recompute. 30-min interval; stops with ctx.
+		go func() {
+			stop := jobs.StartPopularityRecompute(ctx, cacheClient, pool, shopOrgID, 30*time.Minute)
+			<-ctx.Done()
+			stop()
+		}()
 	}
 
 	userH := handler.NewUserHandler(userService)
@@ -254,7 +266,7 @@ func main() {
 	webhookH := handler.NewWebhookHandler(paymentService)
 	eventsH := handler.NewEventsHandler(eventBus)
 
-	router := NewRouter(authH, userH, categoryH, productH, inventoryH, orderH, roleH, locationH, marketH, eventsH, paymentH, webhookH, partnerH, returnH, notificationH, auditH, totpH, couponH, cfg, pool, cacheClient, cfg.ShopEnabled, shopAuthH, shopCustH, shopCartH, shopCheckH)
+	router := NewRouter(authH, userH, categoryH, productH, inventoryH, orderH, roleH, locationH, marketH, eventsH, paymentH, webhookH, partnerH, returnH, notificationH, auditH, totpH, couponH, cfg, pool, cacheClient, cfg.ShopEnabled, shopAuthH, shopCustH, shopCartH, shopCheckH, shopCatalogH)
 
 	server := &http.Server{
 		Addr:         ":" + cfg.Port,
