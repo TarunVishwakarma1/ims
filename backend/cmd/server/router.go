@@ -58,7 +58,7 @@ func NewRouter(
 	r.Use(metrics.HTTPMiddleware) // record request count + latency
 	r.Use(middleware.RateLimiter())
 	r.Use(middleware.CORS(cfg.AllowedOrigins))
-	r.Use(chiMiddleware.Compress(5))
+	r.Use(chiMiddleware.Compress(5, "application/json", "text/html", "text/plain", "text/css", "application/javascript"))
 
 	// Public routes (no auth)
 	r.Get("/health", handler.HealthCheck(pool, cacheClient))
