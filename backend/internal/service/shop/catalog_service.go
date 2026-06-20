@@ -2,6 +2,8 @@ package shop
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -150,7 +152,22 @@ func (s *catalogService) ListProducts(ctx context.Context, q ProductListQuery) (
 		return nil, err
 	}
 
-	return &ProductListResult{Items: out, TotalCount: total, Limit: q.Limit, Offset: q.Offset}, nil
+	result := &ProductListResult{Items: out, TotalCount: total, Limit: q.Limit, Offset: q.Offset}
+
+	if len(out) == q.Limit && len(out) > 0 {
+		last := out[len(out)-1]
+		var key any
+		switch q.Sort {
+		case "price_asc", "price_desc":
+			key = last.PricePaise
+		default:
+			// Re-fetch created_at for the last row — cheap single point lookup.
+			_ = s.pool.QueryRow(ctx, `SELECT created_at FROM products WHERE id=$1`, last.ID).Scan(&key)
+		}
+		result.NextCursor = encodeCursor(key, last.ID)
+	}
+
+	return result, nil
 }
 
 func normalizeQuery(q ProductListQuery) ProductListQuery {
@@ -165,6 +182,9 @@ func normalizeQuery(q ProductListQuery) ProductListQuery {
 	}
 	if q.Sort == "" {
 		q.Sort = "newest"
+	}
+	if q.Cursor != "" {
+		q.Offset = 0
 	}
 	return q
 }
@@ -195,6 +215,25 @@ func (s *catalogService) buildWhere(q ProductListQuery) (string, []any) {
 	if q.InStockOnly {
 		clauses = append(clauses, `COALESCE(i.quantity,0) > 0`)
 	}
+	if q.Cursor != "" {
+		cp, err := decodeCursor(q.Cursor)
+		if err == nil {
+			switch q.Sort {
+			case "price_asc":
+				args = append(args, cp.SortKey, cp.LastID)
+				clauses = append(clauses,
+					fmt.Sprintf(`(COALESCE(p.shop_price_paise,p.price), p.id) > ($%d, $%d)`, len(args)-1, len(args)))
+			case "price_desc":
+				args = append(args, cp.SortKey, cp.LastID)
+				clauses = append(clauses,
+					fmt.Sprintf(`(COALESCE(p.shop_price_paise,p.price), p.id) < ($%d, $%d)`, len(args)-1, len(args)))
+			default: // newest, popular fallback
+				args = append(args, cp.SortKey, cp.LastID)
+				clauses = append(clauses,
+					fmt.Sprintf(`(p.created_at, p.id) < ($%d, $%d)`, len(args)-1, len(args)))
+			}
+		}
+	}
 	return "WHERE " + strings.Join(clauses, " AND "), args
 }
 
@@ -216,6 +255,30 @@ func (s *catalogService) buildOrderBy(q ProductListQuery) string {
 func (s *catalogService) GetProductBySlug(ctx context.Context, slug string) (*ProductDetail, error) {
 	return nil, ErrNotFound
 }
-func (s *catalogService) InvalidateCategories(ctx context.Context) error              { return nil }
-func (s *catalogService) InvalidateProductList(ctx context.Context) error             { return nil }
-func (s *catalogService) InvalidateProduct(ctx context.Context, slug string) error    { return nil }
+func (s *catalogService) InvalidateCategories(ctx context.Context) error           { return nil }
+func (s *catalogService) InvalidateProductList(ctx context.Context) error          { return nil }
+func (s *catalogService) InvalidateProduct(ctx context.Context, slug string) error { return nil }
+
+// Cursor helpers.
+
+type cursorPayload struct {
+	SortKey any       `json:"k"`
+	LastID  uuid.UUID `json:"id"`
+}
+
+func encodeCursor(sortKey any, lastID uuid.UUID) string {
+	b, _ := json.Marshal(cursorPayload{SortKey: sortKey, LastID: lastID})
+	return base64.RawURLEncoding.EncodeToString(b)
+}
+
+func decodeCursor(s string) (cursorPayload, error) {
+	var c cursorPayload
+	raw, err := base64.RawURLEncoding.DecodeString(s)
+	if err != nil {
+		return c, err
+	}
+	if err := json.Unmarshal(raw, &c); err != nil {
+		return c, err
+	}
+	return c, nil
+}

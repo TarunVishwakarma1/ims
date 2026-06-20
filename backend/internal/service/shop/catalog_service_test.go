@@ -8,6 +8,7 @@ import (
 	"github.com/TarunVishwakarma1/ims/backend/internal/service/shop"
 	"github.com/TarunVishwakarma1/ims/backend/internal/testdb"
 	"github.com/TarunVishwakarma1/ims/backend/pkg/cache"
+	"github.com/google/uuid"
 )
 
 func TestCatalog_ListCategories_OnlyShopVisible(t *testing.T) {
@@ -137,5 +138,40 @@ func TestCatalog_ListProducts_Pagination(t *testing.T) {
 	}
 	if res.TotalCount < 30 {
 		t.Fatalf("total %d < 30", res.TotalCount)
+	}
+}
+
+func TestCatalog_ListProducts_CursorRoundTrip(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	orgID := testdb.PickOrFakeOrgID(t, pool)
+	ids := make([]uuid.UUID, 6)
+	for i := range ids {
+		p, _ := testdb.SeedProductWithStock(t, pool, fmt.Sprintf("C%02d", i), 100, 5)
+		_, _ = pool.Exec(context.Background(), `UPDATE products SET org_id=$1 WHERE id=$2`, orgID, p)
+		testdb.MarkProductShopVisible(t, pool, p, fmt.Sprintf("c-%02d", i), "", nil, nil)
+		ids[i] = p
+	}
+	svc := shop.NewCatalogService(pool, cache.NoOp(), orgID)
+
+	page1, _ := svc.ListProducts(context.Background(), shop.ProductListQuery{Sort: "newest", Limit: 3})
+	if len(page1.Items) != 3 {
+		t.Fatalf("page1 size: %d", len(page1.Items))
+	}
+	if page1.NextCursor == "" {
+		t.Fatal("expected NextCursor on first page")
+	}
+
+	page2, _ := svc.ListProducts(context.Background(), shop.ProductListQuery{Sort: "newest", Limit: 3, Cursor: page1.NextCursor})
+	if len(page2.Items) != 3 {
+		t.Fatalf("page2 size: %d", len(page2.Items))
+	}
+	seen := map[uuid.UUID]bool{}
+	for _, it := range page1.Items {
+		seen[it.ID] = true
+	}
+	for _, it := range page2.Items {
+		if seen[it.ID] {
+			t.Fatalf("page2 item %s repeats from page1", it.ID)
+		}
 	}
 }
