@@ -123,6 +123,7 @@ func (h *CatalogHandler) GetProductBySlug(w http.ResponseWriter, r *http.Request
 	if r.Header.Get("If-None-Match") == etag {
 		w.Header().Set("ETag", etag)
 		w.Header().Set("Cache-Control", "public, max-age=300, stale-while-revalidate=60")
+		w.Header().Set("Server-Timing", fmt.Sprintf("db;dur=%.1f", float64(time.Since(t0).Microseconds())/1000.0))
 		w.WriteHeader(http.StatusNotModified)
 		return
 	}
