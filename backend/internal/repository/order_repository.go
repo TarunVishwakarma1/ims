@@ -38,6 +38,8 @@ type OrderRepository interface {
 
 	ListByCustomer(ctx context.Context, customerID uuid.UUID, cursorCreatedAt time.Time, cursorID uuid.UUID, limit int) ([]CustomerOrderRow, error)
 	GetByCustomerAndID(ctx context.Context, customerID, orderID uuid.UUID) (*CustomerOrderRow, []OrderItemRow, error)
+	CancelByCustomer(tx pgx.Tx, customerID, orderID uuid.UUID, newStatus string) (*CancelSnapshot, error)
+	RestoreStock(ctx context.Context, tx pgx.Tx, items []OrderItemRow, orderID uuid.UUID) error
 }
 
 type CustomerOrderRow struct {
@@ -64,6 +66,15 @@ type OrderItemRow struct {
 	ProductImage string
 	Quantity     int
 	UnitPrice    int64
+}
+
+type CancelSnapshot struct {
+	OldStatus     string
+	PaymentStatus string
+	PaymentID     *uuid.UUID
+	TotalAmount   int64
+	OrgID         uuid.UUID
+	Items         []OrderItemRow
 }
 
 type orderRepository struct {
@@ -443,6 +454,70 @@ func (r *orderRepository) GetByCustomerAndID(ctx context.Context, customerID, or
 	items, err := r.itemsForOrder(ctx, orderID)
 	if err != nil { return nil, nil, err }
 	return &c, items, nil
+}
+
+func (r *orderRepository) CancelByCustomer(tx pgx.Tx, customerID, orderID uuid.UUID, newStatus string) (*CancelSnapshot, error) {
+	ctx := context.Background()
+	var snap CancelSnapshot
+	// Use a CTE to capture old_status before the update.
+	err := tx.QueryRow(ctx, `
+		WITH old AS (
+			SELECT status, payment_status, payment_id, total_amount, org_id
+			  FROM orders
+			 WHERE id = $1
+			   AND customer_id = $2
+			   AND status IN ('pending', 'confirmed')
+		)
+		UPDATE orders
+		   SET status = $3, cancelled_at = NOW(), updated_at = NOW()
+		 WHERE id = $1
+		   AND customer_id = $2
+		   AND status IN ('pending', 'confirmed')
+		   AND EXISTS (SELECT 1 FROM old)
+		RETURNING
+			(SELECT status FROM old),
+			payment_status, payment_id, total_amount, org_id`,
+		orderID, customerID, newStatus,
+	).Scan(&snap.OldStatus, &snap.PaymentStatus, &snap.PaymentID, &snap.TotalAmount, &snap.OrgID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, domain.ErrNotFound
+	}
+	if err != nil { return nil, err }
+
+	rows, err := tx.Query(ctx, `
+		SELECT oi.product_id, oi.quantity, oi.unit_price,
+		       COALESCE(p.name, ''),
+		       COALESCE(p.shop_slug, ''),
+		       COALESCE(p.shop_image_urls[1], '')
+		  FROM order_items oi
+		  LEFT JOIN products p ON p.id = oi.product_id
+		 WHERE oi.order_id = $1`,
+		orderID,
+	)
+	if err != nil { return nil, err }
+	defer rows.Close()
+	for rows.Next() {
+		var it OrderItemRow
+		if err := rows.Scan(
+			&it.ProductID, &it.Quantity, &it.UnitPrice,
+			&it.ProductName, &it.ProductSlug, &it.ProductImage,
+		); err != nil { return nil, err }
+		snap.Items = append(snap.Items, it)
+	}
+	return &snap, rows.Err()
+}
+
+func (r *orderRepository) RestoreStock(ctx context.Context, tx pgx.Tx, items []OrderItemRow, orderID uuid.UUID) error {
+	for _, it := range items {
+		_, err := tx.Exec(ctx, `
+			UPDATE inventory
+			   SET quantity = quantity + $1, updated_at = NOW()
+			 WHERE product_id = $2`,
+			it.Quantity, it.ProductID,
+		)
+		if err != nil { return fmt.Errorf("restore stock product=%s: %w", it.ProductID, err) }
+	}
+	return nil
 }
 
 // itemsForOrder is shared by GetByCustomerAndID and CancelByCustomer (Task 5).
