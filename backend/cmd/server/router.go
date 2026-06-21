@@ -238,16 +238,14 @@ func NewRouter(
 		r.Post("/api/cart/checkout", marketH.Checkout)
 
 		// Admin banner CMS
-		r.Route("/api/admin/banners", func(r chi.Router) {
-			r.Post("/upload", adminBannerH.Upload)
-			r.Get("/", adminBannerH.List)
-			r.Post("/", adminBannerH.Create)
-			r.Get("/{id}", adminBannerH.Get)
-			r.Patch("/{id}", adminBannerH.Update)
-			r.Post("/{id}/publish", adminBannerH.Publish)
-			r.Post("/{id}/archive", adminBannerH.Archive)
-			r.Delete("/{id}", adminBannerH.Delete)
-		})
+		r.With(middleware.RequirePermission(rbac.BannersManage)).Post("/api/admin/banners/upload", adminBannerH.Upload)
+		r.With(middleware.RequirePermission(rbac.BannersView)).Get("/api/admin/banners", adminBannerH.List)
+		r.With(middleware.RequirePermission(rbac.BannersManage)).Post("/api/admin/banners", adminBannerH.Create)
+		r.With(middleware.RequirePermission(rbac.BannersView)).Get("/api/admin/banners/{id}", adminBannerH.Get)
+		r.With(middleware.RequirePermission(rbac.BannersManage)).Patch("/api/admin/banners/{id}", adminBannerH.Update)
+		r.With(middleware.RequirePermission(rbac.BannersManage)).Post("/api/admin/banners/{id}/publish", adminBannerH.Publish)
+		r.With(middleware.RequirePermission(rbac.BannersManage)).Post("/api/admin/banners/{id}/archive", adminBannerH.Archive)
+		r.With(middleware.RequirePermission(rbac.BannersManage)).Delete("/api/admin/banners/{id}", adminBannerH.Delete)
 	})
 
 	// B2C Shop routes

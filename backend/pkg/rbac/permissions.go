@@ -44,6 +44,10 @@ const (
 
 	CouponsView   Permission = "coupons:view"
 	CouponsManage Permission = "coupons:manage"
+
+	// Banner CMS (Plan 2b) — view = read list/detail; manage = create/edit/publish/archive/delete.
+	BannersView   Permission = "banners:view"
+	BannersManage Permission = "banners:manage"
 )
 
 
