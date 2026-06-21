@@ -92,3 +92,49 @@ curl -s -o /dev/null -w '%{http_code}\n' -H "If-None-Match: $ETAG" http://localh
 # Infinite feed.
 curl -s 'http://localhost:8080/api/shop/feed?seed_category=snacks&limit=12' | jq '{tier:.page_info.tier, count:(.items|length)}'
 ```
+
+## 9. Banner CMS (Plan 2b)
+
+```bash
+# B2B admin token (assume B2B login already done; needs banners:manage permission for write ops).
+ADMIN_TOKEN="<paste B2B JWT>"
+
+# Upload banner image.
+curl -s -X POST http://localhost:8080/api/admin/banners/upload \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -F "file=@/path/to/diwali.jpg"
+# → {"image_url":"/uploads/banners/<uuid>.jpg"}
+
+# Create banner.
+curl -s -X POST http://localhost:8080/api/admin/banners \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "title": "Diwali Mega Sale",
+    "subtitle": "Up to 50% off",
+    "image_url": "/uploads/banners/<uuid>.jpg",
+    "cta_label": "Shop now",
+    "cta_link": "/snacks",
+    "event_key": "diwali_2026",
+    "starts_at": "2026-11-01T00:00:00Z",
+    "ends_at":   "2026-11-09T23:59:59Z",
+    "sort_order": 0,
+    "is_hero": true,
+    "audience_filter": "all"
+  }' | jq .
+
+# Publish it.
+curl -s -X POST http://localhost:8080/api/admin/banners/<id>/publish \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+
+# B2C consumer view.
+curl -s http://localhost:8080/api/shop/banners/active | jq .
+
+# Per-category filter.
+curl -s 'http://localhost:8080/api/shop/banners/active?category=snacks' | jq .
+
+# ETag round-trip.
+ETAG=$(curl -s -D - -o /dev/null http://localhost:8080/api/shop/banners/active | awk '/^ETag/ {print $2}' | tr -d '\r')
+curl -s -o /dev/null -w '%{http_code}\n' -H "If-None-Match: $ETAG" http://localhost:8080/api/shop/banners/active
+# → expect 304
+```
