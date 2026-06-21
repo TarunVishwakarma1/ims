@@ -201,6 +201,7 @@ func main() {
 		shopCheckH   *shophandler.CheckoutHandler
 		shopCatalogH *shophandler.CatalogHandler
 		shopBannerH  *shophandler.BannerHandler
+		shopOrderH   *shophandler.OrderHandler
 		adminBannerH *handler.AdminBannerHandler
 	)
 	if cfg.ShopEnabled {
@@ -244,6 +245,9 @@ func main() {
 		diskStore := storage.NewDiskStorage(cfg.UploadDir, "/uploads")
 		adminBannerH = handler.NewAdminBannerHandler(bannerSvc, diskStore, cfg.BannerImageMaxBytes)
 		shopBannerH = shophandler.NewBannerHandler(bannerSvc)
+
+		orderSvcShop := shopsvc.NewShopOrderService(pool, orderRepo, paymentService, shopOrgID)
+		shopOrderH = shophandler.NewOrderHandler(orderSvcShop)
 
 		if cfg.BannerSeedEnabled {
 			go func() {
@@ -289,7 +293,7 @@ func main() {
 	webhookH := handler.NewWebhookHandler(paymentService)
 	eventsH := handler.NewEventsHandler(eventBus)
 
-	router := NewRouter(authH, userH, categoryH, productH, inventoryH, orderH, roleH, locationH, marketH, eventsH, paymentH, webhookH, partnerH, returnH, notificationH, auditH, totpH, couponH, cfg, pool, cacheClient, cfg.ShopEnabled, shopAuthH, shopCustH, shopCartH, shopCheckH, shopCatalogH, adminBannerH, shopBannerH, cfg.UploadDir)
+	router := NewRouter(authH, userH, categoryH, productH, inventoryH, orderH, roleH, locationH, marketH, eventsH, paymentH, webhookH, partnerH, returnH, notificationH, auditH, totpH, couponH, cfg, pool, cacheClient, cfg.ShopEnabled, shopAuthH, shopCustH, shopCartH, shopCheckH, shopCatalogH, adminBannerH, shopBannerH, shopOrderH, cfg.UploadDir)
 
 	server := &http.Server{
 		Addr:         ":" + cfg.Port,
