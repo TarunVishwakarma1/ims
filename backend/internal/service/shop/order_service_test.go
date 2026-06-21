@@ -175,3 +175,66 @@ func TestShopOrder_Cancel_WrongStatus_NotAllowed(t *testing.T) {
 		t.Fatal("expected ErrCancelNotAllowed")
 	}
 }
+
+func TestShopOrder_Cancel_Razorpay_QueuesRefund(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	orgID := testdb.PickOrFakeOrgID(t, pool)
+	customerID := testdb.SeedCustomer(t, pool)
+	t.Cleanup(func() {
+		pool.Exec(context.Background(), `DELETE FROM orders WHERE customer_id=$1`, customerID)
+	})
+
+	prodID, _ := testdb.SeedProductWithStock(t, pool, "RZP Cancel Test", 100, 10)
+	paymentID := uuid.New()
+	addr, _ := json.Marshal(map[string]any{"line1": "Test"})
+	var orderID uuid.UUID
+	pool.QueryRow(context.Background(), `
+		INSERT INTO orders (org_id, user_id, customer_id, status, total_amount, order_type,
+		                    payment_status, payment_id, subtotal, delivery_fee, discount,
+		                    delivery_address_snapshot)
+		VALUES ($1, NULL, $2, 'pending', 500, 'b2c', 'paid', $3, 500, 0, 0, $4)
+		RETURNING id`,
+		orgID, customerID, paymentID, addr,
+	).Scan(&orderID)
+	pool.Exec(context.Background(), `
+		INSERT INTO order_items (org_id, order_id, product_id, quantity, unit_price)
+		VALUES ($1, $2, $3, 1, 500)`,
+		orgID, orderID, prodID,
+	)
+	pool.Exec(context.Background(), `UPDATE inventory SET quantity = quantity - 1 WHERE product_id=$1`, prodID)
+
+	repo := repository.NewOrderRepository(pool)
+	refunder := &fakeRefunder{}
+	svc := shop.NewShopOrderService(pool, repo, refunder, orgID)
+
+	res, err := svc.Cancel(context.Background(), customerID, orderID)
+	if err != nil {
+		t.Fatalf("cancel: %v", err)
+	}
+	if res.Status != "cancelling" {
+		t.Fatalf("expected cancelling, got %s", res.Status)
+	}
+	if !res.RefundQueued {
+		t.Fatal("Razorpay must queue refund")
+	}
+
+	// Wait briefly for goroutine.
+	for i := 0; i < 50; i++ {
+		if refunder.called {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if !refunder.called {
+		t.Fatal("Refund goroutine did not fire")
+	}
+	if refunder.gotAmount != 500 {
+		t.Fatalf("wrong refund amount: %d", refunder.gotAmount)
+	}
+
+	var status string
+	pool.QueryRow(context.Background(), `SELECT status FROM orders WHERE id=$1`, orderID).Scan(&status)
+	if status != "cancelling" {
+		t.Fatalf("expected DB status cancelling, got %s", status)
+	}
+}

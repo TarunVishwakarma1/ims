@@ -5,11 +5,11 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.uber.org/zap"
 
 	"github.com/TarunVishwakarma1/ims/backend/internal/domain"
 	"github.com/TarunVishwakarma1/ims/backend/internal/repository"
@@ -291,9 +291,25 @@ func (s *shopOrderService) Cancel(ctx context.Context, customerID, orderID uuid.
 		return nil, err
 	}
 
-	// Razorpay path: Task 6.
+	// Razorpay path: async refund goroutine.
 	if row.PaymentStatus == "paid" {
-		return nil, fmt.Errorf("paid cancel not yet implemented")
+		if snap.PaymentID == nil {
+			zap.L().Error("paid order has no payment_id — cannot refund",
+				zap.String("order_id", orderID.String()))
+			return &CancelResult{Status: "cancelling", RefundQueued: false}, nil
+		}
+		go func(pid uuid.UUID, amount int64) {
+			rctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			if err := s.refunder.Refund(rctx, s.shopOrgID, pid, amount, "customer_cancel"); err != nil {
+				zap.L().Error("refund failed for cancelled order",
+					zap.String("order_id", orderID.String()),
+					zap.String("payment_id", pid.String()),
+					zap.Error(err))
+				// Audit row skipped for V1 (schema mismatch); follow-up wires via audit_log_repository.
+			}
+		}(*snap.PaymentID, snap.TotalAmount)
+		return &CancelResult{Status: "cancelling", RefundQueued: true, EstimatedDays: 7}, nil
 	}
 
 	return &CancelResult{Status: "cancelled", RefundQueued: false}, nil
