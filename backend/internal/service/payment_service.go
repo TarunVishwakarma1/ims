@@ -728,6 +728,12 @@ func (s *paymentService) handleRefundProcessed(ctx context.Context, env rzpEnvel
 	if payment.OrderID != nil {
 		if order, err := s.orderRepo.GetByID(ctx, *payment.OrderID, payment.OrgID); err == nil {
 			order.PaymentStatus = orderPaymentStatus
+			// If customer-cancel parked the order in 'cancelling', finalize on full refund.
+			if order.Status == "cancelling" && newStatus == domain.PaymentStatusRefunded {
+				order.Status = "cancelled"
+				now := time.Now().UTC()
+				order.CancelledAt = &now
+			}
 			order.UpdatedAt = time.Now().UTC()
 			if err := s.orderRepo.Update(ctx, order); err != nil {
 				zap.L().Warn("order refund-state update failed", zap.Error(err))
