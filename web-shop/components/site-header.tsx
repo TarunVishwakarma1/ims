@@ -17,8 +17,8 @@ export function SiteHeader() {
         </Link>
         <nav className="ml-auto flex items-center gap-3">
           <Link
-            href="/orders"
-            aria-label="My orders"
+            href="/profile"
+            aria-label="Account"
             className="size-10 grid place-items-center rounded-full hover:bg-brand-50"
           >
             <User className="size-5" />
