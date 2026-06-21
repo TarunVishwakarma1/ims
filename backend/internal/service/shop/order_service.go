@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/TarunVishwakarma1/ims/backend/internal/domain"
 	"github.com/TarunVishwakarma1/ims/backend/internal/repository"
 )
 
@@ -156,11 +157,12 @@ func (s *shopOrderService) List(ctx context.Context, customerID uuid.UUID, q Ord
 		// Pull item count + first item via separate query.
 		// V1 keeps it simple: one query per order. Optimize in follow-up.
 		items, err := s.firstItemAndCount(ctx, r.ID)
-		if err == nil {
-			card.ItemCount = items.count
-			card.FirstItemName = items.firstName
-			card.FirstItemImage = items.firstImage
+		if err != nil {
+			return nil, err
 		}
+		card.ItemCount = items.count
+		card.FirstItemName = items.firstName
+		card.FirstItemImage = items.firstImage
 		out.Items = append(out.Items, card)
 	}
 
@@ -197,9 +199,11 @@ func (s *shopOrderService) firstItemAndCount(ctx context.Context, orderID uuid.U
 
 func (s *shopOrderService) Get(ctx context.Context, customerID, orderID uuid.UUID) (*OrderDetail, error) {
 	row, items, err := s.repo.GetByCustomerAndID(ctx, customerID, orderID)
-	if err != nil {
-		// repo.GetByCustomerAndID returns domain.ErrNotFound on wrong customer or missing order.
+	if errors.Is(err, domain.ErrNotFound) {
 		return nil, ErrOrderNotFound
+	}
+	if err != nil {
+		return nil, err
 	}
 
 	var addr map[string]any
