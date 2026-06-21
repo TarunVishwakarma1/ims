@@ -49,7 +49,7 @@ func TestCheckoutSvc_PlaceCOD_Success(t *testing.T) {
 		t.Fatalf("AddOrSet: %v", err)
 	}
 
-	svc := shop.NewCheckoutService(pool, orgID, cartRepo, nil, testdb.OrderRepo(pool), "")
+	svc := shop.NewCheckoutService(pool, orgID, cartRepo, repository.NewCustomerAddressRepository(pool), nil, testdb.OrderRepo(pool), "")
 
 	res, err := svc.Place(ctx, shop.PlaceOrderInput{
 		CustomerID:    cust.ID,
@@ -144,7 +144,7 @@ func TestCheckoutSvc_PlaceInsufficientStock(t *testing.T) {
 	// drop stock to 0 out-of-band to simulate race
 	testdb.SetStock(t, pool, prodID, 0)
 
-	svc := shop.NewCheckoutService(pool, orgID, cartRepo, nil, testdb.OrderRepo(pool), "")
+	svc := shop.NewCheckoutService(pool, orgID, cartRepo, repository.NewCustomerAddressRepository(pool), nil, testdb.OrderRepo(pool), "")
 	_, err = svc.Place(ctx, shop.PlaceOrderInput{
 		CustomerID:    cust.ID,
 		AddressID:     addrID,
@@ -187,7 +187,7 @@ func TestCheckoutSvc_PlaceEmptyCart(t *testing.T) {
 	addrID := testdb.SeedAddress(t, pool, cust.ID)
 
 	cartRepo := repository.NewCartRepository(pool)
-	svc := shop.NewCheckoutService(pool, orgID, cartRepo, nil, testdb.OrderRepo(pool), "")
+	svc := shop.NewCheckoutService(pool, orgID, cartRepo, repository.NewCustomerAddressRepository(pool), nil, testdb.OrderRepo(pool), "")
 
 	_, err = svc.Place(ctx, shop.PlaceOrderInput{
 		CustomerID:    cust.ID,
@@ -218,7 +218,7 @@ func TestCheckoutSvc_PlaceMissingAddress(t *testing.T) {
 	})
 
 	cartRepo := repository.NewCartRepository(pool)
-	svc := shop.NewCheckoutService(pool, orgID, cartRepo, nil, testdb.OrderRepo(pool), "")
+	svc := shop.NewCheckoutService(pool, orgID, cartRepo, repository.NewCustomerAddressRepository(pool), nil, testdb.OrderRepo(pool), "")
 
 	_, err = svc.Place(ctx, shop.PlaceOrderInput{
 		CustomerID:    cust.ID,
@@ -227,5 +227,50 @@ func TestCheckoutSvc_PlaceMissingAddress(t *testing.T) {
 	})
 	if err != shop.ErrAddressRequired {
 		t.Fatalf("expected ErrAddressRequired, got %v", err)
+	}
+}
+
+// TestCheckoutSvc_Place_AddressNotOwned verifies that Place returns ErrAddressRequired
+// when the supplied address belongs to a different customer (IDOR prevention).
+func TestCheckoutSvc_Place_AddressNotOwned(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	ctx := context.Background()
+
+	_, orgID := testdb.SeedProductWithStock(t, pool, "IDORProd", 100, 10)
+
+	custRepo := repository.NewCustomerRepository(pool)
+
+	// Seed customer A with their own address.
+	phoneA := checkoutRandPhone()
+	custA, err := custRepo.UpsertByPhone(ctx, phoneA)
+	if err != nil {
+		t.Fatalf("upsert customer A: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(ctx, `DELETE FROM customers WHERE phone=$1`, phoneA)
+	})
+	addrA := testdb.SeedAddress(t, pool, custA.ID)
+
+	// Seed customer B (no address).
+	phoneB := checkoutRandPhone()
+	custB, err := custRepo.UpsertByPhone(ctx, phoneB)
+	if err != nil {
+		t.Fatalf("upsert customer B: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(ctx, `DELETE FROM customers WHERE phone=$1`, phoneB)
+	})
+
+	cartRepo := repository.NewCartRepository(pool)
+	svc := shop.NewCheckoutService(pool, orgID, cartRepo, repository.NewCustomerAddressRepository(pool), nil, testdb.OrderRepo(pool), "")
+
+	// Customer B attempts to place an order with customer A's address.
+	_, err = svc.Place(ctx, shop.PlaceOrderInput{
+		CustomerID:    custB.ID,
+		AddressID:     addrA,
+		PaymentMethod: "cod",
+	})
+	if err != shop.ErrAddressRequired {
+		t.Fatalf("expected ErrAddressRequired (IDOR), got %v", err)
 	}
 }

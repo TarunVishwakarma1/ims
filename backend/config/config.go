@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -36,6 +37,19 @@ type Config struct {
 	SMTPFromEmail string // e.g. "no-reply@example.com"
 	SMTPFromName  string // e.g. "IMS Notifications"
 	WebAppURL     string // for action links in emails (e.g. https://app.example.com)
+
+	// B2C Shop
+	ShopEnabled     bool
+	ShopOrgID       string
+	MSG91AuthKey    string
+	MSG91TemplateID string
+	MSG91SenderID   string
+
+	// Banner CMS (Plan 2b)
+	UploadDir           string
+	BannerSeedEnabled   bool
+	BannerSeedInterval  time.Duration
+	BannerImageMaxBytes int64
 }
 
 func LoadConfig() (*Config, error) {
@@ -128,6 +142,44 @@ func LoadConfig() (*Config, error) {
 	metricsEnabled := os.Getenv("METRICS_ENABLED") != "false"
 	metricsToken := os.Getenv("METRICS_TOKEN")
 
+	shopEnabled := os.Getenv("SHOP_ENABLED") == "true"
+	msg91SenderID := os.Getenv("MSG91_SENDER_ID")
+	if msg91SenderID == "" {
+		msg91SenderID = "IMSHOP"
+	}
+
+	uploadDir := os.Getenv("UPLOAD_DIR")
+	if uploadDir == "" {
+		uploadDir = "./uploads"
+	}
+
+	bannerSeedEnabledStr := os.Getenv("BANNER_SEED_ENABLED")
+	bannerSeedEnabled := shopEnabled // default to shopEnabled
+	if bannerSeedEnabledStr != "" {
+		bannerSeedEnabled = bannerSeedEnabledStr == "true"
+	}
+
+	bannerSeedInterval := 24 * time.Hour
+	if bannerSeedIntervalStr := os.Getenv("BANNER_SEED_INTERVAL"); bannerSeedIntervalStr != "" {
+		d, err := time.ParseDuration(bannerSeedIntervalStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid BANNER_SEED_INTERVAL: %w", err)
+		}
+		bannerSeedInterval = d
+	}
+	if bannerSeedInterval < time.Minute {
+		return nil, fmt.Errorf("BANNER_SEED_INTERVAL must be >= 1m, got %s", bannerSeedInterval)
+	}
+
+	var bannerImageMaxBytes int64 = 5 * 1024 * 1024
+	if v := os.Getenv("BANNER_IMAGE_MAX_BYTES"); v != "" {
+		n, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid BANNER_IMAGE_MAX_BYTES: %w", err)
+		}
+		bannerImageMaxBytes = n
+	}
+
 	return &Config{
 		ENV:                       env,
 		Port:                      port,
@@ -153,6 +205,15 @@ func LoadConfig() (*Config, error) {
 		SMTPFromEmail:             os.Getenv("SMTP_FROM_EMAIL"),
 		SMTPFromName:              os.Getenv("SMTP_FROM_NAME"),
 		WebAppURL:                 os.Getenv("WEB_APP_URL"),
+		ShopEnabled:               shopEnabled,
+		ShopOrgID:                 os.Getenv("SHOP_ORG_ID"),
+		MSG91AuthKey:              os.Getenv("MSG91_AUTH_KEY"),
+		MSG91TemplateID:           os.Getenv("MSG91_TEMPLATE_ID"),
+		MSG91SenderID:             msg91SenderID,
+		UploadDir:                 uploadDir,
+		BannerSeedEnabled:         bannerSeedEnabled,
+		BannerSeedInterval:        bannerSeedInterval,
+		BannerImageMaxBytes:       bannerImageMaxBytes,
 	}, nil
 }
 

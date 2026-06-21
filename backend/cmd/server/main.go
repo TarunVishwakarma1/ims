@@ -12,21 +12,27 @@ import (
 
 	"github.com/TarunVishwakarma1/ims/backend/config"
 	"github.com/TarunVishwakarma1/ims/backend/internal/handler"
+	shophandler "github.com/TarunVishwakarma1/ims/backend/internal/handler/shop"
 	"github.com/TarunVishwakarma1/ims/backend/internal/repository"
 	"github.com/TarunVishwakarma1/ims/backend/internal/service"
+	shopsvc "github.com/TarunVishwakarma1/ims/backend/internal/service/shop"
 	"github.com/TarunVishwakarma1/ims/backend/migrations"
-	"github.com/TarunVishwakarma1/ims/backend/pkg/logger"
 	"github.com/TarunVishwakarma1/ims/backend/pkg/cache"
+	"github.com/TarunVishwakarma1/ims/backend/pkg/calendar"
 	"github.com/TarunVishwakarma1/ims/backend/pkg/crypto"
 	"github.com/TarunVishwakarma1/ims/backend/pkg/events"
 	"github.com/TarunVishwakarma1/ims/backend/pkg/jobs"
+	"github.com/TarunVishwakarma1/ims/backend/pkg/logger"
 	"github.com/TarunVishwakarma1/ims/backend/pkg/notify"
 	"github.com/TarunVishwakarma1/ims/backend/pkg/rbac"
+	"github.com/TarunVishwakarma1/ims/backend/pkg/sms"
+	"github.com/TarunVishwakarma1/ims/backend/pkg/storage"
 	"github.com/TarunVishwakarma1/ims/backend/pkg/tracing"
 
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/pgx/v5"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
@@ -41,6 +47,10 @@ func main() {
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		log.Fatalf("failed to load config: %v", err)
+	}
+
+	if err := os.MkdirAll(cfg.UploadDir, 0o755); err != nil {
+		log.Fatalf("cannot create UPLOAD_DIR %q: %v", cfg.UploadDir, err)
 	}
 
 	appLogger, err := logger.New(cfg.ENV)
@@ -183,6 +193,75 @@ func main() {
 	returnService := service.NewReturnService(returnRepo, orderRepo, inventoryRepo, auditLogRepo, paymentService, eventBus, notifier)
 	notificationService := service.NewNotificationService(notificationRepo)
 
+	// B2C Shop services and handlers
+	var (
+		shopAuthH    *shophandler.AuthHandler
+		shopCustH    *shophandler.CustomerHandler
+		shopCartH    *shophandler.CartHandler
+		shopCheckH   *shophandler.CheckoutHandler
+		shopCatalogH *shophandler.CatalogHandler
+		shopBannerH  *shophandler.BannerHandler
+		adminBannerH *handler.AdminBannerHandler
+	)
+	if cfg.ShopEnabled {
+		if cfg.ShopOrgID == "" {
+			zap.L().Fatal("SHOP_ENABLED=true requires SHOP_ORG_ID")
+		}
+		shopOrgID, err := uuid.Parse(cfg.ShopOrgID)
+		if err != nil {
+			zap.L().Fatal("invalid SHOP_ORG_ID", zap.Error(err))
+		}
+
+		var smsSender sms.Sender
+		if cfg.MSG91AuthKey != "" {
+			smsSender = sms.NewMSG91(cfg.MSG91AuthKey, cfg.MSG91TemplateID, cfg.MSG91SenderID, &http.Client{Timeout: 10 * time.Second})
+		} else {
+			smsSender = &sms.MockSender{}
+			zap.L().Warn("SHOP_ENABLED=true but MSG91_AUTH_KEY empty — using MockSender (dev only)")
+		}
+
+		customerRepo := repository.NewCustomerRepository(pool)
+		otpRepo := repository.NewOTPRepository(pool)
+		addrRepo := repository.NewCustomerAddressRepository(pool)
+		cartRepo := repository.NewCartRepository(pool)
+
+		otpSvc := shopsvc.NewOTPService(otpRepo, customerRepo, smsSender, cfg.JWTSecret)
+		custSvc := shopsvc.NewCustomerService(customerRepo, addrRepo)
+		cartSvc := shopsvc.NewCartService(cartRepo, pool, shopOrgID)
+		checkSvc := shopsvc.NewCheckoutService(pool, shopOrgID, cartRepo, addrRepo, paymentService, orderRepo, cfg.RazorpayKeyID)
+
+		shopAuthH = shophandler.NewAuthHandler(otpSvc)
+		shopCustH = shophandler.NewCustomerHandler(custSvc)
+		shopCartH = shophandler.NewCartHandler(cartSvc)
+		shopCheckH = shophandler.NewCheckoutHandler(checkSvc)
+
+		catalogSvc := shopsvc.NewCatalogService(pool, cacheClient, shopOrgID)
+		feedSvc := shopsvc.NewFeedService(pool, cacheClient, shopOrgID)
+		shopCatalogH = shophandler.NewCatalogHandler(catalogSvc, feedSvc)
+
+		bannerRepo := repository.NewBannerRepository(pool)
+		bannerSvc := shopsvc.NewBannerService(bannerRepo, cacheClient, shopOrgID)
+		diskStore := storage.NewDiskStorage(cfg.UploadDir, "/uploads")
+		adminBannerH = handler.NewAdminBannerHandler(bannerSvc, diskStore, cfg.BannerImageMaxBytes)
+		shopBannerH = shophandler.NewBannerHandler(bannerSvc)
+
+		if cfg.BannerSeedEnabled {
+			go func() {
+				stop := jobs.StartBannerSeed(ctx, pool, cacheClient, shopOrgID,
+					calendar.Festivals, cfg.BannerSeedInterval)
+				<-ctx.Done()
+				stop()
+			}()
+		}
+
+		// Background popularity recompute. 30-min interval; stops with ctx.
+		go func() {
+			stop := jobs.StartPopularityRecompute(ctx, cacheClient, pool, shopOrgID, 30*time.Minute)
+			<-ctx.Done()
+			stop()
+		}()
+	}
+
 	userH := handler.NewUserHandler(userService)
 	categoryH := handler.NewCategoryHandler(categoryService)
 	productH := handler.NewProductHandler(productService)
@@ -210,7 +289,7 @@ func main() {
 	webhookH := handler.NewWebhookHandler(paymentService)
 	eventsH := handler.NewEventsHandler(eventBus)
 
-	router := NewRouter(authH, userH, categoryH, productH, inventoryH, orderH, roleH, locationH, marketH, eventsH, paymentH, webhookH, partnerH, returnH, notificationH, auditH, totpH, couponH, cfg, pool, cacheClient)
+	router := NewRouter(authH, userH, categoryH, productH, inventoryH, orderH, roleH, locationH, marketH, eventsH, paymentH, webhookH, partnerH, returnH, notificationH, auditH, totpH, couponH, cfg, pool, cacheClient, cfg.ShopEnabled, shopAuthH, shopCustH, shopCartH, shopCheckH, shopCatalogH, adminBannerH, shopBannerH, cfg.UploadDir)
 
 	server := &http.Server{
 		Addr:         ":" + cfg.Port,
