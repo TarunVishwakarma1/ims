@@ -1,0 +1,38 @@
+@import "tailwindcss";
+@plugin "tw-animate-css";
+
+@theme {
+  --color-brand-50:  oklch(0.97 0.02 145);
+  --color-brand-100: oklch(0.93 0.05 145);
+  --color-brand-300: oklch(0.78 0.14 145);
+  --color-brand-500: oklch(0.62 0.20 145);
+  --color-brand-600: oklch(0.55 0.20 145);
+  --color-brand-700: oklch(0.45 0.18 145);
+
+  --color-accent-500: oklch(0.72 0.20 50);
+
+  --color-bg:     oklch(0.99 0 0);
+  --color-fg:     oklch(0.15 0 0);
+  --color-muted:  oklch(0.65 0 0);
+  --color-border: oklch(0.92 0 0);
+
+  --radius-sm:  0.5rem;
+  --radius:     0.75rem;
+  --radius-lg:  1rem;
+  --radius-xl:  1.5rem;
+  --radius-2xl: 2rem;
+
+  --font-sans:    "Inter", system-ui, sans-serif;
+  --font-display: "Inter", system-ui, sans-serif;
+
+  --spacing-shop-page-max: 1280px;
+}
+
+@layer base {
+  html { color-scheme: light; }
+  body {
+    background: var(--color-bg);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+  }
+}
