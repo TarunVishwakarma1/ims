@@ -115,3 +115,63 @@ func TestShopOrder_Get_Cancellable(t *testing.T) {
 		t.Fatal("processing should NOT be cancellable")
 	}
 }
+
+func TestShopOrder_Cancel_COD_HappyPath(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	orgID := testdb.PickOrFakeOrgID(t, pool)
+	customerID := testdb.SeedCustomer(t, pool)
+	t.Cleanup(func() {
+		pool.Exec(context.Background(), `DELETE FROM orders WHERE customer_id=$1`, customerID)
+	})
+
+	prodID, _ := testdb.SeedProductWithStock(t, pool, "Cancel Test", 100, 10)
+	orderID := seedShopOrder(t, pool, orgID, customerID, "pending", "unpaid", 200)
+	pool.Exec(context.Background(), `
+		INSERT INTO order_items (org_id, order_id, product_id, quantity, unit_price)
+		VALUES ($1, $2, $3, 2, 100)`,
+		orgID, orderID, prodID,
+	)
+	pool.Exec(context.Background(), `UPDATE inventory SET quantity = quantity - 2 WHERE product_id=$1`, prodID)
+
+	repo := repository.NewOrderRepository(pool)
+	refunder := &fakeRefunder{}
+	svc := shop.NewShopOrderService(pool, repo, refunder, orgID)
+
+	res, err := svc.Cancel(context.Background(), customerID, orderID)
+	if err != nil {
+		t.Fatalf("cancel: %v", err)
+	}
+	if res.Status != "cancelled" {
+		t.Fatalf("expected cancelled, got %s", res.Status)
+	}
+	if res.RefundQueued {
+		t.Fatal("COD must not queue refund")
+	}
+	if refunder.called {
+		t.Fatal("Refund must not be called for COD")
+	}
+
+	var qty int
+	pool.QueryRow(context.Background(), `SELECT quantity FROM inventory WHERE product_id=$1`, prodID).Scan(&qty)
+	if qty != 10 {
+		t.Fatalf("expected stock restored to 10, got %d", qty)
+	}
+}
+
+func TestShopOrder_Cancel_WrongStatus_NotAllowed(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	orgID := testdb.PickOrFakeOrgID(t, pool)
+	customerID := testdb.SeedCustomer(t, pool)
+	t.Cleanup(func() {
+		pool.Exec(context.Background(), `DELETE FROM orders WHERE customer_id=$1`, customerID)
+	})
+
+	orderID := seedShopOrder(t, pool, orgID, customerID, "processing", "unpaid", 200)
+
+	repo := repository.NewOrderRepository(pool)
+	svc := shop.NewShopOrderService(pool, repo, &fakeRefunder{}, orgID)
+
+	if _, err := svc.Cancel(context.Background(), customerID, orderID); err == nil {
+		t.Fatal("expected ErrCancelNotAllowed")
+	}
+}

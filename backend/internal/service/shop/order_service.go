@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -253,7 +254,47 @@ func (s *shopOrderService) Get(ctx context.Context, customerID, orderID uuid.UUI
 	}, nil
 }
 
-// Cancel — Tasks 5/6 fill this in.
+// Cancel cancels a customer order. COD (unpaid) cancels immediately and restores
+// stock in the same transaction. Razorpay (paid) path is implemented in Task 6.
 func (s *shopOrderService) Cancel(ctx context.Context, customerID, orderID uuid.UUID) (*CancelResult, error) {
-	return nil, errors.New("not implemented")
+	// Peek at the order to decide newStatus before opening the tx.
+	row, _, err := s.repo.GetByCustomerAndID(ctx, customerID, orderID)
+	if err != nil {
+		return nil, ErrOrderNotFound
+	}
+	if row.Status != "pending" && row.Status != "confirmed" {
+		return nil, ErrCancelNotAllowed
+	}
+
+	newStatus := "cancelled"
+	if row.PaymentStatus == "paid" {
+		newStatus = "cancelling"
+	}
+
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	snap, err := s.repo.CancelByCustomer(tx, customerID, orderID, newStatus)
+	if err != nil {
+		// Concurrent state transition lost the race.
+		return nil, ErrCancelNotAllowed
+	}
+
+	if err := s.repo.RestoreStock(ctx, tx, snap.Items, orderID); err != nil {
+		return nil, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+
+	// Razorpay path: Task 6.
+	if row.PaymentStatus == "paid" {
+		return nil, fmt.Errorf("paid cancel not yet implemented")
+	}
+
+	return &CancelResult{Status: "cancelled", RefundQueued: false}, nil
 }
