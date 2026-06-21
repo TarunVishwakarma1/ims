@@ -2,6 +2,7 @@ package main
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/TarunVishwakarma1/ims/backend/config"
 	"github.com/TarunVishwakarma1/ims/backend/internal/handler"
@@ -63,9 +64,10 @@ func NewRouter(
 	r.Use(middleware.CORS(cfg.AllowedOrigins))
 	r.Use(chiMiddleware.Compress(5, "application/json", "text/html", "text/plain", "text/css", "application/javascript"))
 
-	// Static file server — serves uploaded banner images
-	r.Get("/uploads/*", http.StripPrefix("/uploads/",
-		http.FileServer(http.Dir(uploadDir))).ServeHTTP)
+	// Static file server — serves uploaded banner images (shop only)
+	if shopEnabled {
+		r.Mount("/uploads/", bannerUploadsHandler(uploadDir))
+	}
 
 	// Public routes (no auth)
 	r.Get("/health", handler.HealthCheck(pool, cacheClient))
@@ -237,15 +239,17 @@ func NewRouter(
 		r.Delete("/api/cart/items/{listing_id}", marketH.RemoveFromCart)
 		r.Post("/api/cart/checkout", marketH.Checkout)
 
-		// Admin banner CMS
-		r.With(middleware.RequirePermission(rbac.BannersManage)).Post("/api/admin/banners/upload", adminBannerH.Upload)
-		r.With(middleware.RequirePermission(rbac.BannersView)).Get("/api/admin/banners", adminBannerH.List)
-		r.With(middleware.RequirePermission(rbac.BannersManage)).Post("/api/admin/banners", adminBannerH.Create)
-		r.With(middleware.RequirePermission(rbac.BannersView)).Get("/api/admin/banners/{id}", adminBannerH.Get)
-		r.With(middleware.RequirePermission(rbac.BannersManage)).Patch("/api/admin/banners/{id}", adminBannerH.Update)
-		r.With(middleware.RequirePermission(rbac.BannersManage)).Post("/api/admin/banners/{id}/publish", adminBannerH.Publish)
-		r.With(middleware.RequirePermission(rbac.BannersManage)).Post("/api/admin/banners/{id}/archive", adminBannerH.Archive)
-		r.With(middleware.RequirePermission(rbac.BannersManage)).Delete("/api/admin/banners/{id}", adminBannerH.Delete)
+		// Admin banner CMS (only registered when shop is enabled to avoid nil handler panic)
+		if shopEnabled {
+			r.With(middleware.RequirePermission(rbac.BannersManage)).Post("/api/admin/banners/upload", adminBannerH.Upload)
+			r.With(middleware.RequirePermission(rbac.BannersView)).Get("/api/admin/banners", adminBannerH.List)
+			r.With(middleware.RequirePermission(rbac.BannersManage)).Post("/api/admin/banners", adminBannerH.Create)
+			r.With(middleware.RequirePermission(rbac.BannersView)).Get("/api/admin/banners/{id}", adminBannerH.Get)
+			r.With(middleware.RequirePermission(rbac.BannersManage)).Patch("/api/admin/banners/{id}", adminBannerH.Update)
+			r.With(middleware.RequirePermission(rbac.BannersManage)).Post("/api/admin/banners/{id}/publish", adminBannerH.Publish)
+			r.With(middleware.RequirePermission(rbac.BannersManage)).Post("/api/admin/banners/{id}/archive", adminBannerH.Archive)
+			r.With(middleware.RequirePermission(rbac.BannersManage)).Delete("/api/admin/banners/{id}", adminBannerH.Delete)
+		}
 	})
 
 	// B2C Shop routes
@@ -297,3 +301,18 @@ func NewRouter(
 }
 
 type routeKey struct{}
+
+// bannerUploadsHandler serves uploaded banner images with directory-listing
+// protection and a one-day public cache header.
+func bannerUploadsHandler(uploadDir string) http.Handler {
+	fs := http.FileServer(http.Dir(uploadDir))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Reject directory listing requests (trailing slash or bare /uploads/).
+		if strings.HasSuffix(r.URL.Path, "/") {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+		http.StripPrefix("/uploads/", fs).ServeHTTP(w, r)
+	})
+}

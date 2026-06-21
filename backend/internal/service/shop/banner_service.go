@@ -28,12 +28,18 @@ type ActiveBanners struct {
 }
 
 type BannerInput struct {
-	Title, Subtitle, ImageURL, CTALabel, CTALink, EventKey string
-	StartsAt, EndsAt                                       time.Time
-	SortOrder                                              int
-	IsHero                                                 bool
-	AudienceFilter                                         string
-	CategorySlug                                           string
+	Title          string    `json:"title"`
+	Subtitle       string    `json:"subtitle,omitempty"`
+	ImageURL       string    `json:"image_url,omitempty"`
+	CTALabel       string    `json:"cta_label,omitempty"`
+	CTALink        string    `json:"cta_link,omitempty"`
+	EventKey       string    `json:"event_key,omitempty"`
+	StartsAt       time.Time `json:"starts_at"`
+	EndsAt         time.Time `json:"ends_at"`
+	SortOrder      int       `json:"sort_order,omitempty"`
+	IsHero         bool      `json:"is_hero,omitempty"`
+	AudienceFilter string    `json:"audience_filter,omitempty"`
+	CategorySlug   string    `json:"category_slug,omitempty"`
 }
 
 type BannerListQuery struct {
