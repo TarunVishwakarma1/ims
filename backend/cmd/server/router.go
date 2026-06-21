@@ -44,6 +44,9 @@ func NewRouter(
 	shopCartH *shophandler.CartHandler,
 	shopCheckH *shophandler.CheckoutHandler,
 	shopCatalogH *shophandler.CatalogHandler,
+	adminBannerH *handler.AdminBannerHandler,
+	shopBannerH *shophandler.BannerHandler,
+	uploadDir string,
 ) http.Handler {
 	r := chi.NewRouter()
 
@@ -59,6 +62,10 @@ func NewRouter(
 	r.Use(middleware.RateLimiter())
 	r.Use(middleware.CORS(cfg.AllowedOrigins))
 	r.Use(chiMiddleware.Compress(5, "application/json", "text/html", "text/plain", "text/css", "application/javascript"))
+
+	// Static file server — serves uploaded banner images
+	r.Get("/uploads/*", http.StripPrefix("/uploads/",
+		http.FileServer(http.Dir(uploadDir))).ServeHTTP)
 
 	// Public routes (no auth)
 	r.Get("/health", handler.HealthCheck(pool, cacheClient))
@@ -229,6 +236,18 @@ func NewRouter(
 		r.Put("/api/cart/items/{listing_id}", marketH.UpdateCartItem)
 		r.Delete("/api/cart/items/{listing_id}", marketH.RemoveFromCart)
 		r.Post("/api/cart/checkout", marketH.Checkout)
+
+		// Admin banner CMS
+		r.Route("/api/admin/banners", func(r chi.Router) {
+			r.Post("/upload", adminBannerH.Upload)
+			r.Get("/", adminBannerH.List)
+			r.Post("/", adminBannerH.Create)
+			r.Get("/{id}", adminBannerH.Get)
+			r.Patch("/{id}", adminBannerH.Update)
+			r.Post("/{id}/publish", adminBannerH.Publish)
+			r.Post("/{id}/archive", adminBannerH.Archive)
+			r.Delete("/{id}", adminBannerH.Delete)
+		})
 	})
 
 	// B2C Shop routes
@@ -238,6 +257,7 @@ func NewRouter(
 			r.Get("/products", shopCatalogH.ListProducts)
 			r.Get("/products/{slug}", shopCatalogH.GetProductBySlug)
 			r.Get("/feed", shopCatalogH.Feed)
+			r.Get("/banners/active", shopBannerH.ListActive)
 
 			r.Post("/auth/otp/send", shopAuthH.Send)
 			r.Post("/auth/otp/verify", shopAuthH.Verify)

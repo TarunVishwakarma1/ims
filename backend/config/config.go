@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -43,6 +44,12 @@ type Config struct {
 	MSG91AuthKey    string
 	MSG91TemplateID string
 	MSG91SenderID   string
+
+	// Banner CMS (Plan 2b)
+	UploadDir           string
+	BannerSeedEnabled   bool
+	BannerSeedInterval  time.Duration
+	BannerImageMaxBytes int64
 }
 
 func LoadConfig() (*Config, error) {
@@ -141,6 +148,35 @@ func LoadConfig() (*Config, error) {
 		msg91SenderID = "IMSHOP"
 	}
 
+	uploadDir := os.Getenv("UPLOAD_DIR")
+	if uploadDir == "" {
+		uploadDir = "./uploads"
+	}
+
+	bannerSeedEnabledStr := os.Getenv("BANNER_SEED_ENABLED")
+	bannerSeedEnabled := shopEnabled // default to shopEnabled
+	if bannerSeedEnabledStr != "" {
+		bannerSeedEnabled = bannerSeedEnabledStr == "true"
+	}
+
+	bannerSeedInterval := 24 * time.Hour
+	if bannerSeedIntervalStr := os.Getenv("BANNER_SEED_INTERVAL"); bannerSeedIntervalStr != "" {
+		d, err := time.ParseDuration(bannerSeedIntervalStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid BANNER_SEED_INTERVAL: %w", err)
+		}
+		bannerSeedInterval = d
+	}
+
+	var bannerImageMaxBytes int64 = 5 * 1024 * 1024
+	if v := os.Getenv("BANNER_IMAGE_MAX_BYTES"); v != "" {
+		n, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid BANNER_IMAGE_MAX_BYTES: %w", err)
+		}
+		bannerImageMaxBytes = n
+	}
+
 	return &Config{
 		ENV:                       env,
 		Port:                      port,
@@ -171,6 +207,10 @@ func LoadConfig() (*Config, error) {
 		MSG91AuthKey:              os.Getenv("MSG91_AUTH_KEY"),
 		MSG91TemplateID:           os.Getenv("MSG91_TEMPLATE_ID"),
 		MSG91SenderID:             msg91SenderID,
+		UploadDir:                 uploadDir,
+		BannerSeedEnabled:         bannerSeedEnabled,
+		BannerSeedInterval:        bannerSeedInterval,
+		BannerImageMaxBytes:       bannerImageMaxBytes,
 	}, nil
 }
 
