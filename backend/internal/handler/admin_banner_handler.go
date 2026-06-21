@@ -23,21 +23,17 @@ func NewAdminBannerHandler(s srv.BannerService, store storage.Storage, maxBytes 
 }
 
 func (h *AdminBannerHandler) Upload(w http.ResponseWriter, r *http.Request) {
-	r.Body = http.MaxBytesReader(w, r.Body, h.maxBytes+1024) // small overhead allowance
-	if err := r.ParseMultipartForm(h.maxBytes + 1024); err != nil {
+	r.Body = http.MaxBytesReader(w, r.Body, h.maxBytes+1024) // hard cap; ParseMultipartForm enforces separately
+	if err := r.ParseMultipartForm(1 << 20); err != nil {    // 1MB in-memory, rest spills to temp file
 		writeError(w, http.StatusBadRequest, "invalid_image")
 		return
 	}
-	file, header, err := r.FormFile("file")
+	file, _, err := r.FormFile("file")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_image")
 		return
 	}
 	defer file.Close()
-	if header.Size > h.maxBytes {
-		writeError(w, http.StatusBadRequest, "invalid_image")
-		return
-	}
 
 	// MIME sniff first 512 bytes.
 	head := make([]byte, 512)

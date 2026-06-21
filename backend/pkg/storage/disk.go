@@ -31,6 +31,8 @@ func (d *DiskStorage) Save(ctx context.Context, key string, r io.Reader, _ strin
 	}
 	defer f.Close()
 	if _, err := io.Copy(f, r); err != nil {
+		f.Close()
+		_ = os.Remove(target)
 		return "", err
 	}
 	return d.PublicPrefix + "/" + key, nil

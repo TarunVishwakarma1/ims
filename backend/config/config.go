@@ -167,6 +167,9 @@ func LoadConfig() (*Config, error) {
 		}
 		bannerSeedInterval = d
 	}
+	if bannerSeedInterval < time.Minute {
+		return nil, fmt.Errorf("BANNER_SEED_INTERVAL must be >= 1m, got %s", bannerSeedInterval)
+	}
 
 	var bannerImageMaxBytes int64 = 5 * 1024 * 1024
 	if v := os.Getenv("BANNER_IMAGE_MAX_BYTES"); v != "" {

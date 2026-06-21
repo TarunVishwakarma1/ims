@@ -71,17 +71,12 @@ func seedOnce(ctx context.Context, pool *pgxpool.Pool, orgID uuid.UUID, festival
 			continue
 		}
 		eventKey := f.Key + "_" + strconv.Itoa(year)
-		var exists int
-		err := pool.QueryRow(ctx,
-			`SELECT 1 FROM banners WHERE org_id=$1 AND event_key=$2 LIMIT 1`,
-			orgID, eventKey,
-		).Scan(&exists)
-		if err == nil {
-			continue // already there
-		}
-		_, err = pool.Exec(ctx, `
+		_, err := pool.Exec(ctx, `
 			INSERT INTO banners (org_id, title, event_key, starts_at, ends_at, status)
-			VALUES ($1, $2, $3, $4, $5, 'draft')
+			SELECT $1, $2, $3, $4, $5, 'draft'
+			WHERE NOT EXISTS (
+				SELECT 1 FROM banners WHERE org_id=$1 AND event_key=$3
+			)
 		`, orgID, f.Name+" Sale", eventKey,
 			d.Add(-7*24*time.Hour), d.Add(24*time.Hour),
 		)
