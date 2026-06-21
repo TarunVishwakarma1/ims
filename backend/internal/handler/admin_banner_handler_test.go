@@ -4,7 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
+	"mime/multipart"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -42,9 +45,17 @@ func (f *fakeAdminSvc) List(_ context.Context, _ srv.BannerListQuery) ([]domain.
 	return nil, nil
 }
 
+type fakeStore struct{ savedKey string }
+
+func (f *fakeStore) Save(_ context.Context, key string, _ io.Reader, _ string) (string, error) {
+	f.savedKey = key
+	return "/uploads/" + key, nil
+}
+func (f *fakeStore) Delete(_ context.Context, _ string) error { return nil }
+
 func TestAdminBanner_Create_201(t *testing.T) {
 	now := time.Now()
-	h := handler.NewAdminBannerHandler(&fakeAdminSvc{createOut: &domain.Banner{ID: uuid.New(), Title: "X"}})
+	h := handler.NewAdminBannerHandler(&fakeAdminSvc{createOut: &domain.Banner{ID: uuid.New(), Title: "X"}}, &fakeStore{}, 1<<20)
 	body, _ := json.Marshal(srv.BannerInput{Title: "X", StartsAt: now, EndsAt: now.Add(time.Hour)})
 	rec := httptest.NewRecorder()
 	h.Create(rec, httptest.NewRequest("POST", "/banners", bytes.NewReader(body)))
@@ -54,7 +65,7 @@ func TestAdminBanner_Create_201(t *testing.T) {
 }
 
 func TestAdminBanner_Publish_409_HeroConflict(t *testing.T) {
-	h := handler.NewAdminBannerHandler(&fakeAdminSvc{publishErr: srv.ErrHeroConflict})
+	h := handler.NewAdminBannerHandler(&fakeAdminSvc{publishErr: srv.ErrHeroConflict}, &fakeStore{}, 1<<20)
 	r := chi.NewRouter()
 	r.Post("/banners/{id}/publish", h.Publish)
 	id := uuid.New().String()
@@ -66,12 +77,52 @@ func TestAdminBanner_Publish_409_HeroConflict(t *testing.T) {
 }
 
 func TestAdminBanner_Get_404(t *testing.T) {
-	h := handler.NewAdminBannerHandler(&fakeAdminSvc{getErr: srv.ErrBannerNotFound})
+	h := handler.NewAdminBannerHandler(&fakeAdminSvc{getErr: srv.ErrBannerNotFound}, &fakeStore{}, 1<<20)
 	r := chi.NewRouter()
 	r.Get("/banners/{id}", h.Get)
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, httptest.NewRequest("GET", "/banners/"+uuid.New().String(), nil))
 	if rec.Code != 404 {
+		t.Fatalf("code=%d", rec.Code)
+	}
+}
+
+func TestAdminBanner_Upload_200(t *testing.T) {
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	fw, _ := mw.CreateFormFile("file", "x.jpg")
+	_, _ = fw.Write([]byte{0xff, 0xd8, 0xff, 0xe0}) // JPEG magic
+	_ = mw.Close()
+
+	store := &fakeStore{}
+	h := handler.NewAdminBannerHandler(&fakeAdminSvc{}, store, 1<<20)
+	req := httptest.NewRequest("POST", "/banners/upload", &body)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	rec := httptest.NewRecorder()
+	h.Upload(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("code=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "/uploads/banners/") {
+		t.Fatalf("missing url: %s", rec.Body.String())
+	}
+}
+
+func TestAdminBanner_Upload_TooLarge_400(t *testing.T) {
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	fw, _ := mw.CreateFormFile("file", "x.jpg")
+	big := make([]byte, 2<<20) // 2 MB
+	big[0], big[1], big[2], big[3] = 0xff, 0xd8, 0xff, 0xe0
+	_, _ = fw.Write(big)
+	_ = mw.Close()
+
+	h := handler.NewAdminBannerHandler(&fakeAdminSvc{}, &fakeStore{}, 1<<20) // 1 MB cap
+	req := httptest.NewRequest("POST", "/banners/upload", &body)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	rec := httptest.NewRecorder()
+	h.Upload(rec, req)
+	if rec.Code != 400 {
 		t.Fatalf("code=%d", rec.Code)
 	}
 }

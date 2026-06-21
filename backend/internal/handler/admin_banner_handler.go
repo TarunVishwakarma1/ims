@@ -9,12 +9,71 @@ import (
 	"github.com/google/uuid"
 
 	srv "github.com/TarunVishwakarma1/ims/backend/internal/service/shop"
+	"github.com/TarunVishwakarma1/ims/backend/pkg/storage"
 )
 
-type AdminBannerHandler struct{ svc srv.BannerService }
+type AdminBannerHandler struct {
+	svc      srv.BannerService
+	store    storage.Storage
+	maxBytes int64
+}
 
-func NewAdminBannerHandler(s srv.BannerService) *AdminBannerHandler {
-	return &AdminBannerHandler{s}
+func NewAdminBannerHandler(s srv.BannerService, store storage.Storage, maxBytes int64) *AdminBannerHandler {
+	return &AdminBannerHandler{svc: s, store: store, maxBytes: maxBytes}
+}
+
+func (h *AdminBannerHandler) Upload(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, h.maxBytes+1024) // small overhead allowance
+	if err := r.ParseMultipartForm(h.maxBytes + 1024); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_image")
+		return
+	}
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_image")
+		return
+	}
+	defer file.Close()
+	if header.Size > h.maxBytes {
+		writeError(w, http.StatusBadRequest, "invalid_image")
+		return
+	}
+
+	// MIME sniff first 512 bytes.
+	head := make([]byte, 512)
+	n, _ := file.Read(head)
+	ct := http.DetectContentType(head[:n])
+	ext := mimeExt(ct)
+	if ext == "" {
+		writeError(w, http.StatusBadRequest, "invalid_image")
+		return
+	}
+
+	// Rewind to start.
+	if _, err := file.Seek(0, 0); err != nil {
+		writeError(w, http.StatusInternalServerError, "upload_failed")
+		return
+	}
+
+	key := "banners/" + uuid.New().String() + ext
+	url, err := h.store.Save(r.Context(), key, file, ct)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "upload_failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"image_url": url})
+}
+
+func mimeExt(ct string) string {
+	switch ct {
+	case "image/jpeg":
+		return ".jpg"
+	case "image/png":
+		return ".png"
+	case "image/webp":
+		return ".webp"
+	}
+	return ""
 }
 
 func (h *AdminBannerHandler) List(w http.ResponseWriter, r *http.Request) {
