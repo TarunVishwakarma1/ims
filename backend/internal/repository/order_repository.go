@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.uber.org/zap"
 )
 
 type OrderRepository interface {
@@ -40,6 +41,22 @@ type OrderRepository interface {
 	GetByCustomerAndID(ctx context.Context, customerID, orderID uuid.UUID) (*CustomerOrderRow, []OrderItemRow, error)
 	CancelByCustomer(tx pgx.Tx, customerID, orderID uuid.UUID, newStatus string) (*CancelSnapshot, error)
 	RestoreStock(ctx context.Context, tx pgx.Tx, items []OrderItemRow, orderID uuid.UUID) error
+
+	// FinalizeRefund updates payment_status and (if status='cancelling') flips to
+	// 'cancelled'. Idempotent: WHERE clause filters out replays so repeated calls
+	// from duplicate webhooks are safe. Returns rowsAffected (0 = already at target).
+	FinalizeRefund(ctx context.Context, orderID, orgID uuid.UUID, newPaymentStatus string, flipCancelling bool) (int64, error)
+
+	// CountAndFirstItemForOrders returns item count + first-item name/image for
+	// each order ID in a single query, eliminating the N+1 pattern in List.
+	CountAndFirstItemForOrders(ctx context.Context, orderIDs []uuid.UUID) (map[uuid.UUID]OrderItemsSummary, error)
+}
+
+// OrderItemsSummary carries the List-view summary data fetched in one batch query.
+type OrderItemsSummary struct {
+	Count      int
+	FirstName  string
+	FirstImage string
 }
 
 type CustomerOrderRow struct {
@@ -509,15 +526,95 @@ func (r *orderRepository) CancelByCustomer(tx pgx.Tx, customerID, orderID uuid.U
 
 func (r *orderRepository) RestoreStock(ctx context.Context, tx pgx.Tx, items []OrderItemRow, orderID uuid.UUID) error {
 	for _, it := range items {
-		_, err := tx.Exec(ctx, `
+		cmd, err := tx.Exec(ctx, `
 			UPDATE inventory
 			   SET quantity = quantity + $1, updated_at = NOW()
 			 WHERE product_id = $2`,
 			it.Quantity, it.ProductID,
 		)
-		if err != nil { return fmt.Errorf("restore stock product=%s: %w", it.ProductID, err) }
+		if err != nil {
+			return fmt.Errorf("restore stock product=%s: %w", it.ProductID, err)
+		}
+		if cmd.RowsAffected() == 0 {
+			// Product inventory row was deleted after order was placed — log but
+			// don't fail the cancel, stock is effectively gone.
+			zap.L().Warn("restore stock: no inventory row for product (deleted?)",
+				zap.String("product_id", it.ProductID.String()),
+				zap.String("order_id", orderID.String()))
+		}
 	}
 	return nil
+}
+
+// FinalizeRefund updates an order's payment_status and optionally flips
+// status from 'cancelling' → 'cancelled'. The WHERE clause makes this
+// idempotent: a duplicate webhook replay hits 0 rows and is silently ignored.
+func (r *orderRepository) FinalizeRefund(ctx context.Context, orderID, orgID uuid.UUID, newPaymentStatus string, flipCancelling bool) (int64, error) {
+	var cmd interface{ RowsAffected() int64 }
+	var err error
+	if flipCancelling {
+		// Full refund: atomically flip cancelling → cancelled if applicable.
+		cmd, err = r.pool.Exec(ctx, `
+			UPDATE orders
+			   SET payment_status = $1,
+			       status = CASE WHEN status = 'cancelling' THEN 'cancelled' ELSE status END,
+			       cancelled_at = CASE WHEN status = 'cancelling' AND cancelled_at IS NULL
+			                           THEN NOW() ELSE cancelled_at END,
+			       updated_at = NOW()
+			 WHERE id = $2 AND org_id = $3
+			   AND (payment_status != $1 OR (status = 'cancelling'))
+		`, newPaymentStatus, orderID, orgID)
+	} else {
+		// Partial refund: only payment_status moves.
+		cmd, err = r.pool.Exec(ctx, `
+			UPDATE orders
+			   SET payment_status = $1,
+			       updated_at = NOW()
+			 WHERE id = $2 AND org_id = $3
+			   AND payment_status != $1
+		`, newPaymentStatus, orderID, orgID)
+	}
+	if err != nil {
+		return 0, err
+	}
+	return cmd.RowsAffected(), nil
+}
+
+// CountAndFirstItemForOrders fetches item counts and first-item metadata for
+// all given order IDs in a single query, eliminating the N+1 problem in List.
+func (r *orderRepository) CountAndFirstItemForOrders(ctx context.Context, orderIDs []uuid.UUID) (map[uuid.UUID]OrderItemsSummary, error) {
+	if len(orderIDs) == 0 {
+		return map[uuid.UUID]OrderItemsSummary{}, nil
+	}
+	rows, err := r.pool.Query(ctx, `
+		WITH ranked AS (
+			SELECT oi.order_id, oi.product_id,
+			       ROW_NUMBER() OVER (PARTITION BY oi.order_id ORDER BY oi.created_at) AS rn
+			  FROM order_items oi
+			 WHERE oi.order_id = ANY($1)
+		)
+		SELECT r.order_id,
+		       COUNT(*) AS cnt,
+		       COALESCE(MAX(p.name) FILTER (WHERE r.rn = 1), '') AS first_name,
+		       COALESCE(MAX(COALESCE(p.shop_image_urls[1],'')) FILTER (WHERE r.rn = 1), '') AS first_img
+		  FROM ranked r
+		  LEFT JOIN products p ON p.id = r.product_id
+		 GROUP BY r.order_id`,
+		orderIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[uuid.UUID]OrderItemsSummary{}
+	for rows.Next() {
+		var oid uuid.UUID
+		var s OrderItemsSummary
+		if err := rows.Scan(&oid, &s.Count, &s.FirstName, &s.FirstImage); err != nil {
+			return nil, err
+		}
+		out[oid] = s
+	}
+	return out, rows.Err()
 }
 
 // itemsForOrder is shared by GetByCustomerAndID and CancelByCustomer (Task 5).
