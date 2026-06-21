@@ -191,6 +191,10 @@ func mapBannerErr(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "image_required")
 	case errors.Is(err, srv.ErrInvalidAudience):
 		writeError(w, http.StatusBadRequest, "invalid_audience")
+	case errors.Is(err, srv.ErrInvalidSlug):
+		writeError(w, http.StatusBadRequest, "invalid_slug")
+	case errors.Is(err, srv.ErrInvalidEventKey):
+		writeError(w, http.StatusBadRequest, "invalid_event_key")
 	default:
 		writeError(w, http.StatusInternalServerError, "fetch_failed")
 	}

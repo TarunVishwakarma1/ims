@@ -182,6 +182,30 @@ func TestBanner_Publish_HeroConflict(t *testing.T) {
 	}
 }
 
+func TestBanner_CreateValidation_InvalidSlug(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	orgID := testdb.PickOrFakeOrgID(t, pool)
+	repo := repository.NewBannerRepository(pool)
+	svc := shop.NewBannerService(repo, cache.NoOp(), orgID)
+	now := time.Now().UTC()
+
+	_, err := svc.Create(context.Background(), shop.BannerInput{
+		Title: "X", StartsAt: now, EndsAt: now.Add(time.Hour),
+		CategorySlug: "Foo Bar!", // invalid: uppercase + space + !
+	})
+	if !errors.Is(err, shop.ErrInvalidSlug) {
+		t.Fatalf("want ErrInvalidSlug, got %v", err)
+	}
+
+	_, err = svc.Create(context.Background(), shop.BannerInput{
+		Title: "X", StartsAt: now, EndsAt: now.Add(time.Hour),
+		EventKey: "Diwali 2026!", // invalid
+	})
+	if !errors.Is(err, shop.ErrInvalidEventKey) {
+		t.Fatalf("want ErrInvalidEventKey, got %v", err)
+	}
+}
+
 func TestBanner_Archive(t *testing.T) {
 	pool := testdb.MustOpen(t)
 	orgID := testdb.PickOrFakeOrgID(t, pool)

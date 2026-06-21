@@ -18,7 +18,7 @@ type BannerRepository interface {
 	GetByID(ctx context.Context, orgID, id uuid.UUID) (*domain.Banner, error)
 	List(ctx context.Context, orgID uuid.UUID, status, eventKey string, limit, offset int) ([]domain.Banner, error)
 	ListActive(ctx context.Context, orgID uuid.UUID, categorySlug string, now time.Time) ([]domain.Banner, error)
-	ExistsByEventKey(ctx context.Context, orgID uuid.UUID, eventKey string) (bool, error)
+	HasOtherPublishedHero(ctx context.Context, orgID, excludeID uuid.UUID) (bool, error)
 	Delete(ctx context.Context, orgID, id uuid.UUID) error
 }
 
@@ -92,15 +92,15 @@ func (r *bannerRepo) List(ctx context.Context, orgID uuid.UUID, status, eventKey
 	        FROM banners WHERE org_id=$1`
 	if status != "" {
 		args = append(args, status)
-		q += " AND status=$" + itoa(len(args))
+		q += " AND status=$" + strconv.Itoa(len(args))
 	}
 	if eventKey != "" {
 		args = append(args, eventKey)
-		q += " AND event_key=$" + itoa(len(args))
+		q += " AND event_key=$" + strconv.Itoa(len(args))
 	}
 	q += " ORDER BY created_at DESC"
 	args = append(args, limit, offset)
-	q += " LIMIT $" + itoa(len(args)-1) + " OFFSET $" + itoa(len(args))
+	q += " LIMIT $" + strconv.Itoa(len(args)-1) + " OFFSET $" + strconv.Itoa(len(args))
 	rows, err := r.db.Query(ctx, q, args...)
 	if err != nil { return nil, err }
 	defer rows.Close()
@@ -118,7 +118,7 @@ func (r *bannerRepo) ListActive(ctx context.Context, orgID uuid.UUID, categorySl
 	         AND $2 BETWEEN starts_at AND ends_at`
 	if categorySlug != "" {
 		args = append(args, categorySlug)
-		q += " AND (category_slug IS NULL OR category_slug=$" + itoa(len(args)) + ")"
+		q += " AND (category_slug IS NULL OR category_slug=$" + strconv.Itoa(len(args)) + ")"
 	} else {
 		q += " AND category_slug IS NULL"
 	}
@@ -129,9 +129,12 @@ func (r *bannerRepo) ListActive(ctx context.Context, orgID uuid.UUID, categorySl
 	return scanBanners(rows)
 }
 
-func (r *bannerRepo) ExistsByEventKey(ctx context.Context, orgID uuid.UUID, eventKey string) (bool, error) {
+func (r *bannerRepo) HasOtherPublishedHero(ctx context.Context, orgID, excludeID uuid.UUID) (bool, error) {
 	var n int
-	err := r.db.QueryRow(ctx, `SELECT 1 FROM banners WHERE org_id=$1 AND event_key=$2 LIMIT 1`, orgID, eventKey).Scan(&n)
+	err := r.db.QueryRow(ctx,
+		`SELECT 1 FROM banners WHERE org_id=$1 AND is_hero=TRUE AND status='published' AND id != $2 LIMIT 1`,
+		orgID, excludeID,
+	).Scan(&n)
 	if errors.Is(err, pgx.ErrNoRows) { return false, nil }
 	if err != nil { return false, err }
 	return true, nil
@@ -159,4 +162,3 @@ func scanBanners(rows pgx.Rows) ([]domain.Banner, error) {
 }
 
 func nullStr(s string) any { if s == "" { return nil }; return s }
-func itoa(n int) string    { return strconv.Itoa(n) }

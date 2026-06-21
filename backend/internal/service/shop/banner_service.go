@@ -3,10 +3,12 @@ package shop
 import (
 	"context"
 	"errors"
+	"regexp"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
+	"go.uber.org/zap"
 
 	"github.com/TarunVishwakarma1/ims/backend/internal/domain"
 	"github.com/TarunVishwakarma1/ims/backend/internal/repository"
@@ -20,6 +22,13 @@ var (
 	ErrInvalidDateRange = errors.New("ends_at must be after starts_at")
 	ErrImageRequired    = errors.New("image required to publish")
 	ErrInvalidAudience  = errors.New("audience_filter must be one of all|new|returning")
+	ErrInvalidSlug      = errors.New("category_slug must match [a-z0-9-]{1,200}")
+	ErrInvalidEventKey  = errors.New("event_key must match [a-z0-9_-]{1,200}")
+)
+
+var (
+	bannerSlugRe     = regexp.MustCompile(`^[a-z0-9-]{1,200}$`)
+	bannerEventKeyRe = regexp.MustCompile(`^[a-z0-9_-]{1,200}$`)
 )
 
 type ActiveBanners struct {
@@ -99,7 +108,9 @@ func (s *bannerService) InvalidateActive(ctx context.Context) error {
 var validAudiences = map[string]struct{}{"": {}, "all": {}, "new": {}, "returning": {}}
 
 func (s *bannerService) Create(ctx context.Context, in BannerInput) (*domain.Banner, error) {
-	if err := validateInput(in); err != nil { return nil, err }
+	if err := validateInput(in); err != nil {
+		return nil, err
+	}
 	b := &domain.Banner{
 		OrgID:          s.orgID,
 		Title:          in.Title,
@@ -113,20 +124,28 @@ func (s *bannerService) Create(ctx context.Context, in BannerInput) (*domain.Ban
 		Status:         "draft",
 		SortOrder:      in.SortOrder,
 		IsHero:         in.IsHero,
-		AudienceFilter: normalizeAudience(in.AudienceFilter),
+		AudienceFilter: in.AudienceFilter,
 		CategorySlug:   in.CategorySlug,
 	}
 	out, err := s.repo.Insert(ctx, b)
-	if err != nil { return nil, err }
-	_ = s.InvalidateActive(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.InvalidateActive(ctx); err != nil {
+		zap.L().Warn("banner cache invalidate failed", zap.Error(err))
+	}
 	return out, nil
 }
 
 func (s *bannerService) Update(ctx context.Context, id uuid.UUID, in BannerInput) (*domain.Banner, error) {
-	if err := validateInput(in); err != nil { return nil, err }
+	if err := validateInput(in); err != nil {
+		return nil, err
+	}
 	current, err := s.repo.GetByID(ctx, s.orgID, id)
 	if err != nil {
-		if errors.Is(err, domain.ErrNotFound) { return nil, ErrBannerNotFound }
+		if errors.Is(err, domain.ErrNotFound) {
+			return nil, ErrBannerNotFound
+		}
 		return nil, err
 	}
 	current.Title = in.Title
@@ -139,50 +158,69 @@ func (s *bannerService) Update(ctx context.Context, id uuid.UUID, in BannerInput
 	current.EndsAt = in.EndsAt
 	current.SortOrder = in.SortOrder
 	current.IsHero = in.IsHero
-	current.AudienceFilter = normalizeAudience(in.AudienceFilter)
+	current.AudienceFilter = in.AudienceFilter
 	current.CategorySlug = in.CategorySlug
 	out, err := s.repo.Update(ctx, current)
 	if err != nil {
-		if errors.Is(err, domain.ErrNotFound) { return nil, ErrBannerNotFound }
+		if errors.Is(err, domain.ErrNotFound) {
+			return nil, ErrBannerNotFound
+		}
 		return nil, err
 	}
-	_ = s.InvalidateActive(ctx)
+	if err := s.InvalidateActive(ctx); err != nil {
+		zap.L().Warn("banner cache invalidate failed", zap.Error(err))
+	}
 	return out, nil
 }
 
 func (s *bannerService) Publish(ctx context.Context, id uuid.UUID) error {
 	current, err := s.repo.GetByID(ctx, s.orgID, id)
 	if err != nil {
-		if errors.Is(err, domain.ErrNotFound) { return ErrBannerNotFound }
+		if errors.Is(err, domain.ErrNotFound) {
+			return ErrBannerNotFound
+		}
 		return err
 	}
-	if current.ImageURL == "" { return ErrImageRequired }
+	if current.ImageURL == "" {
+		return ErrImageRequired
+	}
 	if current.IsHero {
-		// Defensive pre-check before relying on DB unique index.
-		others, err := s.repo.List(ctx, s.orgID, "published", "", 100, 0)
-		if err != nil { return err }
-		for _, o := range others {
-			if o.IsHero && o.ID != id { return ErrHeroConflict }
+		has, err := s.repo.HasOtherPublishedHero(ctx, s.orgID, id)
+		if err != nil {
+			return err
+		}
+		if has {
+			return ErrHeroConflict
 		}
 	}
 	current.Status = "published"
 	if _, err := s.repo.Update(ctx, current); err != nil {
-		if isUniqueViolation(err) { return ErrHeroConflict }
+		if isUniqueViolation(err) {
+			return ErrHeroConflict
+		}
 		return err
 	}
-	_ = s.InvalidateActive(ctx)
+	if err := s.InvalidateActive(ctx); err != nil {
+		zap.L().Warn("banner cache invalidate failed", zap.Error(err))
+	}
 	return nil
 }
 
 func (s *bannerService) Archive(ctx context.Context, id uuid.UUID) error {
 	current, err := s.repo.GetByID(ctx, s.orgID, id)
 	if err != nil {
-		if errors.Is(err, domain.ErrNotFound) { return ErrBannerNotFound }
+		if errors.Is(err, domain.ErrNotFound) {
+			return ErrBannerNotFound
+		}
 		return err
 	}
 	current.Status = "archived"
-	if _, err := s.repo.Update(ctx, current); err != nil { return err }
-	_ = s.InvalidateActive(ctx)
+	if _, err := s.repo.Update(ctx, current); err != nil {
+		return err
+	}
+	if err := s.InvalidateActive(ctx); err != nil {
+		zap.L().Warn("banner cache invalidate failed", zap.Error(err))
+	}
 	return nil
 }
 
@@ -196,17 +234,23 @@ func isUniqueViolation(err error) bool {
 
 func (s *bannerService) Delete(ctx context.Context, id uuid.UUID) error {
 	if err := s.repo.Delete(ctx, s.orgID, id); err != nil {
-		if errors.Is(err, domain.ErrNotFound) { return ErrBannerNotFound }
+		if errors.Is(err, domain.ErrNotFound) {
+			return ErrBannerNotFound
+		}
 		return err
 	}
-	_ = s.InvalidateActive(ctx)
+	if err := s.InvalidateActive(ctx); err != nil {
+		zap.L().Warn("banner cache invalidate failed", zap.Error(err))
+	}
 	return nil
 }
 
 func (s *bannerService) Get(ctx context.Context, id uuid.UUID) (*domain.Banner, error) {
 	b, err := s.repo.GetByID(ctx, s.orgID, id)
 	if err != nil {
-		if errors.Is(err, domain.ErrNotFound) { return nil, ErrBannerNotFound }
+		if errors.Is(err, domain.ErrNotFound) {
+			return nil, ErrBannerNotFound
+		}
 		return nil, err
 	}
 	return b, nil
@@ -214,19 +258,33 @@ func (s *bannerService) Get(ctx context.Context, id uuid.UUID) (*domain.Banner, 
 
 func (s *bannerService) List(ctx context.Context, q BannerListQuery) ([]domain.Banner, error) {
 	limit := q.Limit
-	if limit <= 0 { limit = 24 }
-	if limit > 100 { limit = 100 }
-	if q.Status != "" && !validStatus(q.Status) { return nil, ErrInvalidStatus }
+	if limit <= 0 {
+		limit = 24
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	if q.Status != "" && !validStatus(q.Status) {
+		return nil, ErrInvalidStatus
+	}
 	return s.repo.List(ctx, s.orgID, q.Status, q.EventKey, limit, q.Offset)
 }
 
 func validateInput(in BannerInput) error {
-	if !in.EndsAt.After(in.StartsAt) { return ErrInvalidDateRange }
-	if _, ok := validAudiences[in.AudienceFilter]; !ok { return ErrInvalidAudience }
+	if !in.EndsAt.After(in.StartsAt) {
+		return ErrInvalidDateRange
+	}
+	if _, ok := validAudiences[in.AudienceFilter]; !ok {
+		return ErrInvalidAudience
+	}
+	if in.CategorySlug != "" && !bannerSlugRe.MatchString(in.CategorySlug) {
+		return ErrInvalidSlug
+	}
+	if in.EventKey != "" && !bannerEventKeyRe.MatchString(in.EventKey) {
+		return ErrInvalidEventKey
+	}
 	return nil
 }
-
-func normalizeAudience(a string) string { if a == "" { return "all" }; return a }
 
 func validStatus(s string) bool {
 	switch s {

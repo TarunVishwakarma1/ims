@@ -6,10 +6,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
 	"time"
 
 	srv "github.com/TarunVishwakarma1/ims/backend/internal/service/shop"
 )
+
+var bannerSlugRe = regexp.MustCompile(`^[a-z0-9-]{1,200}$`)
 
 type BannerHandler struct {
 	svc srv.BannerService
@@ -20,6 +23,10 @@ func NewBannerHandler(s srv.BannerService) *BannerHandler { return &BannerHandle
 func (h *BannerHandler) ListActive(w http.ResponseWriter, r *http.Request) {
 	t0 := time.Now()
 	cat := r.URL.Query().Get("category")
+	if cat != "" && !bannerSlugRe.MatchString(cat) {
+		writeErrShop(w, http.StatusBadRequest, "invalid_slug")
+		return
+	}
 	pg, err := h.svc.ListActive(r.Context(), cat)
 	if err != nil {
 		writeErrShop(w, 500, "fetch_failed")
