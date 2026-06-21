@@ -78,6 +78,7 @@ var (
 	ErrOrderNotFound    = errors.New("order not found")
 	ErrCancelNotAllowed = errors.New("order status does not allow cancel")
 	ErrRefundFailed     = errors.New("refund request failed")
+	ErrInvalidCursor    = errors.New("invalid cursor")
 )
 
 // paymentRefunder is the subset of service.PaymentService we need.
@@ -108,19 +109,19 @@ func encodeOrderCursor(at time.Time, id uuid.UUID) string {
 	return base64.RawURLEncoding.EncodeToString(b)
 }
 
-func decodeOrderCursor(s string) (time.Time, uuid.UUID, bool) {
+func decodeOrderCursor(s string) (time.Time, uuid.UUID, error) {
 	if s == "" {
-		return time.Time{}, uuid.Nil, false
+		return time.Time{}, uuid.Nil, nil
 	}
 	raw, err := base64.RawURLEncoding.DecodeString(s)
 	if err != nil {
-		return time.Time{}, uuid.Nil, false
+		return time.Time{}, uuid.Nil, ErrInvalidCursor
 	}
 	var p orderCursorPayload
 	if err := json.Unmarshal(raw, &p); err != nil {
-		return time.Time{}, uuid.Nil, false
+		return time.Time{}, uuid.Nil, ErrInvalidCursor
 	}
-	return p.K, p.I, true
+	return p.K, p.I, nil
 }
 
 func (s *shopOrderService) List(ctx context.Context, customerID uuid.UUID, q OrderListQuery) (*OrderListResult, error) {
@@ -132,7 +133,10 @@ func (s *shopOrderService) List(ctx context.Context, customerID uuid.UUID, q Ord
 		limit = 50
 	}
 
-	cursorAt, cursorID, _ := decodeOrderCursor(q.Cursor)
+	cursorAt, cursorID, err := decodeOrderCursor(q.Cursor)
+	if err != nil {
+		return nil, err
+	}
 
 	rows, err := s.repo.ListByCustomer(ctx, customerID, cursorAt, cursorID, limit+1)
 	if err != nil {
@@ -249,6 +253,8 @@ func (s *shopOrderService) Get(ctx context.Context, customerID, orderID uuid.UUI
 		Discount:    row.Discount,
 		Items:       views,
 		Address:     addr,
+		// TODO(plan2c-followup): replace placeholder 2-event timeline with real
+		//                       order_status_history fetch once that table exists.
 		Timeline:    []OrderEvent{{At: row.CreatedAt, Status: "created"}, {At: row.UpdatedAt, Status: row.Status}},
 		Cancellable: cancellable,
 	}, nil
@@ -259,8 +265,11 @@ func (s *shopOrderService) Get(ctx context.Context, customerID, orderID uuid.UUI
 func (s *shopOrderService) Cancel(ctx context.Context, customerID, orderID uuid.UUID) (*CancelResult, error) {
 	// Peek at the order to decide newStatus before opening the tx.
 	row, _, err := s.repo.GetByCustomerAndID(ctx, customerID, orderID)
-	if err != nil {
+	if errors.Is(err, domain.ErrNotFound) {
 		return nil, ErrOrderNotFound
+	}
+	if err != nil {
+		return nil, err
 	}
 	if row.Status != "pending" && row.Status != "confirmed" {
 		return nil, ErrCancelNotAllowed
@@ -279,7 +288,11 @@ func (s *shopOrderService) Cancel(ctx context.Context, customerID, orderID uuid.
 
 	snap, err := s.repo.CancelByCustomer(tx, customerID, orderID, newStatus)
 	if err != nil {
-		// Concurrent state transition lost the race.
+		// Either order was deleted OR status moved out of {pending,confirmed} between
+		// peek and tx. Both surface to the customer as "can't cancel", but log distinguishes.
+		zap.L().Info("cancel raced with concurrent state transition",
+			zap.String("order_id", orderID.String()),
+			zap.String("customer_id", customerID.String()))
 		return nil, ErrCancelNotAllowed
 	}
 
@@ -306,7 +319,10 @@ func (s *shopOrderService) Cancel(ctx context.Context, customerID, orderID uuid.
 					zap.String("order_id", orderID.String()),
 					zap.String("payment_id", pid.String()),
 					zap.Error(err))
-				// Audit row skipped for V1 (schema mismatch); follow-up wires via audit_log_repository.
+				// TODO(plan2c-followup): write audit_logs row via audit_log_repository,
+				//                       emit metric shop.refund.cancel.failed for alerting,
+				//                       enqueue retry via stuck-payment reconciliation cron.
+				//                       Order stays in 'cancelling' until manual reconcile.
 			}
 		}(*snap.PaymentID, snap.TotalAmount)
 		return &CancelResult{Status: "cancelling", RefundQueued: true, EstimatedDays: 7}, nil

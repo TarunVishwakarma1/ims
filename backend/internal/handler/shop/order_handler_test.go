@@ -76,6 +76,25 @@ func TestOrderHandler_Get_404(t *testing.T) {
 	}
 }
 
+func TestOrderHandler_List_InvalidCursor_400(t *testing.T) {
+	h := shophandler.NewOrderHandler(&fakeShopOrders{listErr: srv.ErrInvalidCursor})
+	customerID := uuid.New()
+	r := chi.NewRouter()
+	r.Get("/orders", h.List)
+
+	req := httptest.NewRequest("GET", "/orders?cursor=garbage", nil)
+	req = withCustomerCtx(req, customerID)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != 400 {
+		t.Fatalf("code=%d, want 400", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "invalid_cursor") {
+		t.Fatalf("body: %s", rec.Body.String())
+	}
+}
+
 func TestOrderHandler_Cancel_409_ConflictState(t *testing.T) {
 	h := shophandler.NewOrderHandler(&fakeShopOrders{cancelErr: srv.ErrCancelNotAllowed})
 	customerID := uuid.New()

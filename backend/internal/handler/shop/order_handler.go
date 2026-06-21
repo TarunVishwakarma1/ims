@@ -35,6 +35,10 @@ func (h *OrderHandler) List(w http.ResponseWriter, r *http.Request) {
 		Limit:  limit,
 		Cursor: q.Get("cursor"),
 	})
+	if errors.Is(err, srv.ErrInvalidCursor) {
+		writeErrShop(w, 400, "invalid_cursor")
+		return
+	}
 	if err != nil {
 		writeErrShop(w, 500, "fetch_failed")
 		return
