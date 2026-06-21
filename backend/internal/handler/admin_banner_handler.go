@@ -1,9 +1,13 @@
 package handler
 
+// TODO(Plan 2b follow-up): wire audit_log entries on Create/Update/Publish/Archive/Delete
+// matching pattern from coupon_handler.go.
+
 import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -74,11 +78,23 @@ func mimeExt(ct string) string {
 
 func (h *AdminBannerHandler) List(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
+	limit := 24
+	if v := q.Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
+			limit = n
+		}
+	}
+	offset := 0
+	if v := q.Get("offset"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			offset = n
+		}
+	}
 	res, err := h.svc.List(r.Context(), srv.BannerListQuery{
 		Status:   q.Get("status"),
 		EventKey: q.Get("event_key"),
-		Limit:    atoiOrDef(q.Get("limit"), 24),
-		Offset:   atoiOrDef(q.Get("offset"), 0),
+		Limit:    limit,
+		Offset:   offset,
 	})
 	if err != nil {
 		mapBannerErr(w, err)
@@ -196,18 +212,3 @@ func mapBannerErr(w http.ResponseWriter, err error) {
 	}
 }
 
-// atoiOrDef parses a decimal string s and returns its integer value,
-// or def if s is empty or contains non-digit characters.
-func atoiOrDef(s string, def int) int {
-	if s == "" {
-		return def
-	}
-	n := 0
-	for _, r := range s {
-		if r < '0' || r > '9' {
-			return def
-		}
-		n = n*10 + int(r-'0')
-	}
-	return n
-}

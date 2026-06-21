@@ -1,6 +1,10 @@
 package calendar
 
-import "time"
+import (
+	"time"
+
+	"go.uber.org/zap"
+)
 
 var IST = time.FixedZone("IST", 5*3600+1800) // UTC+05:30
 
@@ -20,6 +24,8 @@ func lookupDate(table map[int]time.Time) func(int) time.Time {
 	return func(year int) time.Time {
 		if d, ok := table[year]; ok { return d }
 		// fallback for missing years: Jan 1 (admin must manually update table; spec promises 2026-2030)
+		zap.L().Warn("calendar: lunar festival year not in table, falling back to Jan 1",
+			zap.Int("year", year))
 		return time.Date(year, 1, 1, 0, 0, 0, 0, IST)
 	}
 }

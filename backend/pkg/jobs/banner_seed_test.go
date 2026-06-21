@@ -2,6 +2,7 @@ package jobs_test
 
 import (
 	"context"
+	"strconv"
 	"testing"
 	"time"
 
@@ -39,7 +40,7 @@ func TestBannerSeed_InsertsDrafts(t *testing.T) {
 	}
 	if err := pool.QueryRow(context.Background(),
 		`SELECT COUNT(*) FROM banners WHERE org_id=$1 AND event_key=$2`,
-		orgID, "stub_"+itoa(year),
+		orgID, "stub_"+strconv.Itoa(year),
 	).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
@@ -58,14 +59,3 @@ func TestBannerSeed_StopIdempotent(t *testing.T) {
 	stop() // must not panic
 }
 
-func itoa(n int) string {
-	s := ""
-	if n == 0 {
-		return "0"
-	}
-	for n > 0 {
-		s = string(rune('0'+n%10)) + s
-		n /= 10
-	}
-	return s
-}
