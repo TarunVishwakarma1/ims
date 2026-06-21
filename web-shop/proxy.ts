@@ -4,7 +4,7 @@ import { SHOP_SESSION_COOKIE } from "@/lib/cookies";
 
 const PROTECTED_PREFIXES = ["/orders", "/checkout", "/addresses", "/profile"];
 
-export function middleware(req: NextRequest) {
+export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
   if (!PROTECTED_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + "/"))) {
     return NextResponse.next();
