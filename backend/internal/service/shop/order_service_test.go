@@ -3,6 +3,7 @@ package shop_test
 import (
 	"context"
 	"encoding/json"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -14,14 +15,14 @@ import (
 )
 
 type fakeRefunder struct {
-	called    bool
-	gotAmount int64
+	called    atomic.Bool
+	gotAmount atomic.Int64
 	gotErr    error
 }
 
 func (f *fakeRefunder) Refund(_ context.Context, _, _ uuid.UUID, amount int64, _ string) error {
-	f.called = true
-	f.gotAmount = amount
+	f.gotAmount.Store(amount)
+	f.called.Store(true)
 	return f.gotErr
 }
 
@@ -147,7 +148,7 @@ func TestShopOrder_Cancel_COD_HappyPath(t *testing.T) {
 	if res.RefundQueued {
 		t.Fatal("COD must not queue refund")
 	}
-	if refunder.called {
+	if refunder.called.Load() {
 		t.Fatal("Refund must not be called for COD")
 	}
 
@@ -220,16 +221,16 @@ func TestShopOrder_Cancel_Razorpay_QueuesRefund(t *testing.T) {
 
 	// Wait briefly for goroutine.
 	for i := 0; i < 50; i++ {
-		if refunder.called {
+		if refunder.called.Load() {
 			break
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	if !refunder.called {
+	if !refunder.called.Load() {
 		t.Fatal("Refund goroutine did not fire")
 	}
-	if refunder.gotAmount != 500 {
-		t.Fatalf("wrong refund amount: %d", refunder.gotAmount)
+	if refunder.gotAmount.Load() != 500 {
+		t.Fatalf("wrong refund amount: %d", refunder.gotAmount.Load())
 	}
 
 	var status string
