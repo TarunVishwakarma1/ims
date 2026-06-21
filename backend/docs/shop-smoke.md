@@ -138,3 +138,30 @@ ETAG=$(curl -s -D - -o /dev/null http://localhost:8080/api/shop/banners/active |
 curl -s -o /dev/null -w '%{http_code}\n' -H "If-None-Match: $ETAG" http://localhost:8080/api/shop/banners/active
 # → expect 304
 ```
+
+## 10. Order tracking (Plan 2c)
+
+```bash
+# Customer JWT from Plan 1 OTP flow (TOKEN already set).
+# List my orders.
+curl -s -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/shop/orders | jq .
+
+# Paginate.
+NEXT=$(curl -s -H "Authorization: Bearer $TOKEN" 'http://localhost:8080/api/shop/orders?limit=10' | jq -r .next_cursor)
+curl -s -H "Authorization: Bearer $TOKEN" "http://localhost:8080/api/shop/orders?limit=10&cursor=$NEXT" | jq .
+
+# Detail.
+curl -s -H "Authorization: Bearer $TOKEN" "http://localhost:8080/api/shop/orders/$ORDER_ID" | jq '{status, payment_status, items_count: (.items|length), cancellable}'
+
+# Cancel (pending COD).
+curl -s -X POST -H "Authorization: Bearer $TOKEN" "http://localhost:8080/api/shop/orders/$ORDER_ID/cancel" | jq .
+# → {"status":"cancelled","refund_queued":false}
+
+# Cancel (paid Razorpay).
+curl -s -X POST -H "Authorization: Bearer $TOKEN" "http://localhost:8080/api/shop/orders/$PAID_ORDER_ID/cancel" | jq .
+# → {"status":"cancelling","refund_queued":true,"estimated_days":7}
+
+# After Razorpay refund webhook fires, status should flip:
+curl -s -H "Authorization: Bearer $TOKEN" "http://localhost:8080/api/shop/orders/$PAID_ORDER_ID" | jq '{status, payment_status}'
+# → {"status":"cancelled","payment_status":"refunded"}
+```
