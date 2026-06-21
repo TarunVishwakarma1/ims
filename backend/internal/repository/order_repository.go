@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/TarunVishwakarma1/ims/backend/internal/domain"
 	"github.com/google/uuid"
@@ -33,6 +35,35 @@ type OrderRepository interface {
 	// the given financial-year label and stamps the result on the order. No-op
 	// if invoice_number is already set. Returns the allocated number.
 	AllocateInvoiceNumber(ctx context.Context, orderID, orgID uuid.UUID, fyLabel string) (string, error)
+
+	ListByCustomer(ctx context.Context, customerID uuid.UUID, cursorCreatedAt time.Time, cursorID uuid.UUID, limit int) ([]CustomerOrderRow, error)
+	GetByCustomerAndID(ctx context.Context, customerID, orderID uuid.UUID) (*CustomerOrderRow, []OrderItemRow, error)
+}
+
+type CustomerOrderRow struct {
+	ID                      uuid.UUID
+	OrgID                   uuid.UUID
+	CustomerID              uuid.UUID
+	InvoiceNumber           string
+	Status                  string
+	PaymentStatus           string
+	PaymentID               *uuid.UUID
+	Subtotal                int64
+	DeliveryFee             int64
+	Discount                int64
+	TotalAmount             int64
+	DeliveryAddressSnapshot []byte
+	CreatedAt               time.Time
+	UpdatedAt               time.Time
+}
+
+type OrderItemRow struct {
+	ProductID    uuid.UUID
+	ProductName  string
+	ProductSlug  string
+	ProductImage string
+	Quantity     int
+	UnitPrice    int64
 }
 
 type orderRepository struct {
@@ -349,4 +380,94 @@ func (r *orderRepository) ListFiltered(ctx context.Context, orgID uuid.UUID, f d
 		items = append(items, o)
 	}
 	return items, total, rows.Err()
+}
+
+func (r *orderRepository) ListByCustomer(ctx context.Context, customerID uuid.UUID, cursorCreatedAt time.Time, cursorID uuid.UUID, limit int) ([]CustomerOrderRow, error) {
+	args := []any{customerID}
+	q := `
+		SELECT id, org_id, customer_id, COALESCE(invoice_number,''), status, payment_status,
+		       payment_id, COALESCE(subtotal,0), COALESCE(delivery_fee,0), COALESCE(discount,0),
+		       total_amount, COALESCE(delivery_address_snapshot, '{}'::jsonb),
+		       created_at, updated_at
+		  FROM orders
+		 WHERE customer_id = $1`
+	if !cursorCreatedAt.IsZero() {
+		args = append(args, cursorCreatedAt)
+		args = append(args, cursorID)
+		q += fmt.Sprintf(` AND (created_at < $%d OR (created_at = $%d AND id > $%d))`,
+			len(args)-1, len(args)-1, len(args))
+	}
+	args = append(args, limit)
+	q += ` ORDER BY created_at DESC, id ASC LIMIT $` + strconv.Itoa(len(args))
+
+	rows, err := r.pool.Query(ctx, q, args...)
+	if err != nil { return nil, err }
+	defer rows.Close()
+	out := []CustomerOrderRow{}
+	for rows.Next() {
+		var c CustomerOrderRow
+		if err := rows.Scan(
+			&c.ID, &c.OrgID, &c.CustomerID, &c.InvoiceNumber, &c.Status, &c.PaymentStatus,
+			&c.PaymentID, &c.Subtotal, &c.DeliveryFee, &c.Discount,
+			&c.TotalAmount, &c.DeliveryAddressSnapshot,
+			&c.CreatedAt, &c.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+func (r *orderRepository) GetByCustomerAndID(ctx context.Context, customerID, orderID uuid.UUID) (*CustomerOrderRow, []OrderItemRow, error) {
+	var c CustomerOrderRow
+	err := r.pool.QueryRow(ctx, `
+		SELECT id, org_id, customer_id, COALESCE(invoice_number,''), status, payment_status,
+		       payment_id, COALESCE(subtotal,0), COALESCE(delivery_fee,0), COALESCE(discount,0),
+		       total_amount, COALESCE(delivery_address_snapshot, '{}'::jsonb),
+		       created_at, updated_at
+		  FROM orders
+		 WHERE id = $1 AND customer_id = $2`,
+		orderID, customerID,
+	).Scan(
+		&c.ID, &c.OrgID, &c.CustomerID, &c.InvoiceNumber, &c.Status, &c.PaymentStatus,
+		&c.PaymentID, &c.Subtotal, &c.DeliveryFee, &c.Discount,
+		&c.TotalAmount, &c.DeliveryAddressSnapshot,
+		&c.CreatedAt, &c.UpdatedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil, domain.ErrNotFound
+	}
+	if err != nil { return nil, nil, err }
+
+	items, err := r.itemsForOrder(ctx, orderID)
+	if err != nil { return nil, nil, err }
+	return &c, items, nil
+}
+
+// itemsForOrder is shared by GetByCustomerAndID and CancelByCustomer (Task 5).
+func (r *orderRepository) itemsForOrder(ctx context.Context, orderID uuid.UUID) ([]OrderItemRow, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT oi.product_id, oi.quantity, oi.unit_price,
+		       p.name,
+		       COALESCE(p.shop_slug,''),
+		       COALESCE(p.shop_image_urls[1],'')
+		  FROM order_items oi
+		  LEFT JOIN products p ON p.id = oi.product_id
+		 WHERE oi.order_id = $1
+		 ORDER BY oi.created_at`,
+		orderID,
+	)
+	if err != nil { return nil, err }
+	defer rows.Close()
+	out := []OrderItemRow{}
+	for rows.Next() {
+		var it OrderItemRow
+		if err := rows.Scan(
+			&it.ProductID, &it.Quantity, &it.UnitPrice,
+			&it.ProductName, &it.ProductSlug, &it.ProductImage,
+		); err != nil { return nil, err }
+		out = append(out, it)
+	}
+	return out, rows.Err()
 }
