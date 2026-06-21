@@ -10,6 +10,7 @@ import (
 	"github.com/TarunVishwakarma1/ims/backend/internal/repository"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.uber.org/zap"
 )
 
 // paymentCreator is the minimal interface from service.PaymentService that
@@ -63,6 +64,7 @@ type checkoutService struct {
 	pool          *pgxpool.Pool
 	orgID         uuid.UUID
 	cartRepo      repository.CartRepository
+	addrRepo      repository.CustomerAddressRepository
 	paymentSvc    paymentCreator
 	orderRepo     repository.OrderRepository
 	razorpayKeyID string
@@ -74,6 +76,7 @@ func NewCheckoutService(
 	pool *pgxpool.Pool,
 	orgID uuid.UUID,
 	cartRepo repository.CartRepository,
+	addrRepo repository.CustomerAddressRepository,
 	paymentSvc paymentCreator,
 	orderRepo repository.OrderRepository,
 	razorpayKeyID string,
@@ -82,6 +85,7 @@ func NewCheckoutService(
 		pool:          pool,
 		orgID:         orgID,
 		cartRepo:      cartRepo,
+		addrRepo:      addrRepo,
 		paymentSvc:    paymentSvc,
 		orderRepo:     orderRepo,
 		razorpayKeyID: razorpayKeyID,
@@ -91,6 +95,14 @@ func NewCheckoutService(
 // Summary returns a pre-checkout price breakdown for the customer's cart.
 // V1: ShippingPaise = 0 (free shipping).
 func (s *checkoutService) Summary(ctx context.Context, customerID, addressID uuid.UUID) (*CheckoutSummary, error) {
+	addr, err := s.addrRepo.GetByID(ctx, addressID)
+	if err != nil {
+		return nil, err
+	}
+	if addr == nil || addr.CustomerID != customerID {
+		return nil, ErrAddressRequired
+	}
+
 	cart, err := s.cartRepo.Get(ctx, customerID)
 	if err != nil {
 		return nil, err
@@ -137,6 +149,15 @@ func (s *checkoutService) Place(ctx context.Context, in PlaceOrderInput) (*Place
 	}
 	if in.PaymentMethod != "razorpay" && in.PaymentMethod != "cod" {
 		return nil, ErrInvalidPaymentMethod
+	}
+
+	// --- Verify address ownership ---
+	addr, err := s.addrRepo.GetByID(ctx, in.AddressID)
+	if err != nil {
+		return nil, err
+	}
+	if addr == nil || addr.CustomerID != in.CustomerID {
+		return nil, ErrAddressRequired
 	}
 
 	// --- Load cart ---
@@ -236,7 +257,9 @@ func (s *checkoutService) Place(ctx context.Context, in PlaceOrderInput) (*Place
 	fy := indianFYLabel(time.Now().UTC())
 	invNum, err := s.orderRepo.AllocateInvoiceNumber(ctx, orderID, s.orgID, fy)
 	if err != nil {
-		// Non-fatal in V1: log and continue without invoice number.
+		zap.L().Error("allocate invoice number failed",
+			zap.String("order_id", orderID.String()),
+			zap.Error(err))
 		invNum = ""
 	}
 

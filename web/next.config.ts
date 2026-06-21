@@ -23,7 +23,7 @@ const isProd = process.env.NODE_ENV === "production";
 // payment modal inside an iframe served from api.razorpay.com, beacons
 // telemetry to lumberjack.razorpay.com, and pulls method icons from cdn.
 // All of those need explicit CSP allowances or the widget never opens.
-const razorpayScript = "https://checkout.razorpay.com";
+const razorpayScript = "https://checkout.razorpay.com https://cdn.razorpay.com";
 const razorpayFrame = "https://api.razorpay.com https://checkout.razorpay.com";
 const razorpayConnect = "https://api.razorpay.com https://lumberjack.razorpay.com https://lumberjack-cx.razorpay.com";
 const razorpayImg = "https://*.razorpay.com https://*.rzp.io";

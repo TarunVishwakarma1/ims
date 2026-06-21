@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, Suspense } from 'react'
+import { useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
@@ -57,10 +57,14 @@ function InventoryContent() {
 
   // Show-only-low-stock toggle. Honors ?lowOnly=1 in the URL so the toast
   // action button in the sidebar can deep-link straight to the filtered view.
-  const [lowOnly, setLowOnly] = useState(false)
-  useEffect(() => {
-    setLowOnly(searchParams.get('lowOnly') === '1')
-  }, [searchParams])
+  const currentSearchLowOnly = searchParams.get('lowOnly') === '1'
+  const [lowOnly, setLowOnly] = useState(currentSearchLowOnly)
+  const [prevSearchLowOnly, setPrevSearchLowOnly] = useState(currentSearchLowOnly)
+
+  if (currentSearchLowOnly !== prevSearchLowOnly) {
+    setPrevSearchLowOnly(currentSearchLowOnly)
+    setLowOnly(currentSearchLowOnly)
+  }
 
   // Live updates: invalidate the inventory query whenever the backend
   // emits an inventory.* event. Low-stock toast is handled globally by

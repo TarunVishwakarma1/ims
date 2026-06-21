@@ -152,6 +152,7 @@ export function Sidebar() {
       if (g.id in fromStorage) initial[g.id] = fromStorage[g.id]
       else initial[g.id] = g.items.some(i => pathname.startsWith(i.href))
     }
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setOpenGroups(initial)
     // Intentionally pathname-only on mount — we don't want to forcibly
     // expand groups every nav, only sync stored state.

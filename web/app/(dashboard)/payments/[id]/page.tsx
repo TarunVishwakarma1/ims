@@ -56,6 +56,7 @@ export default function PaymentDetailPage({ params }: { params: Promise<{ id: st
   useEffect(() => {
     if (!expectingChange || !payment) return
     if (payment.status === 'refunded' || payment.status === 'partially_refunded') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setExpectingChange(false)
       queryClient.invalidateQueries({ queryKey: ['refunds', id] })
       queryClient.invalidateQueries({ queryKey: ['payments'] })

@@ -115,6 +115,17 @@ func (Noop) Delete(ctx context.Context, keys ...string) error            { retur
 func (Noop) DeleteByPattern(ctx context.Context, pattern string) error   { return nil }
 func (Noop) Ping(ctx context.Context) error                              { return nil }
 
+// NoOp returns a cache that always misses and silently no-ops on writes. Useful for tests.
+func NoOp() Cache { return &noopCache{} }
+
+type noopCache struct{}
+
+func (n *noopCache) Get(_ context.Context, _ string, _ any) error                   { return ErrMiss }
+func (n *noopCache) Set(_ context.Context, _ string, _ any, _ time.Duration) error  { return nil }
+func (n *noopCache) Delete(_ context.Context, _ ...string) error                    { return nil }
+func (n *noopCache) DeleteByPattern(_ context.Context, _ string) error              { return nil }
+func (n *noopCache) Ping(_ context.Context) error                                   { return nil }
+
 // MustNew returns a real cache if Valkey is reachable, otherwise a no-op cache.
 // The app always boots — caching is purely an optimization.
 func MustNew(url string) Cache {

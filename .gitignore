@@ -123,3 +123,5 @@ docs/superpowers/
 
 .claude
 
+# Local upload directory (banner images)
+backend/uploads/

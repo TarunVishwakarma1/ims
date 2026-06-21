@@ -33,3 +33,15 @@ func TestShopJWT_RejectsB2BAudience(t *testing.T) {
 	// Forged B2B-style token must not parse via ParseShopJWT.
 	// (Sanity check; full audience enforcement lives in middleware.)
 }
+
+func TestShopJWT_RejectsInvalidValid(t *testing.T) {
+	tok, _ := IssueShopJWT("s", uuid.New(), time.Hour)
+	tampered := tok[:len(tok)-2] + "AB"
+	cid, err := ParseShopJWT("s", tampered)
+	if err == nil {
+		t.Fatal("expected error on tampered token")
+	}
+	if cid != uuid.Nil {
+		t.Fatalf("expected nil cid, got %v", cid)
+	}
+}

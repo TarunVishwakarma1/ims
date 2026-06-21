@@ -1,0 +1,214 @@
+package handler
+
+// TODO(Plan 2b follow-up): wire audit_log entries on Create/Update/Publish/Archive/Delete
+// matching pattern from coupon_handler.go.
+
+import (
+	"encoding/json"
+	"errors"
+	"net/http"
+	"strconv"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
+
+	srv "github.com/TarunVishwakarma1/ims/backend/internal/service/shop"
+	"github.com/TarunVishwakarma1/ims/backend/pkg/storage"
+)
+
+type AdminBannerHandler struct {
+	svc      srv.BannerService
+	store    storage.Storage
+	maxBytes int64
+}
+
+func NewAdminBannerHandler(s srv.BannerService, store storage.Storage, maxBytes int64) *AdminBannerHandler {
+	return &AdminBannerHandler{svc: s, store: store, maxBytes: maxBytes}
+}
+
+func (h *AdminBannerHandler) Upload(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, h.maxBytes+1024) // hard cap; ParseMultipartForm enforces separately
+	if err := r.ParseMultipartForm(1 << 20); err != nil {    // 1MB in-memory, rest spills to temp file
+		writeError(w, http.StatusBadRequest, "invalid_image")
+		return
+	}
+	file, _, err := r.FormFile("file")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_image")
+		return
+	}
+	defer file.Close()
+
+	// MIME sniff first 512 bytes.
+	head := make([]byte, 512)
+	n, _ := file.Read(head)
+	ct := http.DetectContentType(head[:n])
+	ext := mimeExt(ct)
+	if ext == "" {
+		writeError(w, http.StatusBadRequest, "invalid_image")
+		return
+	}
+
+	// Rewind to start.
+	if _, err := file.Seek(0, 0); err != nil {
+		writeError(w, http.StatusInternalServerError, "upload_failed")
+		return
+	}
+
+	key := "banners/" + uuid.New().String() + ext
+	url, err := h.store.Save(r.Context(), key, file, ct)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "upload_failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"image_url": url})
+}
+
+func mimeExt(ct string) string {
+	switch ct {
+	case "image/jpeg":
+		return ".jpg"
+	case "image/png":
+		return ".png"
+	case "image/webp":
+		return ".webp"
+	}
+	return ""
+}
+
+func (h *AdminBannerHandler) List(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	limit := 24
+	if v := q.Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
+			limit = n
+		}
+	}
+	offset := 0
+	if v := q.Get("offset"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			offset = n
+		}
+	}
+	res, err := h.svc.List(r.Context(), srv.BannerListQuery{
+		Status:   q.Get("status"),
+		EventKey: q.Get("event_key"),
+		Limit:    limit,
+		Offset:   offset,
+	})
+	if err != nil {
+		mapBannerErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+func (h *AdminBannerHandler) Get(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id")
+		return
+	}
+	b, err := h.svc.Get(r.Context(), id)
+	if err != nil {
+		mapBannerErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, b)
+}
+
+func (h *AdminBannerHandler) Create(w http.ResponseWriter, r *http.Request) {
+	var in srv.BannerInput
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body")
+		return
+	}
+	out, err := h.svc.Create(r.Context(), in)
+	if err != nil {
+		mapBannerErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, out)
+}
+
+func (h *AdminBannerHandler) Update(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id")
+		return
+	}
+	var in srv.BannerInput
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body")
+		return
+	}
+	out, err := h.svc.Update(r.Context(), id, in)
+	if err != nil {
+		mapBannerErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (h *AdminBannerHandler) Publish(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id")
+		return
+	}
+	if err := h.svc.Publish(r.Context(), id); err != nil {
+		mapBannerErr(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+func (h *AdminBannerHandler) Archive(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id")
+		return
+	}
+	if err := h.svc.Archive(r.Context(), id); err != nil {
+		mapBannerErr(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+func (h *AdminBannerHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_id")
+		return
+	}
+	if err := h.svc.Delete(r.Context(), id); err != nil {
+		mapBannerErr(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func mapBannerErr(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, srv.ErrBannerNotFound):
+		writeError(w, http.StatusNotFound, "not_found")
+	case errors.Is(err, srv.ErrHeroConflict):
+		writeError(w, http.StatusConflict, "hero_conflict")
+	case errors.Is(err, srv.ErrInvalidStatus):
+		writeError(w, http.StatusBadRequest, "invalid_status")
+	case errors.Is(err, srv.ErrInvalidDateRange):
+		writeError(w, http.StatusBadRequest, "invalid_dates")
+	case errors.Is(err, srv.ErrImageRequired):
+		writeError(w, http.StatusBadRequest, "image_required")
+	case errors.Is(err, srv.ErrInvalidAudience):
+		writeError(w, http.StatusBadRequest, "invalid_audience")
+	case errors.Is(err, srv.ErrInvalidSlug):
+		writeError(w, http.StatusBadRequest, "invalid_slug")
+	case errors.Is(err, srv.ErrInvalidEventKey):
+		writeError(w, http.StatusBadRequest, "invalid_event_key")
+	default:
+		writeError(w, http.StatusInternalServerError, "fetch_failed")
+	}
+}
+

@@ -61,7 +61,7 @@ export default function ReceiptPage({ params }: { params: Promise<{ id: string }
     const n = parseFloat((it.Total || '0').replace(/[^\d.-]/g, ''))
     return sum + (Number.isFinite(n) ? n : 0)
   }, 0)
-  const total = data.amount / 100
+
 
   return (
     <div className="max-w-2xl mx-auto space-y-4 print:space-y-2">

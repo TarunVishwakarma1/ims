@@ -2,9 +2,11 @@ package main
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/TarunVishwakarma1/ims/backend/config"
 	"github.com/TarunVishwakarma1/ims/backend/internal/handler"
+	shophandler "github.com/TarunVishwakarma1/ims/backend/internal/handler/shop"
 	"github.com/TarunVishwakarma1/ims/backend/pkg/cache"
 	"github.com/TarunVishwakarma1/ims/backend/pkg/metrics"
 	"github.com/TarunVishwakarma1/ims/backend/pkg/middleware"
@@ -37,6 +39,15 @@ func NewRouter(
 	cfg *config.Config,
 	pool *pgxpool.Pool,
 	cacheClient cache.Cache,
+	shopEnabled bool,
+	shopAuthH *shophandler.AuthHandler,
+	shopCustH *shophandler.CustomerHandler,
+	shopCartH *shophandler.CartHandler,
+	shopCheckH *shophandler.CheckoutHandler,
+	shopCatalogH *shophandler.CatalogHandler,
+	adminBannerH *handler.AdminBannerHandler,
+	shopBannerH *shophandler.BannerHandler,
+	uploadDir string,
 ) http.Handler {
 	r := chi.NewRouter()
 
@@ -51,6 +62,12 @@ func NewRouter(
 	r.Use(metrics.HTTPMiddleware) // record request count + latency
 	r.Use(middleware.RateLimiter())
 	r.Use(middleware.CORS(cfg.AllowedOrigins))
+	r.Use(chiMiddleware.Compress(5, "application/json", "text/html", "text/plain", "text/css", "application/javascript"))
+
+	// Static file server — serves uploaded banner images (shop only)
+	if shopEnabled {
+		r.Mount("/uploads/", bannerUploadsHandler(uploadDir))
+	}
 
 	// Public routes (no auth)
 	r.Get("/health", handler.HealthCheck(pool, cacheClient))
@@ -221,7 +238,54 @@ func NewRouter(
 		r.Put("/api/cart/items/{listing_id}", marketH.UpdateCartItem)
 		r.Delete("/api/cart/items/{listing_id}", marketH.RemoveFromCart)
 		r.Post("/api/cart/checkout", marketH.Checkout)
+
+		// Admin banner CMS (only registered when shop is enabled to avoid nil handler panic)
+		if shopEnabled {
+			r.With(middleware.RequirePermission(rbac.BannersManage)).Post("/api/admin/banners/upload", adminBannerH.Upload)
+			r.With(middleware.RequirePermission(rbac.BannersView)).Get("/api/admin/banners", adminBannerH.List)
+			r.With(middleware.RequirePermission(rbac.BannersManage)).Post("/api/admin/banners", adminBannerH.Create)
+			r.With(middleware.RequirePermission(rbac.BannersView)).Get("/api/admin/banners/{id}", adminBannerH.Get)
+			r.With(middleware.RequirePermission(rbac.BannersManage)).Patch("/api/admin/banners/{id}", adminBannerH.Update)
+			r.With(middleware.RequirePermission(rbac.BannersManage)).Post("/api/admin/banners/{id}/publish", adminBannerH.Publish)
+			r.With(middleware.RequirePermission(rbac.BannersManage)).Post("/api/admin/banners/{id}/archive", adminBannerH.Archive)
+			r.With(middleware.RequirePermission(rbac.BannersManage)).Delete("/api/admin/banners/{id}", adminBannerH.Delete)
+		}
 	})
+
+	// B2C Shop routes
+	if shopEnabled {
+		r.Route("/api/shop", func(r chi.Router) {
+			r.Get("/categories", shopCatalogH.ListCategories)
+			r.Get("/products", shopCatalogH.ListProducts)
+			r.Get("/products/{slug}", shopCatalogH.GetProductBySlug)
+			r.Get("/feed", shopCatalogH.Feed)
+			r.Get("/banners/active", shopBannerH.ListActive)
+
+			r.Post("/auth/otp/send", shopAuthH.Send)
+			r.Post("/auth/otp/verify", shopAuthH.Verify)
+
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.RequireCustomer(cfg.JWTSecret))
+
+				r.Get("/me", shopCustH.GetMe)
+				r.Patch("/me", shopCustH.UpdateMe)
+
+				r.Get("/addresses", shopCustH.ListAddresses)
+				r.Post("/addresses", shopCustH.AddAddress)
+				r.Patch("/addresses/{id}", shopCustH.UpdateAddress)
+				r.Delete("/addresses/{id}", shopCustH.DeleteAddress)
+				r.Post("/addresses/{id}/default", shopCustH.SetDefaultAddress)
+
+				r.Get("/cart", shopCartH.Get)
+				r.Post("/cart/items", shopCartH.AddItem)
+				r.Delete("/cart/items/{product_id}", shopCartH.RemoveItem)
+				r.Post("/cart/merge", shopCartH.Merge)
+
+				r.Get("/checkout/summary", shopCheckH.Summary)
+				r.With(middleware.Idempotency(pool)).Post("/checkout/place", shopCheckH.Place)
+			})
+		})
+	}
 
 	// otelhttp wraps the whole router so every incoming request gets a
 	// server span. Route-template name (e.g. "/api/orders/{id}") shows up
@@ -237,3 +301,18 @@ func NewRouter(
 }
 
 type routeKey struct{}
+
+// bannerUploadsHandler serves uploaded banner images with directory-listing
+// protection and a one-day public cache header.
+func bannerUploadsHandler(uploadDir string) http.Handler {
+	fs := http.FileServer(http.Dir(uploadDir))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Reject directory listing requests (trailing slash or bare /uploads/).
+		if strings.HasSuffix(r.URL.Path, "/") {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+		http.StripPrefix("/uploads/", fs).ServeHTTP(w, r)
+	})
+}
