@@ -23,6 +23,14 @@ describe("phoneSchema", () => {
   it("rejects empty", () => {
     expect(() => phoneSchema.parse({ phone: "" })).toThrow();
   });
+
+  it("accepts +91 prefix without space (canonical form)", () => {
+    expect(phoneSchema.parse({ phone: "+919876543210" }).phone).toBe("9876543210");
+  });
+
+  it("rejects 11-digit string starting with 9", () => {
+    expect(() => phoneSchema.parse({ phone: "91234567890" })).toThrow();
+  });
 });
 
 describe("codeSchema", () => {

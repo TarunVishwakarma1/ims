@@ -35,4 +35,16 @@ describe("safeNext", () => {
     expect(safeNext("/cart")).toBe("/cart");
     expect(safeNext("/orders/abc-123")).toBe("/orders/abc-123");
   });
+
+  it("rejects CRLF / control-char injection", () => {
+    expect(safeNext("/foo\r\nSet-Cookie: x=y")).toBe("/");
+    expect(safeNext("/foo\x00bar")).toBe("/");
+    expect(safeNext("/\tlegit")).toBe("/");
+  });
+
+  it("trims surrounding whitespace before validation", () => {
+    expect(safeNext("  /orders  ")).toBe("/orders");
+    expect(safeNext("  //evil.com  ")).toBe("/");
+    expect(safeNext("   ")).toBe("/");
+  });
 });
