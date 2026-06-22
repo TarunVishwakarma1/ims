@@ -7,19 +7,30 @@ import type { ActiveBanners, Category, FeedPage } from "@/lib/shop-types";
 
 export const dynamic = "force-dynamic";
 
+async function safeJson<T>(p: Promise<Response>, fallback: T): Promise<T> {
+  try {
+    const res = await p;
+    if (!res.ok) return fallback;
+    return (await res.json()) as T;
+  } catch {
+    return fallback;
+  }
+}
+
 async function loadHomeData() {
-  const [bannersRes, catsRes, feedRes] = await Promise.all([
-    serverFetch("/api/shop/banners/active"),
-    serverFetch("/api/shop/categories"),
-    serverFetch("/api/shop/feed?limit=24"),
+  // Each fetch is independent — network throws absorbed so the home page
+  // renders an empty shell instead of 500-ing when the backend is down.
+  const [banners, categories, feed] = await Promise.all([
+    safeJson<ActiveBanners>(serverFetch("/api/shop/banners/active"), {
+      hero: null,
+      carousel: [],
+    }),
+    safeJson<Category[]>(serverFetch("/api/shop/categories"), []),
+    safeJson<FeedPage>(serverFetch("/api/shop/feed?limit=24"), {
+      items: [],
+      page_info: { tier: "category", page: 1 },
+    }),
   ]);
-  const banners: ActiveBanners = bannersRes.ok
-    ? await bannersRes.json()
-    : { hero: null, carousel: [] };
-  const categories: Category[] = catsRes.ok ? await catsRes.json() : [];
-  const feed: FeedPage = feedRes.ok
-    ? await feedRes.json()
-    : { items: [], page_info: { tier: "category", page: 1 } };
   return { banners, categories, feed };
 }
 

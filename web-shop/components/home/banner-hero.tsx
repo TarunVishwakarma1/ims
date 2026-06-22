@@ -1,11 +1,12 @@
 import Image from "next/image";
 import Link from "next/link";
+import { safeCtaLink } from "@/lib/safe-next";
 import type { Banner } from "@/lib/shop-types";
 
 export function BannerHero({ banner }: { banner: Banner }) {
   return (
     <Link
-      href={banner.cta_link || "#"}
+      href={safeCtaLink(banner.cta_link)}
       className="block relative w-full aspect-[3/1] rounded-2xl overflow-hidden bg-brand-50"
     >
       {banner.image_url && (

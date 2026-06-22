@@ -5,6 +5,7 @@ import Autoplay from "embla-carousel-autoplay";
 import Image from "next/image";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { safeCtaLink } from "@/lib/safe-next";
 import type { Banner } from "@/lib/shop-types";
 
 export function BannerCarousel({ banners }: { banners: Banner[] }) {
@@ -33,7 +34,7 @@ export function BannerCarousel({ banners }: { banners: Banner[] }) {
           {banners.map((b) => (
             <Link
               key={b.id}
-              href={b.cta_link || "#"}
+              href={safeCtaLink(b.cta_link)}
               className="relative flex-[0_0_100%] aspect-[3/1] bg-brand-50"
             >
               {b.image_url && (
