@@ -45,3 +45,33 @@ export type FeedPage = {
   next_cursor?: string;
   page_info: FeedPageInfo;
 };
+
+export type ProductDetail = ProductCard & {
+  description: string;
+  image_urls: string[];
+  gst_rate: number;
+  category_name?: string;
+};
+
+export type ProductSort = "newest" | "price_asc" | "price_desc";
+
+const PRODUCT_SORTS = ["newest", "price_asc", "price_desc"] as const;
+export function isProductSort(s: string): s is ProductSort {
+  return (PRODUCT_SORTS as readonly string[]).includes(s);
+}
+
+export type ProductListQuery = {
+  category?: string;
+  search?: string;
+  sort?: ProductSort;
+  in_stock?: boolean;
+  cursor?: string;
+  limit?: number;
+};
+
+export type ProductListResult = {
+  items: ProductCard[];
+  total_count: number;
+  limit: number;
+  next_cursor?: string;
+};
