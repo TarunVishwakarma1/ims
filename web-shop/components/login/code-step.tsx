@@ -62,7 +62,7 @@ export function CodeStep({ otpId, phone, onResend, onChangeNumber }: Props) {
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
       <p className="text-sm text-muted">
-        Code sent to +91 {phone.slice(0, 5)}***{phone.slice(-2)}
+        Code sent to +91 {phone.slice(0, 2)}******{phone.slice(-2)}
       </p>
 
       <div>

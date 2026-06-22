@@ -1,13 +1,9 @@
 import { NextResponse } from "next/server";
-import { z } from "zod";
-
-const reqSchema = z.object({
-  phone: z.string().regex(/^\d{10}$/, "phone must be 10 digits"),
-});
+import { phoneSchema } from "@/lib/login-schemas";
 
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
-  const parsed = reqSchema.safeParse(body);
+  const parsed = phoneSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: "invalid_phone" }, { status: 400 });
   }

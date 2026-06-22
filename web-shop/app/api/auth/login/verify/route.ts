@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { SHOP_SESSION_COOKIE, shopSessionCookieOptions } from "@/lib/cookies";
+import { shopSessionCookieOptions } from "@/lib/cookies";
 
 const reqSchema = z.object({
   otp_id: z.string().uuid(),
@@ -33,18 +33,12 @@ export async function POST(req: Request) {
 
   const token = (payload as { token?: string }).token;
   if (!token) {
-    return NextResponse.json({ error: "verify_failed" }, { status: 502 });
+    return NextResponse.json({ error: "verify_failed" }, { status: 500 });
   }
 
-  const opts = shopSessionCookieOptions();
+  const { name, ...cookieOpts } = shopSessionCookieOptions();
   const customer = (payload as { customer?: unknown }).customer ?? null;
   const res = NextResponse.json({ customer });
-  res.cookies.set(SHOP_SESSION_COOKIE, token, {
-    httpOnly: opts.httpOnly,
-    sameSite: opts.sameSite,
-    secure: opts.secure,
-    path: opts.path,
-    maxAge: opts.maxAge,
-  });
+  res.cookies.set(name, token, cookieOpts);
   return res;
 }
