@@ -1,0 +1,9 @@
+.env
+.env.*
+.next
+node_modules
+bun.lockb
+Dockerfile
+.git
+.gitignore
+README.md
