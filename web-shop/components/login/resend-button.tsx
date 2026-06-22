@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 
 type Props = {
-  onResend: () => Promise<void> | void;
+  onResend: () => Promise<boolean>;
   cooldownSec?: number;
 };
 
@@ -23,8 +23,8 @@ export function ResendButton({ onResend, cooldownSec = 30 }: Props) {
     <button
       type="button"
       onClick={async () => {
-        await onResend();
-        setRemaining(cooldownSec);
+        const ok = await onResend();
+        if (ok) setRemaining(cooldownSec);
       }}
       className="text-sm text-brand-600 hover:underline"
     >

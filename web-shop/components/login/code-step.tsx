@@ -17,7 +17,7 @@ import { ResendButton } from "./resend-button";
 type Props = {
   otpId: string;
   phone: string;
-  onResend: () => Promise<void>;
+  onResend: () => Promise<boolean>;
   onChangeNumber: () => void;
 };
 
