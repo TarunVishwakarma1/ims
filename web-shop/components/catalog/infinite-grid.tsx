@@ -29,13 +29,16 @@ export function InfiniteGrid<T>({
   gridClassName = DEFAULT_GRID,
 }: Props<T>) {
   const [items, setItems] = useState<T[]>(initialItems);
-  const [cursor, setCursor] = useState<string | undefined>(initialCursor);
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(!initialCursor);
   const [error, setError] = useState(false);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const loadingRef = useRef(false);
   const doneRef = useRef(!initialCursor);
+  // Cursor lives in a ref so handleLoadMore is not torn down + re-registered
+  // every page; eliminates the stale-closure race where a fast-scroll after
+  // setCursor could fire the old callback with the previous cursor.
+  const cursorRef = useRef<string | undefined>(initialCursor);
 
   const handleLoadMore = useCallback(async () => {
     if (loadingRef.current || doneRef.current) return;
@@ -43,22 +46,23 @@ export function InfiniteGrid<T>({
     setLoading(true);
     setError(false);
     try {
-      const next = await loadMore(cursor);
+      const next = await loadMore(cursorRef.current);
       setItems((prev) => [...prev, ...next.items]);
       if (next.next_cursor) {
-        setCursor(next.next_cursor);
+        cursorRef.current = next.next_cursor;
       } else {
+        cursorRef.current = undefined;
         doneRef.current = true;
         setDone(true);
       }
     } catch {
       setError(true);
-      toast.error("Could not load more. Tap Try again.");
+      toast.error("Could not load more. Click Try again.");
     } finally {
       loadingRef.current = false;
       setLoading(false);
     }
-  }, [cursor, loadMore]);
+  }, [loadMore]);
 
   const retry = useCallback(() => {
     setError(false);

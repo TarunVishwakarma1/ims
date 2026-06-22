@@ -50,6 +50,7 @@ export type ProductDetail = ProductCard & {
   description: string;
   image_urls: string[];
   gst_rate: number;
+  category_slug?: string;
   category_name?: string;
 };
 
