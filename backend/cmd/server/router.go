@@ -47,6 +47,7 @@ func NewRouter(
 	shopCatalogH *shophandler.CatalogHandler,
 	adminBannerH *handler.AdminBannerHandler,
 	shopBannerH *shophandler.BannerHandler,
+	shopOrderH *shophandler.OrderHandler,
 	uploadDir string,
 ) http.Handler {
 	r := chi.NewRouter()
@@ -283,6 +284,10 @@ func NewRouter(
 
 				r.Get("/checkout/summary", shopCheckH.Summary)
 				r.With(middleware.Idempotency(pool)).Post("/checkout/place", shopCheckH.Place)
+
+				r.Get("/orders", shopOrderH.List)
+				r.Get("/orders/{id}", shopOrderH.Get)
+				r.Post("/orders/{id}/cancel", shopOrderH.Cancel)
 			})
 		})
 	}

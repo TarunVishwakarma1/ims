@@ -4,12 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/TarunVishwakarma1/ims/backend/internal/domain"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.uber.org/zap"
 )
 
 type OrderRepository interface {
@@ -33,6 +36,62 @@ type OrderRepository interface {
 	// the given financial-year label and stamps the result on the order. No-op
 	// if invoice_number is already set. Returns the allocated number.
 	AllocateInvoiceNumber(ctx context.Context, orderID, orgID uuid.UUID, fyLabel string) (string, error)
+
+	ListByCustomer(ctx context.Context, customerID uuid.UUID, cursorCreatedAt time.Time, cursorID uuid.UUID, limit int) ([]CustomerOrderRow, error)
+	GetByCustomerAndID(ctx context.Context, customerID, orderID uuid.UUID) (*CustomerOrderRow, []OrderItemRow, error)
+	CancelByCustomer(tx pgx.Tx, customerID, orderID uuid.UUID, newStatus string) (*CancelSnapshot, error)
+	RestoreStock(ctx context.Context, tx pgx.Tx, items []OrderItemRow, orderID uuid.UUID) error
+
+	// FinalizeRefund updates payment_status and (if status='cancelling') flips to
+	// 'cancelled'. Idempotent: WHERE clause filters out replays so repeated calls
+	// from duplicate webhooks are safe. Returns rowsAffected (0 = already at target).
+	FinalizeRefund(ctx context.Context, orderID, orgID uuid.UUID, newPaymentStatus string, flipCancelling bool) (int64, error)
+
+	// CountAndFirstItemForOrders returns item count + first-item name/image for
+	// each order ID in a single query, eliminating the N+1 pattern in List.
+	CountAndFirstItemForOrders(ctx context.Context, orderIDs []uuid.UUID) (map[uuid.UUID]OrderItemsSummary, error)
+}
+
+// OrderItemsSummary carries the List-view summary data fetched in one batch query.
+type OrderItemsSummary struct {
+	Count      int
+	FirstName  string
+	FirstImage string
+}
+
+type CustomerOrderRow struct {
+	ID                      uuid.UUID
+	OrgID                   uuid.UUID
+	CustomerID              uuid.UUID
+	InvoiceNumber           string
+	Status                  string
+	PaymentStatus           string
+	PaymentID               *uuid.UUID
+	Subtotal                int64
+	DeliveryFee             int64
+	Discount                int64
+	TotalAmount             int64
+	DeliveryAddressSnapshot []byte
+	CreatedAt               time.Time
+	UpdatedAt               time.Time
+}
+
+type OrderItemRow struct {
+	ProductID    uuid.UUID
+	ProductName  string
+	ProductSlug  string
+	ProductImage string
+	Quantity     int
+	UnitPrice    int64
+}
+
+type CancelSnapshot struct {
+	OldStatus     string
+	PaymentStatus string
+	PaymentID     *uuid.UUID
+	TotalAmount   int64
+	OrgID         uuid.UUID
+	Items         []OrderItemRow
 }
 
 type orderRepository struct {
@@ -349,4 +408,238 @@ func (r *orderRepository) ListFiltered(ctx context.Context, orgID uuid.UUID, f d
 		items = append(items, o)
 	}
 	return items, total, rows.Err()
+}
+
+func (r *orderRepository) ListByCustomer(ctx context.Context, customerID uuid.UUID, cursorCreatedAt time.Time, cursorID uuid.UUID, limit int) ([]CustomerOrderRow, error) {
+	args := []any{customerID}
+	q := `
+		SELECT id, org_id, customer_id, COALESCE(invoice_number,''), status, payment_status,
+		       payment_id, COALESCE(subtotal,0), COALESCE(delivery_fee,0), COALESCE(discount,0),
+		       total_amount, COALESCE(delivery_address_snapshot, '{}'::jsonb),
+		       created_at, updated_at
+		  FROM orders
+		 WHERE customer_id = $1`
+	if !cursorCreatedAt.IsZero() {
+		args = append(args, cursorCreatedAt)
+		args = append(args, cursorID)
+		q += fmt.Sprintf(` AND (created_at < $%d OR (created_at = $%d AND id > $%d))`,
+			len(args)-1, len(args)-1, len(args))
+	}
+	args = append(args, limit)
+	q += ` ORDER BY created_at DESC, id ASC LIMIT $` + strconv.Itoa(len(args))
+
+	rows, err := r.pool.Query(ctx, q, args...)
+	if err != nil { return nil, err }
+	defer rows.Close()
+	out := []CustomerOrderRow{}
+	for rows.Next() {
+		var c CustomerOrderRow
+		if err := rows.Scan(
+			&c.ID, &c.OrgID, &c.CustomerID, &c.InvoiceNumber, &c.Status, &c.PaymentStatus,
+			&c.PaymentID, &c.Subtotal, &c.DeliveryFee, &c.Discount,
+			&c.TotalAmount, &c.DeliveryAddressSnapshot,
+			&c.CreatedAt, &c.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+func (r *orderRepository) GetByCustomerAndID(ctx context.Context, customerID, orderID uuid.UUID) (*CustomerOrderRow, []OrderItemRow, error) {
+	var c CustomerOrderRow
+	err := r.pool.QueryRow(ctx, `
+		SELECT id, org_id, customer_id, COALESCE(invoice_number,''), status, payment_status,
+		       payment_id, COALESCE(subtotal,0), COALESCE(delivery_fee,0), COALESCE(discount,0),
+		       total_amount, COALESCE(delivery_address_snapshot, '{}'::jsonb),
+		       created_at, updated_at
+		  FROM orders
+		 WHERE id = $1 AND customer_id = $2`,
+		orderID, customerID,
+	).Scan(
+		&c.ID, &c.OrgID, &c.CustomerID, &c.InvoiceNumber, &c.Status, &c.PaymentStatus,
+		&c.PaymentID, &c.Subtotal, &c.DeliveryFee, &c.Discount,
+		&c.TotalAmount, &c.DeliveryAddressSnapshot,
+		&c.CreatedAt, &c.UpdatedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil, domain.ErrNotFound
+	}
+	if err != nil { return nil, nil, err }
+
+	items, err := r.itemsForOrder(ctx, orderID)
+	if err != nil { return nil, nil, err }
+	return &c, items, nil
+}
+
+func (r *orderRepository) CancelByCustomer(tx pgx.Tx, customerID, orderID uuid.UUID, newStatus string) (*CancelSnapshot, error) {
+	ctx := context.Background()
+	var snap CancelSnapshot
+	// Use a CTE to capture old_status before the update.
+	err := tx.QueryRow(ctx, `
+		WITH old AS (
+			SELECT status, payment_status, payment_id, total_amount, org_id
+			  FROM orders
+			 WHERE id = $1
+			   AND customer_id = $2
+			   AND status IN ('pending', 'confirmed')
+		)
+		UPDATE orders
+		   SET status = $3, cancelled_at = NOW(), updated_at = NOW()
+		 WHERE id = $1
+		   AND customer_id = $2
+		   AND status IN ('pending', 'confirmed')
+		   AND EXISTS (SELECT 1 FROM old)
+		RETURNING
+			(SELECT status FROM old),
+			payment_status, payment_id, total_amount, org_id`,
+		orderID, customerID, newStatus,
+	).Scan(&snap.OldStatus, &snap.PaymentStatus, &snap.PaymentID, &snap.TotalAmount, &snap.OrgID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, domain.ErrNotFound
+	}
+	if err != nil { return nil, err }
+
+	rows, err := tx.Query(ctx, `
+		SELECT oi.product_id, oi.quantity, oi.unit_price,
+		       COALESCE(p.name, ''),
+		       COALESCE(p.shop_slug, ''),
+		       COALESCE(p.shop_image_urls[1], '')
+		  FROM order_items oi
+		  LEFT JOIN products p ON p.id = oi.product_id
+		 WHERE oi.order_id = $1`,
+		orderID,
+	)
+	if err != nil { return nil, err }
+	defer rows.Close()
+	for rows.Next() {
+		var it OrderItemRow
+		if err := rows.Scan(
+			&it.ProductID, &it.Quantity, &it.UnitPrice,
+			&it.ProductName, &it.ProductSlug, &it.ProductImage,
+		); err != nil { return nil, err }
+		snap.Items = append(snap.Items, it)
+	}
+	return &snap, rows.Err()
+}
+
+func (r *orderRepository) RestoreStock(ctx context.Context, tx pgx.Tx, items []OrderItemRow, orderID uuid.UUID) error {
+	for _, it := range items {
+		cmd, err := tx.Exec(ctx, `
+			UPDATE inventory
+			   SET quantity = quantity + $1, updated_at = NOW()
+			 WHERE product_id = $2`,
+			it.Quantity, it.ProductID,
+		)
+		if err != nil {
+			return fmt.Errorf("restore stock product=%s: %w", it.ProductID, err)
+		}
+		if cmd.RowsAffected() == 0 {
+			// Product inventory row was deleted after order was placed — log but
+			// don't fail the cancel, stock is effectively gone.
+			zap.L().Warn("restore stock: no inventory row for product (deleted?)",
+				zap.String("product_id", it.ProductID.String()),
+				zap.String("order_id", orderID.String()))
+		}
+	}
+	return nil
+}
+
+// FinalizeRefund updates an order's payment_status and optionally flips
+// status from 'cancelling' → 'cancelled'. The WHERE clause makes this
+// idempotent: a duplicate webhook replay hits 0 rows and is silently ignored.
+func (r *orderRepository) FinalizeRefund(ctx context.Context, orderID, orgID uuid.UUID, newPaymentStatus string, flipCancelling bool) (int64, error) {
+	var cmd interface{ RowsAffected() int64 }
+	var err error
+	if flipCancelling {
+		// Full refund: atomically flip cancelling → cancelled if applicable.
+		cmd, err = r.pool.Exec(ctx, `
+			UPDATE orders
+			   SET payment_status = $1,
+			       status = CASE WHEN status = 'cancelling' THEN 'cancelled' ELSE status END,
+			       cancelled_at = CASE WHEN status = 'cancelling' AND cancelled_at IS NULL
+			                           THEN NOW() ELSE cancelled_at END,
+			       updated_at = NOW()
+			 WHERE id = $2 AND org_id = $3
+			   AND (payment_status != $1 OR (status = 'cancelling'))
+		`, newPaymentStatus, orderID, orgID)
+	} else {
+		// Partial refund: only payment_status moves.
+		cmd, err = r.pool.Exec(ctx, `
+			UPDATE orders
+			   SET payment_status = $1,
+			       updated_at = NOW()
+			 WHERE id = $2 AND org_id = $3
+			   AND payment_status != $1
+		`, newPaymentStatus, orderID, orgID)
+	}
+	if err != nil {
+		return 0, err
+	}
+	return cmd.RowsAffected(), nil
+}
+
+// CountAndFirstItemForOrders fetches item counts and first-item metadata for
+// all given order IDs in a single query, eliminating the N+1 problem in List.
+func (r *orderRepository) CountAndFirstItemForOrders(ctx context.Context, orderIDs []uuid.UUID) (map[uuid.UUID]OrderItemsSummary, error) {
+	if len(orderIDs) == 0 {
+		return map[uuid.UUID]OrderItemsSummary{}, nil
+	}
+	rows, err := r.pool.Query(ctx, `
+		WITH ranked AS (
+			SELECT oi.order_id, oi.product_id,
+			       ROW_NUMBER() OVER (PARTITION BY oi.order_id ORDER BY oi.created_at) AS rn
+			  FROM order_items oi
+			 WHERE oi.order_id = ANY($1)
+		)
+		SELECT r.order_id,
+		       COUNT(*) AS cnt,
+		       COALESCE(MAX(p.name) FILTER (WHERE r.rn = 1), '') AS first_name,
+		       COALESCE(MAX(COALESCE(p.shop_image_urls[1],'')) FILTER (WHERE r.rn = 1), '') AS first_img
+		  FROM ranked r
+		  LEFT JOIN products p ON p.id = r.product_id
+		 GROUP BY r.order_id`,
+		orderIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[uuid.UUID]OrderItemsSummary{}
+	for rows.Next() {
+		var oid uuid.UUID
+		var s OrderItemsSummary
+		if err := rows.Scan(&oid, &s.Count, &s.FirstName, &s.FirstImage); err != nil {
+			return nil, err
+		}
+		out[oid] = s
+	}
+	return out, rows.Err()
+}
+
+// itemsForOrder is shared by GetByCustomerAndID and CancelByCustomer (Task 5).
+func (r *orderRepository) itemsForOrder(ctx context.Context, orderID uuid.UUID) ([]OrderItemRow, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT oi.product_id, oi.quantity, oi.unit_price,
+		       p.name,
+		       COALESCE(p.shop_slug,''),
+		       COALESCE(p.shop_image_urls[1],'')
+		  FROM order_items oi
+		  LEFT JOIN products p ON p.id = oi.product_id
+		 WHERE oi.order_id = $1
+		 ORDER BY oi.created_at`,
+		orderID,
+	)
+	if err != nil { return nil, err }
+	defer rows.Close()
+	out := []OrderItemRow{}
+	for rows.Next() {
+		var it OrderItemRow
+		if err := rows.Scan(
+			&it.ProductID, &it.Quantity, &it.UnitPrice,
+			&it.ProductName, &it.ProductSlug, &it.ProductImage,
+		); err != nil { return nil, err }
+		out = append(out, it)
+	}
+	return out, rows.Err()
 }

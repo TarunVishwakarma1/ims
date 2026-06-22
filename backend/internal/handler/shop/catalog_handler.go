@@ -42,6 +42,7 @@ func writeJSONWithHeaders(w http.ResponseWriter, status int, v any, cacheControl
 
 func writeErrShop(w http.ResponseWriter, status int, code string) {
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "private, no-store")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]string{"error": code})
 }
