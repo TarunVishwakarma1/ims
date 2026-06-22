@@ -76,7 +76,13 @@ export function CodeStep({ otpId, phone, onResend, onChangeNumber }: Props) {
               inputMode="numeric"
               autoComplete="one-time-code"
               value={field.value ?? ""}
-              onChange={field.onChange}
+              onChange={(v: string) => {
+                field.onChange(v);
+                if (v.length === 6) {
+                  // Auto-submit when 6 digits entered.
+                  void handleSubmit(onSubmit)();
+                }
+              }}
             >
               <InputOTPGroup>
                 {[0, 1, 2, 3, 4, 5].map((i) => (
