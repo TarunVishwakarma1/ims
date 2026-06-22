@@ -67,7 +67,8 @@ services:
     ports:
       - 3001:3001
     env_file:
-      - ./web-shop/.env.docker
+      - path: ./web-shop/.env.docker
+        required: false
     depends_on:
       backend:
         condition: service_started
