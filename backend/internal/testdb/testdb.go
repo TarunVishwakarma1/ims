@@ -236,6 +236,23 @@ func SeedOrderForProduct(t *testing.T, pool *pgxpool.Pool, orgID, productID uuid
 	return orderID
 }
 
+// SeedCustomer inserts a minimal customers row and registers cleanup. Returns the customer ID.
+func SeedCustomer(t *testing.T, pool *pgxpool.Pool) uuid.UUID {
+	t.Helper()
+	ctx := context.Background()
+	var id uuid.UUID
+	name := fmt.Sprintf("test-customer-%d", time.Now().UnixNano())
+	email := fmt.Sprintf("%s@example.com", name)
+	if err := pool.QueryRow(ctx,
+		`INSERT INTO customers (name, email, is_guest) VALUES ($1, $2, true) RETURNING id`,
+		name, email,
+	).Scan(&id); err != nil {
+		t.Fatalf("SeedCustomer: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(ctx, `DELETE FROM customers WHERE id=$1`, id) })
+	return id
+}
+
 // SeedShopCategory inserts a category and registers cleanup. Pass shopVisible=true to expose to shop.
 func SeedShopCategory(t *testing.T, pool *pgxpool.Pool, orgID uuid.UUID, name, slug string, sortOrder int, shopVisible bool) uuid.UUID {
 	t.Helper()

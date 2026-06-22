@@ -726,20 +726,23 @@ func (s *paymentService) handleRefundProcessed(ctx context.Context, env rzpEnvel
 		orderPaymentStatus = "partial"
 	}
 	if payment.OrderID != nil {
-		if order, err := s.orderRepo.GetByID(ctx, *payment.OrderID, payment.OrgID); err == nil {
-			order.PaymentStatus = orderPaymentStatus
-			order.UpdatedAt = time.Now().UTC()
-			if err := s.orderRepo.Update(ctx, order); err != nil {
-				zap.L().Warn("order refund-state update failed", zap.Error(err))
-			} else {
-				s.invalidateOrgOrders(ctx, payment.OrgID)
-				auditAction := "payment.refunded"
-				if newStatus == domain.PaymentStatusPartiallyRefunded {
-					auditAction = "payment.partially_refunded"
-				}
-				s.writeOrderAudit(ctx, payment.OrgID, *payment.OrderID, auditAction)
+		// Targeted UPDATE: only changes columns that actually moved.
+		// Idempotent on webhook replay because the WHERE clause filters rows
+		// already at the target state. Avoids last-write-wins clobber of
+		// concurrent admin updates to shipped_at/etc.
+		flipCancelling := newStatus == domain.PaymentStatusRefunded
+		rowsAffected, sqlErr := s.orderRepo.FinalizeRefund(ctx, *payment.OrderID, payment.OrgID, orderPaymentStatus, flipCancelling)
+		if sqlErr != nil {
+			zap.L().Warn("order refund-state update failed", zap.Error(sqlErr))
+		} else if rowsAffected > 0 {
+			s.invalidateOrgOrders(ctx, payment.OrgID)
+			auditAction := "payment.refunded"
+			if newStatus == domain.PaymentStatusPartiallyRefunded {
+				auditAction = "payment.partially_refunded"
 			}
+			s.writeOrderAudit(ctx, payment.OrgID, *payment.OrderID, auditAction)
 		}
+		// rowsAffected == 0: webhook replay or already-finalized state — silently skip.
 	}
 
 	_ = s.bus.Publish(ctx, events.NewEvent(TopicPaymentRefunded, payment.OrgID.String(), "", map[string]any{
