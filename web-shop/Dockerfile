@@ -1,16 +1,21 @@
-FROM oven/bun:1.1-alpine AS deps
+FROM oven/bun:alpine AS deps
 WORKDIR /app
 COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile
 
-FROM oven/bun:1.1-alpine AS builder
+FROM oven/bun:alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+# Next bakes rewrite destinations into routes-manifest at build time, so
+# BACKEND_URL must be available during `bun run build`. Compose passes the
+# Docker service URL via build args; host dev falls back to localhost:8080.
+ARG BACKEND_URL=http://localhost:8080
+ENV BACKEND_URL=$BACKEND_URL
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN bun run build
 
-FROM node:22-alpine AS runner
+FROM node:26-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
