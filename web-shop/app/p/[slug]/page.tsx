@@ -57,14 +57,16 @@ export default async function ProductPage({ params }: PageProps) {
     <div className="space-y-6">
       <nav className="text-sm text-muted">
         <Link href="/" className="hover:underline">Home</Link>
-        {product.category_slug && product.category_name && (
-          <>
-            <span className="mx-1">›</span>
-            <Link href={`/c/${product.category_slug}`} className="hover:underline">
-              {product.category_name}
-            </Link>
-          </>
-        )}
+        {product.category_slug &&
+          SLUG_RE.test(product.category_slug) &&
+          product.category_name && (
+            <>
+              <span className="mx-1">›</span>
+              <Link href={`/c/${product.category_slug}`} className="hover:underline">
+                {product.category_name}
+              </Link>
+            </>
+          )}
         <span className="mx-1">›</span>
         <span aria-current="page">{product.name}</span>
       </nav>

@@ -61,7 +61,14 @@ export function HeaderSearch() {
     const trimmed = query.trim();
     if (!trimmed) return;
     setOpen(false);
+    setQ("");
     router.push(`/search?q=${encodeURIComponent(trimmed)}`);
+  }
+
+  function pickItem(slug: string) {
+    setOpen(false);
+    setQ("");
+    router.push(`/p/${slug}`);
   }
 
   function onListKey(e: React.KeyboardEvent) {
@@ -74,8 +81,7 @@ export function HeaderSearch() {
     } else if (e.key === "Enter") {
       if (highlight >= 0 && items[highlight]) {
         e.preventDefault();
-        setOpen(false);
-        router.push(`/p/${items[highlight].slug}`);
+        pickItem(items[highlight].slug);
       }
     }
   }
@@ -106,46 +112,39 @@ export function HeaderSearch() {
             role="combobox"
             aria-autocomplete="list"
             aria-expanded={showDropdown}
-            aria-controls="header-search-list"
+            aria-controls={showDropdown ? "header-search-list" : undefined}
             className="w-full h-10 rounded-xl border border-border bg-bg pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-600"
           />
         </div>
       </form>
 
       {showDropdown && (
-        <div
-          id="header-search-list"
-          role="listbox"
-          className="absolute left-0 right-0 top-12 z-50 bg-bg border border-border rounded-xl shadow-lg overflow-hidden"
-        >
+        <div className="absolute left-0 right-0 top-12 z-50 bg-bg border border-border rounded-xl shadow-lg overflow-hidden">
           {items.length === 0 ? (
             <p className="p-4 text-sm text-muted">No matches.</p>
           ) : (
-            <ul>
+            <ul id="header-search-list" role="listbox">
               {items.map((p, i) => (
-                <li key={p.id} role="option" aria-selected={i === highlight}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setOpen(false);
-                      router.push(`/p/${p.slug}`);
-                    }}
-                    className={`w-full flex items-center gap-3 px-3 py-2 text-left text-sm ${
-                      i === highlight ? "bg-brand-50" : "hover:bg-brand-50"
-                    }`}
-                  >
-                    <div className="relative size-10 rounded-lg overflow-hidden bg-brand-100 flex-shrink-0">
-                      {p.image_url && (
-                        <Image src={p.image_url} alt="" fill sizes="40px" className="object-cover" />
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="truncate">{p.name}</p>
-                      <p className="text-xs text-brand-700 font-medium">
-                        {paiseToINR(p.price_paise)}
-                      </p>
-                    </div>
-                  </button>
+                <li
+                  key={p.id}
+                  role="option"
+                  aria-selected={i === highlight}
+                  onClick={() => pickItem(p.slug)}
+                  className={`flex items-center gap-3 px-3 py-2 text-sm cursor-pointer ${
+                    i === highlight ? "bg-brand-50" : "hover:bg-brand-50"
+                  }`}
+                >
+                  <div className="relative size-10 rounded-lg overflow-hidden bg-brand-100 flex-shrink-0">
+                    {p.image_url && (
+                      <Image src={p.image_url} alt="" fill sizes="40px" className="object-cover" />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="truncate">{p.name}</p>
+                    <p className="text-xs text-brand-700 font-medium">
+                      {paiseToINR(p.price_paise)}
+                    </p>
+                  </div>
                 </li>
               ))}
             </ul>
