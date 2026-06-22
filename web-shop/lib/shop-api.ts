@@ -1,5 +1,5 @@
-import type { FeedPage } from "@/lib/shop-types";
 import type {
+  FeedPage,
   ProductCard,
   ProductListQuery,
   ProductListResult,

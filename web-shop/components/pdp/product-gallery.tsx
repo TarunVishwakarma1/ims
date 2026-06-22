@@ -48,7 +48,7 @@ export function ProductGallery({ images, alt }: Props) {
       <div ref={mainRef} className="overflow-hidden rounded-2xl bg-brand-50">
         <div className="flex">
           {images.map((src, i) => (
-            <div key={src} className="relative flex-[0_0_100%] aspect-square">
+            <div key={i} className="relative flex-[0_0_100%] aspect-square">
               <Image
                 src={src}
                 alt={alt}
@@ -64,7 +64,7 @@ export function ProductGallery({ images, alt }: Props) {
       <div className="flex gap-2 overflow-x-auto scrollbar-hidden">
         {images.map((src, i) => (
           <button
-            key={src}
+            key={i}
             type="button"
             aria-label={`Image ${i + 1} of ${images.length}`}
             aria-current={i === index ? "true" : undefined}
