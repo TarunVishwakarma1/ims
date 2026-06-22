@@ -12,49 +12,52 @@ function paiseToINR(paise: number) {
 
 export function ProductCard({ product }: { product: ProductCardType }) {
   const outOfStock = product.available_qty <= 0;
+  const href = `/p/${product.slug}`;
 
-  function handleAdd(e: React.MouseEvent) {
-    e.preventDefault();
+  function handleAdd() {
     if (outOfStock) return;
-    // Plan 3e wires real cart action via /api/cart/add.
     toast("Cart coming soon", { description: product.name });
   }
 
+  // <button> can't be nested inside <a>. Split into two Link regions (image +
+  // text) with the button as a sibling within the image area's relative
+  // container — no nested interactive elements.
   return (
-    <Link
-      href={`/p/${product.slug}`}
+    <article
       className={cn(
-        "group block rounded-2xl bg-bg border border-border overflow-hidden hover:shadow-md transition-shadow",
+        "group rounded-2xl bg-bg border border-border overflow-hidden hover:shadow-md transition-shadow",
         outOfStock && "opacity-60",
       )}
     >
       <div className="relative aspect-square bg-brand-50">
-        {product.image_url ? (
-          <Image
-            src={product.image_url}
-            alt={product.name}
-            fill
-            sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
-            className="object-cover"
-          />
-        ) : (
-          <div className="size-full bg-brand-100" />
-        )}
+        <Link href={href} className="block absolute inset-0" aria-label={product.name}>
+          {product.image_url ? (
+            <Image
+              src={product.image_url}
+              alt=""
+              fill
+              sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+              className="object-cover"
+            />
+          ) : (
+            <div className="size-full bg-brand-100" />
+          )}
+        </Link>
         <button
           type="button"
           onClick={handleAdd}
           disabled={outOfStock}
-          aria-label="Add to cart"
+          aria-label={`Add ${product.name} to cart`}
           className={cn(
-            "absolute bottom-2 right-2 size-9 rounded-full bg-brand-600 text-white",
+            "absolute bottom-2 right-2 z-10 size-9 rounded-full bg-brand-600 text-white",
             "grid place-items-center shadow-md hover:bg-brand-700",
             "disabled:bg-muted disabled:cursor-not-allowed",
           )}
         >
-          <Plus className="size-4" />
+          <Plus className="size-4" aria-hidden />
         </button>
       </div>
-      <div className="p-3 space-y-1">
+      <Link href={href} className="block p-3 space-y-1">
         <h3 className="text-sm font-medium line-clamp-2 min-h-[2.5rem]">
           {product.name}
         </h3>
@@ -62,7 +65,7 @@ export function ProductCard({ product }: { product: ProductCardType }) {
           {paiseToINR(product.price_paise)}
         </p>
         {outOfStock && <p className="text-xs text-muted">Out of stock</p>}
-      </div>
-    </Link>
+      </Link>
+    </article>
   );
 }

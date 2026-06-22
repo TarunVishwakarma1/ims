@@ -27,14 +27,37 @@ export function BannerCarousel({ banners }: { banners: Banner[] }) {
 
   const scrollTo = useCallback((i: number) => emblaApi?.scrollTo(i), [emblaApi]);
 
+  const onKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (!emblaApi) return;
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        emblaApi.scrollPrev();
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        emblaApi.scrollNext();
+      }
+    },
+    [emblaApi],
+  );
+
+  const total = banners.length;
+
   return (
-    <section>
-      <div ref={emblaRef} className="overflow-hidden rounded-2xl">
+    <section
+      aria-roledescription="carousel"
+      aria-label="Featured banners"
+      onKeyDown={onKeyDown}
+    >
+      <div ref={emblaRef} className="overflow-hidden rounded-2xl" tabIndex={0}>
         <div className="flex">
-          {banners.map((b) => (
+          {banners.map((b, i) => (
             <Link
               key={b.id}
               href={safeCtaLink(b.cta_link)}
+              role="group"
+              aria-roledescription="slide"
+              aria-label={`${i + 1} of ${total}`}
               className="relative flex-[0_0_100%] aspect-[3/1] bg-brand-50"
             >
               {b.image_url && (
@@ -56,11 +79,12 @@ export function BannerCarousel({ banners }: { banners: Banner[] }) {
       </div>
 
       <div className="flex gap-2 justify-center mt-3">
-        {banners.map((_, i) => (
+        {banners.map((b, i) => (
           <button
-            key={i}
+            key={b.id}
             type="button"
-            aria-label={`Slide ${i + 1}`}
+            aria-label={`Go to slide ${i + 1} of ${total}`}
+            aria-current={i === index ? "true" : undefined}
             onClick={() => scrollTo(i)}
             className={cn(
               "h-2 rounded-full transition-all",
