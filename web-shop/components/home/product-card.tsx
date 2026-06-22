@@ -4,11 +4,8 @@ import Image from "next/image";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { paiseToINR } from "@/lib/format";
 import type { ProductCard as ProductCardType } from "@/lib/shop-types";
-
-function paiseToINR(paise: number) {
-  return `₹${(paise / 100).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
-}
 
 export function ProductCard({ product }: { product: ProductCardType }) {
   const outOfStock = product.available_qty <= 0;

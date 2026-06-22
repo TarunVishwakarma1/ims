@@ -32,3 +32,19 @@ export async function serverFetch(path: string, init?: RequestInit) {
   const base = process.env.BACKEND_URL || "http://localhost:8080";
   return fetch(`${base}${path}`, { ...init, headers, cache: "no-store" });
 }
+
+/**
+ * Wraps a fetch Promise so non-2xx responses and network throws both fall back
+ * to `fallback`. Use in Server Components to keep the page rendering an empty
+ * shell when the backend is unreachable, instead of letting Next render its
+ * error page (per spec §13).
+ */
+export async function safeJson<T>(p: Promise<Response>, fallback: T): Promise<T> {
+  try {
+    const res = await p;
+    if (!res.ok) return fallback;
+    return (await res.json()) as T;
+  } catch {
+    return fallback;
+  }
+}

@@ -1,4 +1,4 @@
-import { serverFetch } from "@/lib/api";
+import { serverFetch, safeJson } from "@/lib/api";
 import { BannerHero } from "@/components/home/banner-hero";
 import { BannerCarousel } from "@/components/home/banner-carousel";
 import { CategoryRow } from "@/components/home/category-row";
@@ -6,16 +6,6 @@ import { InfiniteFeed } from "@/components/home/infinite-feed";
 import type { ActiveBanners, Category, FeedPage } from "@/lib/shop-types";
 
 export const dynamic = "force-dynamic";
-
-async function safeJson<T>(p: Promise<Response>, fallback: T): Promise<T> {
-  try {
-    const res = await p;
-    if (!res.ok) return fallback;
-    return (await res.json()) as T;
-  } catch {
-    return fallback;
-  }
-}
 
 async function loadHomeData() {
   // Each fetch is independent — network throws absorbed so the home page
