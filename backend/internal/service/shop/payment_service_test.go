@@ -134,3 +134,39 @@ func TestVerifyRazorpayPayment_MockMode_SkipsHMAC(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "confirmed", res.Status)
 }
+
+// TestVerifyRazorpayPayment_AlreadyPaid_BadSignatureReturnsAlreadyPaid pins the
+// idempotency check ordering: an already-paid order with a wrong signature must
+// return ErrAlreadyPaid (409), not ErrInvalidSignature (400). The idempotency
+// guard runs before HMAC verification, so an attacker cannot probe order state
+// via signature errors.
+func TestVerifyRazorpayPayment_AlreadyPaid_BadSignatureReturnsAlreadyPaid(t *testing.T) {
+	ctx := context.Background()
+	pool, orgID, orderID, customerID, rzpOrderID := testdb.SeedB2COrderPaid(t)
+	svc := newSvcForTest(t, pool, orgID, "rzp_test_secret_xxx", false)
+
+	_, err := svc.VerifyRazorpayPayment(ctx, customerID, VerifyInput{
+		OrderID:           orderID,
+		RazorpayOrderID:   rzpOrderID,
+		RazorpayPaymentID: "pay_TEST123",
+		RazorpaySignature: "00deadbeef",
+	})
+	require.ErrorIs(t, err, ErrAlreadyPaid)
+}
+
+// TestVerifyRazorpayPayment_MockMode_OrderMismatchStillRejected pins that mock
+// mode only skips HMAC — the razorpay_order_id match is still enforced. Passing
+// a wrong RazorpayOrderID in mock mode must return ErrOrderMismatch.
+func TestVerifyRazorpayPayment_MockMode_OrderMismatchStillRejected(t *testing.T) {
+	ctx := context.Background()
+	pool, orgID, orderID, customerID, _ := testdb.SeedB2COrderPendingRazorpay(t)
+	svc := newSvcForTest(t, pool, orgID, "", true) // mock mode — no secret needed
+
+	_, err := svc.VerifyRazorpayPayment(ctx, customerID, VerifyInput{
+		OrderID:           orderID,
+		RazorpayOrderID:   "order_OTHER",
+		RazorpayPaymentID: "pay_MOCK",
+		RazorpaySignature: "anything",
+	})
+	require.ErrorIs(t, err, ErrOrderMismatch)
+}

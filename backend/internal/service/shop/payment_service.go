@@ -17,11 +17,10 @@ import (
 )
 
 // Sentinel errors specific to VerifyRazorpayPayment.
-// ErrOrderNotOwner is collapsed into ErrOrderNotFound by the handler so that
-// the caller cannot enumerate whether an order exists for a given ID.
-// ErrOrderNotFound is declared in order_service.go (same package).
+// Cross-customer access is collapsed into ErrOrderNotFound (declared in
+// order_service.go, same package) so callers cannot enumerate whether an order
+// exists for a given ID.
 var (
-	ErrOrderNotOwner    = errors.New("not owner")
 	ErrInvalidSignature = errors.New("invalid signature")
 	ErrOrderMismatch    = errors.New("razorpay order id mismatch")
 	ErrAlreadyPaid      = errors.New("already paid")
