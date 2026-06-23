@@ -89,6 +89,8 @@ func (h *CheckoutHandler) Place(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusConflict, "stock_unavailable")
 		case errors.Is(err, srv.ErrInvalidPaymentMethod):
 			writeErr(w, http.StatusBadRequest, "invalid_payment_method")
+		case errors.Is(err, srv.ErrCODIneligible):
+			writeErr(w, http.StatusBadRequest, "cod_ineligible")
 		default:
 			writeErr(w, http.StatusInternalServerError, "place_failed")
 		}

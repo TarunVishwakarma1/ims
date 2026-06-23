@@ -26,6 +26,7 @@ var (
 	ErrAddressRequired      = errors.New("address required")
 	ErrInsufficientStock    = errors.New("insufficient stock")
 	ErrInvalidPaymentMethod = errors.New("invalid payment method")
+	ErrCODIneligible        = errors.New("cod ineligible")
 )
 
 // CheckoutService handles order placement (Summary + Place) for the B2C shop.
@@ -219,6 +220,13 @@ func (s *checkoutService) Place(ctx context.Context, in PlaceOrderInput) (*Place
 		gst += (int64(it.Qty) * it.UnitPricePaise * int64(rate)) / 100
 	}
 	total := subtotal + gst
+
+	// --- Gate COD by min/max bounds ---
+	if in.PaymentMethod == "cod" {
+		if total < s.codMinPaise || total > s.codMaxPaise {
+			return nil, ErrCODIneligible
+		}
+	}
 
 	// --- Determine order status ---
 	orderStatus := "pending" // razorpay: wait for payment confirmation
