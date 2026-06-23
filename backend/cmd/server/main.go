@@ -202,6 +202,7 @@ func main() {
 		shopCatalogH *shophandler.CatalogHandler
 		shopBannerH  *shophandler.BannerHandler
 		shopOrderH   *shophandler.OrderHandler
+		shopPaymentH *shophandler.PaymentHandler
 		adminBannerH *handler.AdminBannerHandler
 	)
 	if cfg.ShopEnabled {
@@ -249,6 +250,15 @@ func main() {
 		orderSvcShop := shopsvc.NewShopOrderService(pool, orderRepo, paymentService, shopOrgID)
 		shopOrderH = shophandler.NewOrderHandler(orderSvcShop)
 
+		shopPaymentSvc := shopsvc.NewShopPaymentService(
+			pool, shopOrgID,
+			orderRepo,
+			paymentRepo,
+			cfg.RazorpayKeySecret,
+			cfg.RazorpayMockMode,
+		)
+		shopPaymentH = shophandler.NewPaymentHandler(shopPaymentSvc)
+
 		if cfg.BannerSeedEnabled {
 			go func() {
 				stop := jobs.StartBannerSeed(ctx, pool, cacheClient, shopOrgID,
@@ -293,7 +303,7 @@ func main() {
 	webhookH := handler.NewWebhookHandler(paymentService)
 	eventsH := handler.NewEventsHandler(eventBus)
 
-	router := NewRouter(authH, userH, categoryH, productH, inventoryH, orderH, roleH, locationH, marketH, eventsH, paymentH, webhookH, partnerH, returnH, notificationH, auditH, totpH, couponH, cfg, pool, cacheClient, cfg.ShopEnabled, shopAuthH, shopCustH, shopCartH, shopCheckH, shopCatalogH, adminBannerH, shopBannerH, shopOrderH, cfg.UploadDir)
+	router := NewRouter(authH, userH, categoryH, productH, inventoryH, orderH, roleH, locationH, marketH, eventsH, paymentH, webhookH, partnerH, returnH, notificationH, auditH, totpH, couponH, cfg, pool, cacheClient, cfg.ShopEnabled, shopAuthH, shopCustH, shopCartH, shopCheckH, shopCatalogH, adminBannerH, shopBannerH, shopOrderH, shopPaymentH, cfg.UploadDir)
 
 	server := &http.Server{
 		Addr:         ":" + cfg.Port,
