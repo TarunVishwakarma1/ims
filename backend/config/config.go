@@ -40,6 +40,8 @@ type Config struct {
 
 	// B2C Shop
 	ShopEnabled     bool
+	ShopCODMinPaise int64
+	ShopCODMaxPaise int64
 	ShopOrgID       string
 	MSG91AuthKey    string
 	MSG91TemplateID string
@@ -143,6 +145,26 @@ func LoadConfig() (*Config, error) {
 	metricsToken := os.Getenv("METRICS_TOKEN")
 
 	shopEnabled := os.Getenv("SHOP_ENABLED") == "true"
+	codMin := int64(10000)
+	if v := os.Getenv("SHOP_COD_MIN_PAISE"); v != "" {
+		n, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid SHOP_COD_MIN_PAISE: %w", err)
+		}
+		codMin = n
+	}
+	codMax := int64(500000)
+	if v := os.Getenv("SHOP_COD_MAX_PAISE"); v != "" {
+		n, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid SHOP_COD_MAX_PAISE: %w", err)
+		}
+		codMax = n
+	}
+	if codMin < 0 || codMax < codMin {
+		return nil, fmt.Errorf("invalid COD bounds: min=%d max=%d", codMin, codMax)
+	}
+
 	msg91SenderID := os.Getenv("MSG91_SENDER_ID")
 	if msg91SenderID == "" {
 		msg91SenderID = "IMSHOP"
@@ -206,6 +228,8 @@ func LoadConfig() (*Config, error) {
 		SMTPFromName:              os.Getenv("SMTP_FROM_NAME"),
 		WebAppURL:                 os.Getenv("WEB_APP_URL"),
 		ShopEnabled:               shopEnabled,
+		ShopCODMinPaise:           codMin,
+		ShopCODMaxPaise:           codMax,
 		ShopOrgID:                 os.Getenv("SHOP_ORG_ID"),
 		MSG91AuthKey:              os.Getenv("MSG91_AUTH_KEY"),
 		MSG91TemplateID:           os.Getenv("MSG91_TEMPLATE_ID"),
