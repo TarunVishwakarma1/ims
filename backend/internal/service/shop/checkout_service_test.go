@@ -49,7 +49,7 @@ func TestCheckoutSvc_PlaceCOD_Success(t *testing.T) {
 		t.Fatalf("AddOrSet: %v", err)
 	}
 
-	svc := shop.NewCheckoutService(pool, orgID, cartRepo, repository.NewCustomerAddressRepository(pool), nil, testdb.OrderRepo(pool), "")
+	svc := shop.NewCheckoutService(pool, orgID, cartRepo, repository.NewCustomerAddressRepository(pool), nil, testdb.OrderRepo(pool), "", 10000, 500000)
 
 	res, err := svc.Place(ctx, shop.PlaceOrderInput{
 		CustomerID:    cust.ID,
@@ -144,7 +144,7 @@ func TestCheckoutSvc_PlaceInsufficientStock(t *testing.T) {
 	// drop stock to 0 out-of-band to simulate race
 	testdb.SetStock(t, pool, prodID, 0)
 
-	svc := shop.NewCheckoutService(pool, orgID, cartRepo, repository.NewCustomerAddressRepository(pool), nil, testdb.OrderRepo(pool), "")
+	svc := shop.NewCheckoutService(pool, orgID, cartRepo, repository.NewCustomerAddressRepository(pool), nil, testdb.OrderRepo(pool), "", 10000, 500000)
 	_, err = svc.Place(ctx, shop.PlaceOrderInput{
 		CustomerID:    cust.ID,
 		AddressID:     addrID,
@@ -187,7 +187,7 @@ func TestCheckoutSvc_PlaceEmptyCart(t *testing.T) {
 	addrID := testdb.SeedAddress(t, pool, cust.ID)
 
 	cartRepo := repository.NewCartRepository(pool)
-	svc := shop.NewCheckoutService(pool, orgID, cartRepo, repository.NewCustomerAddressRepository(pool), nil, testdb.OrderRepo(pool), "")
+	svc := shop.NewCheckoutService(pool, orgID, cartRepo, repository.NewCustomerAddressRepository(pool), nil, testdb.OrderRepo(pool), "", 10000, 500000)
 
 	_, err = svc.Place(ctx, shop.PlaceOrderInput{
 		CustomerID:    cust.ID,
@@ -218,7 +218,7 @@ func TestCheckoutSvc_PlaceMissingAddress(t *testing.T) {
 	})
 
 	cartRepo := repository.NewCartRepository(pool)
-	svc := shop.NewCheckoutService(pool, orgID, cartRepo, repository.NewCustomerAddressRepository(pool), nil, testdb.OrderRepo(pool), "")
+	svc := shop.NewCheckoutService(pool, orgID, cartRepo, repository.NewCustomerAddressRepository(pool), nil, testdb.OrderRepo(pool), "", 10000, 500000)
 
 	_, err = svc.Place(ctx, shop.PlaceOrderInput{
 		CustomerID:    cust.ID,
@@ -262,7 +262,7 @@ func TestCheckoutSvc_Place_AddressNotOwned(t *testing.T) {
 	})
 
 	cartRepo := repository.NewCartRepository(pool)
-	svc := shop.NewCheckoutService(pool, orgID, cartRepo, repository.NewCustomerAddressRepository(pool), nil, testdb.OrderRepo(pool), "")
+	svc := shop.NewCheckoutService(pool, orgID, cartRepo, repository.NewCustomerAddressRepository(pool), nil, testdb.OrderRepo(pool), "", 10000, 500000)
 
 	// Customer B attempts to place an order with customer A's address.
 	_, err = svc.Place(ctx, shop.PlaceOrderInput{
@@ -273,4 +273,190 @@ func TestCheckoutSvc_Place_AddressNotOwned(t *testing.T) {
 	if err != shop.ErrAddressRequired {
 		t.Fatalf("expected ErrAddressRequired (IDOR), got %v", err)
 	}
+}
+
+// TestCheckoutSvc_PaymentOptions_EmptyCart seeds no cart items. COD should be
+// enabled (empty cart passes the gate — no order value to check).
+func TestCheckoutSvc_PaymentOptions_EmptyCart(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	ctx := context.Background()
+
+	_, orgID := testdb.SeedProductWithStock(t, pool, "POEmptyProd", 5000, 10)
+
+	custRepo := repository.NewCustomerRepository(pool)
+	phone := checkoutRandPhone()
+	cust, err := custRepo.UpsertByPhone(ctx, phone)
+	if err != nil {
+		t.Fatalf("upsert customer: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(ctx, `DELETE FROM customers WHERE phone=$1`, phone)
+	})
+
+	cartRepo := repository.NewCartRepository(pool)
+	svc := shop.NewCheckoutService(pool, orgID, cartRepo, repository.NewCustomerAddressRepository(pool), nil, testdb.OrderRepo(pool), "", 10000, 500000)
+
+	opts, err := svc.PaymentOptions(ctx, cust.ID)
+	if err != nil {
+		t.Fatalf("PaymentOptions: %v", err)
+	}
+	if len(opts) != 2 {
+		t.Fatalf("expected 2 payment options, got %d", len(opts))
+	}
+	cod := findPaymentOption(opts, "cod")
+	if cod == nil {
+		t.Fatal("expected 'cod' in payment options")
+	}
+	if !cod.Enabled {
+		t.Errorf("expected cod enabled for empty cart, reason=%q", cod.Reason)
+	}
+	if cod.Reason != "" {
+		t.Errorf("expected empty reason for enabled cod, got %q", cod.Reason)
+	}
+}
+
+// TestCheckoutSvc_PaymentOptions_UnderMin seeds a cart whose total is below
+// codMinPaise. COD should be disabled with reason "min_value_below".
+func TestCheckoutSvc_PaymentOptions_UnderMin(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	ctx := context.Background()
+
+	// Product price 500 paise × qty 1 = 500 total; min is 10000.
+	prodID, orgID := testdb.SeedProductWithStock(t, pool, "POUnderMin", 500, 10)
+
+	custRepo := repository.NewCustomerRepository(pool)
+	phone := checkoutRandPhone()
+	cust, err := custRepo.UpsertByPhone(ctx, phone)
+	if err != nil {
+		t.Fatalf("upsert customer: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(ctx, `DELETE FROM customers WHERE phone=$1`, phone)
+	})
+
+	cartRepo := repository.NewCartRepository(pool)
+	cartSvc := shop.NewCartService(cartRepo, pool, orgID)
+	if _, err := cartSvc.AddOrSet(ctx, cust.ID, prodID, 1); err != nil {
+		t.Fatalf("AddOrSet: %v", err)
+	}
+
+	svc := shop.NewCheckoutService(pool, orgID, cartRepo, repository.NewCustomerAddressRepository(pool), nil, testdb.OrderRepo(pool), "", 10000, 500000)
+
+	opts, err := svc.PaymentOptions(ctx, cust.ID)
+	if err != nil {
+		t.Fatalf("PaymentOptions: %v", err)
+	}
+	cod := findPaymentOption(opts, "cod")
+	if cod == nil {
+		t.Fatal("expected 'cod' in payment options")
+	}
+	if cod.Enabled {
+		t.Error("expected cod disabled when cart is below min")
+	}
+	if cod.Reason != "min_value_below" {
+		t.Errorf("expected reason 'min_value_below', got %q", cod.Reason)
+	}
+}
+
+// TestCheckoutSvc_PaymentOptions_OverMax seeds a cart whose total exceeds
+// codMaxPaise. COD should be disabled with reason "max_value_exceeded".
+func TestCheckoutSvc_PaymentOptions_OverMax(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	ctx := context.Background()
+
+	// Product price 600000 paise × qty 1 = 600000 total; max is 500000.
+	prodID, orgID := testdb.SeedProductWithStock(t, pool, "POOverMax", 600000, 5)
+
+	custRepo := repository.NewCustomerRepository(pool)
+	phone := checkoutRandPhone()
+	cust, err := custRepo.UpsertByPhone(ctx, phone)
+	if err != nil {
+		t.Fatalf("upsert customer: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(ctx, `DELETE FROM customers WHERE phone=$1`, phone)
+	})
+
+	cartRepo := repository.NewCartRepository(pool)
+	cartSvc := shop.NewCartService(cartRepo, pool, orgID)
+	if _, err := cartSvc.AddOrSet(ctx, cust.ID, prodID, 1); err != nil {
+		t.Fatalf("AddOrSet: %v", err)
+	}
+
+	svc := shop.NewCheckoutService(pool, orgID, cartRepo, repository.NewCustomerAddressRepository(pool), nil, testdb.OrderRepo(pool), "", 10000, 500000)
+
+	opts, err := svc.PaymentOptions(ctx, cust.ID)
+	if err != nil {
+		t.Fatalf("PaymentOptions: %v", err)
+	}
+	cod := findPaymentOption(opts, "cod")
+	if cod == nil {
+		t.Fatal("expected 'cod' in payment options")
+	}
+	if cod.Enabled {
+		t.Error("expected cod disabled when cart exceeds max")
+	}
+	if cod.Reason != "max_value_exceeded" {
+		t.Errorf("expected reason 'max_value_exceeded', got %q", cod.Reason)
+	}
+}
+
+// TestCheckoutSvc_PaymentOptions_InRange seeds a cart whose total is within
+// COD bounds. COD should be enabled.
+func TestCheckoutSvc_PaymentOptions_InRange(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	ctx := context.Background()
+
+	// Product price 50000 paise × qty 1 = 50000 total; bounds 10000–500000.
+	prodID, orgID := testdb.SeedProductWithStock(t, pool, "POInRange", 50000, 10)
+
+	custRepo := repository.NewCustomerRepository(pool)
+	phone := checkoutRandPhone()
+	cust, err := custRepo.UpsertByPhone(ctx, phone)
+	if err != nil {
+		t.Fatalf("upsert customer: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(ctx, `DELETE FROM customers WHERE phone=$1`, phone)
+	})
+
+	cartRepo := repository.NewCartRepository(pool)
+	cartSvc := shop.NewCartService(cartRepo, pool, orgID)
+	if _, err := cartSvc.AddOrSet(ctx, cust.ID, prodID, 1); err != nil {
+		t.Fatalf("AddOrSet: %v", err)
+	}
+
+	svc := shop.NewCheckoutService(pool, orgID, cartRepo, repository.NewCustomerAddressRepository(pool), nil, testdb.OrderRepo(pool), "", 10000, 500000)
+
+	opts, err := svc.PaymentOptions(ctx, cust.ID)
+	if err != nil {
+		t.Fatalf("PaymentOptions: %v", err)
+	}
+	if len(opts) != 2 {
+		t.Fatalf("expected 2 payment options, got %d", len(opts))
+	}
+	cod := findPaymentOption(opts, "cod")
+	if cod == nil {
+		t.Fatal("expected 'cod' in payment options")
+	}
+	if !cod.Enabled {
+		t.Errorf("expected cod enabled for in-range cart, reason=%q", cod.Reason)
+	}
+	if cod.Reason != "" {
+		t.Errorf("expected empty reason for enabled cod, got %q", cod.Reason)
+	}
+	rzp := findPaymentOption(opts, "razorpay")
+	if rzp == nil || !rzp.Enabled {
+		t.Error("expected razorpay enabled")
+	}
+}
+
+// findPaymentOption returns the PaymentOption with the given ID or nil.
+func findPaymentOption(opts []shop.PaymentOption, id string) *shop.PaymentOption {
+	for i := range opts {
+		if opts[i].ID == id {
+			return &opts[i]
+		}
+	}
+	return nil
 }

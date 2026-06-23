@@ -45,6 +45,17 @@ func (h *CheckoutHandler) Summary(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s)
 }
 
+// PaymentOptions handles GET /api/shop/checkout/payment-options.
+func (h *CheckoutHandler) PaymentOptions(w http.ResponseWriter, r *http.Request) {
+	cid, _ := middleware.GetCustomerIDFromContext(r.Context())
+	opts, err := h.svc.PaymentOptions(r.Context(), cid)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "options_failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"methods": opts})
+}
+
 // placeReq is the JSON body for POST /checkout/place.
 type placeReq struct {
 	AddressID     uuid.UUID `json:"address_id"`

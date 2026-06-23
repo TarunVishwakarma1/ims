@@ -32,6 +32,17 @@ var (
 type CheckoutService interface {
 	Summary(ctx context.Context, customerID, addressID uuid.UUID) (*CheckoutSummary, error)
 	Place(ctx context.Context, in PlaceOrderInput) (*PlaceOrderResult, error)
+	PaymentOptions(ctx context.Context, customerID uuid.UUID) ([]PaymentOption, error)
+}
+
+// PaymentOption describes a single available payment method and whether it is
+// currently enabled for the customer's cart.
+type PaymentOption struct {
+	ID       string `json:"id"`
+	Enabled  bool   `json:"enabled"`
+	MinPaise int64  `json:"min_paise,omitempty"`
+	MaxPaise int64  `json:"max_paise,omitempty"`
+	Reason   string `json:"reason,omitempty"`
 }
 
 // CheckoutSummary is the pre-checkout breakdown returned to the UI.
@@ -68,6 +79,8 @@ type checkoutService struct {
 	paymentSvc    paymentCreator
 	orderRepo     repository.OrderRepository
 	razorpayKeyID string
+	codMinPaise   int64
+	codMaxPaise   int64
 }
 
 // NewCheckoutService constructs a CheckoutService.
@@ -80,6 +93,8 @@ func NewCheckoutService(
 	paymentSvc paymentCreator,
 	orderRepo repository.OrderRepository,
 	razorpayKeyID string,
+	codMinPaise int64,
+	codMaxPaise int64,
 ) CheckoutService {
 	return &checkoutService{
 		pool:          pool,
@@ -89,6 +104,8 @@ func NewCheckoutService(
 		paymentSvc:    paymentSvc,
 		orderRepo:     orderRepo,
 		razorpayKeyID: razorpayKeyID,
+		codMinPaise:   codMinPaise,
+		codMaxPaise:   codMaxPaise,
 	}
 }
 
@@ -285,6 +302,37 @@ func (s *checkoutService) Place(ctx context.Context, in PlaceOrderInput) (*Place
 	}
 
 	return res, nil
+}
+
+// PaymentOptions evaluates the customer's cart total against COD bounds and
+// returns available payment methods. An empty cart returns COD enabled (no gate).
+func (s *checkoutService) PaymentOptions(ctx context.Context, customerID uuid.UUID) ([]PaymentOption, error) {
+	cart, err := s.cartRepo.Get(ctx, customerID)
+	if err != nil {
+		return nil, err
+	}
+	var subtotal, gst int64
+	for _, it := range cart.Items {
+		subtotal += int64(it.Qty) * it.UnitPricePaise
+		var rate int
+		_ = s.pool.QueryRow(ctx, `SELECT gst_rate FROM products WHERE id=$1`, it.ProductID).Scan(&rate)
+		gst += (int64(it.Qty) * it.UnitPricePaise * int64(rate)) / 100
+	}
+	total := subtotal + gst
+
+	cod := PaymentOption{ID: "cod", Enabled: true, MinPaise: s.codMinPaise, MaxPaise: s.codMaxPaise}
+	if total > 0 && total < s.codMinPaise {
+		cod.Enabled = false
+		cod.Reason = "min_value_below"
+	} else if total > s.codMaxPaise {
+		cod.Enabled = false
+		cod.Reason = "max_value_exceeded"
+	}
+
+	return []PaymentOption{
+		{ID: "razorpay", Enabled: true},
+		cod,
+	}, nil
 }
 
 // indianFYLabel returns the Indian financial year label for the given time.
