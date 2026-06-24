@@ -42,7 +42,9 @@ type Config struct {
 	ShopEnabled     bool
 	ShopCODMinPaise int64
 	ShopCODMaxPaise int64
-	ShopOrgID       string
+	ShopOrgID       string // optional — when set, overrides slug lookup
+	ShopOrgSlug     string // stable lookup key (default "kirana")
+	ShopOrgName     string // human name used when bootstrap creates the org
 	MSG91AuthKey    string
 	MSG91TemplateID string
 	MSG91SenderID   string
@@ -231,6 +233,8 @@ func LoadConfig() (*Config, error) {
 		ShopCODMinPaise:           codMin,
 		ShopCODMaxPaise:           codMax,
 		ShopOrgID:                 os.Getenv("SHOP_ORG_ID"),
+		ShopOrgSlug:               firstNonEmpty(os.Getenv("SHOP_ORG_SLUG"), "kirana"),
+		ShopOrgName:               firstNonEmpty(os.Getenv("SHOP_ORG_NAME"), "Kirana"),
 		MSG91AuthKey:              os.Getenv("MSG91_AUTH_KEY"),
 		MSG91TemplateID:           os.Getenv("MSG91_TEMPLATE_ID"),
 		MSG91SenderID:             msg91SenderID,
