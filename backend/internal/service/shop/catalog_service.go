@@ -350,9 +350,15 @@ func (s *catalogService) buildOrderByWithPop(q ProductListQuery, popMap map[uuid
 }
 
 func (s *catalogService) searchProducts(ctx context.Context, q ProductListQuery, term string) (*ProductListResult, error) {
+	// Match if any of: full-text query hits, trigram similarity is strong
+	// (>= 0.4), or the product name starts with / contains the raw term as a
+	// substring (catches short queries like "parle" that miss FTS stemming
+	// and have low trgm scores on long product names).
 	args := []any{s.orgID, term}
 	clauses := []string{`p.org_id = $1`, `p.shop_visible = TRUE`,
-		`(p.search_vector @@ plainto_tsquery('english', $2) OR word_similarity($2, p.name) > 0.2)`}
+		`(p.search_vector @@ plainto_tsquery('english', $2)
+		  OR word_similarity($2, p.name) > 0.5
+		  OR p.name ILIKE '%' || $2 || '%')`}
 	if q.CategorySlug != "" {
 		args = append(args, q.CategorySlug)
 		clauses = append(clauses, fmt.Sprintf(`c.slug = $%d`, len(args)))
