@@ -195,6 +195,8 @@ export type OrderListResult = {
 export type ChargeLine = {
   label: string;
   paise: number;
+  /** What the customer would have paid if the line wasn't waived. */
+  original_paise?: number;
   struck: boolean;
 };
 

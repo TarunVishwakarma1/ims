@@ -23,12 +23,20 @@ function formatDate(iso: string): string {
 
 function ChargeRow({ line }: { line: ChargeLine }) {
   const negative = line.paise < 0;
-  const display = line.struck ? "Free" : formatPaise(line.paise);
   return (
     <div className="flex justify-between text-sm">
       <dt className="text-text-muted">{line.label}</dt>
-      <dd className={line.struck ? "line-through text-text-muted" : negative ? "text-emerald-700" : ""}>
-        {display}
+      <dd className="flex items-baseline gap-2">
+        {line.struck ? (
+          <>
+            {line.original_paise && line.original_paise > 0 && (
+              <s className="text-text-muted">{formatPaise(line.original_paise)}</s>
+            )}
+            <span className="text-emerald-700 font-medium">Free</span>
+          </>
+        ) : (
+          <span className={negative ? "text-emerald-700" : ""}>{formatPaise(line.paise)}</span>
+        )}
       </dd>
     </div>
   );

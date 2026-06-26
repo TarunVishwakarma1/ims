@@ -49,13 +49,26 @@ type OrderDetail struct {
 	Cancellable bool            `json:"cancellable"`
 }
 
-// ChargeLine is a single row in the invoice price breakdown. Struck=true asks
-// the UI to render the amount with a strikethrough + "Free" label.
+// ChargeLine is a single row in the invoice price breakdown.
+// When Struck=true the line is waived for this customer — the UI renders
+// OriginalPaise with a strikethrough plus a "Free" label so the customer
+// sees what they would otherwise have paid.
 type ChargeLine struct {
-	Label  string `json:"label"`
-	Paise  int64  `json:"paise"`
-	Struck bool   `json:"struck"`
+	Label         string `json:"label"`
+	Paise         int64  `json:"paise"`
+	OriginalPaise int64  `json:"original_paise,omitempty"`
+	Struck        bool   `json:"struck"`
 }
+
+// Default "would have cost" amounts for charges the shop currently waives.
+// Persisted on the order row in a later iteration; today these are display
+// hints sourced from constants.
+const (
+	defaultPackingPaise  = 500  // ₹5
+	defaultHandlingPaise = 1000 // ₹10
+	defaultShippingPaise = 4000 // ₹40
+	defaultSurgePaise    = 1500 // ₹15
+)
 
 type OrderItemView struct {
 	ProductID uuid.UUID `json:"product_id"`
@@ -272,20 +285,31 @@ func (s *shopOrderService) Get(ctx context.Context, customerID, orderID uuid.UUI
 // buildCharges turns a CustomerOrderRow's pricing fields into an ordered
 // breakdown ready for invoice rendering. A label appears even when its amount
 // is zero so the customer can see at a glance that, e.g., shipping was free.
+// For waived charges we surface the default "would have cost" so the customer
+// can see the saving (e.g. ₹40 struck through next to "Free").
 func buildCharges(row *repository.CustomerOrderRow) []ChargeLine {
+	line := func(label string, actual, fallbackOriginal int64) ChargeLine {
+		if actual > 0 {
+			return ChargeLine{Label: label, Paise: actual, OriginalPaise: actual, Struck: false}
+		}
+		return ChargeLine{Label: label, Paise: 0, OriginalPaise: fallbackOriginal, Struck: true}
+	}
+
+	// Subtotal and GST never qualify as "free" — they're statutory or
+	// arithmetic facts of the order. Always render the actual value.
 	lines := []ChargeLine{
-		{Label: "Subtotal", Paise: row.Subtotal, Struck: row.Subtotal == 0},
-		{Label: "GST", Paise: row.GST, Struck: row.GST == 0},
-		{Label: "Packing", Paise: row.Packing, Struck: row.Packing == 0},
-		{Label: "Handling", Paise: row.Handling, Struck: row.Handling == 0},
-		{Label: "Shipping", Paise: row.DeliveryFee, Struck: row.DeliveryFee == 0},
-		{Label: "Surge", Paise: row.Surge, Struck: row.Surge == 0},
+		{Label: "Subtotal", Paise: row.Subtotal, OriginalPaise: row.Subtotal, Struck: false},
+		{Label: "GST", Paise: row.GST, OriginalPaise: row.GST, Struck: false},
+		line("Packing", row.Packing, defaultPackingPaise),
+		line("Handling", row.Handling, defaultHandlingPaise),
+		line("Shipping", row.DeliveryFee, defaultShippingPaise),
+		line("Surge", row.Surge, defaultSurgePaise),
 	}
 	if row.Discount > 0 {
-		lines = append(lines, ChargeLine{Label: "Discount", Paise: -row.Discount, Struck: false})
+		lines = append(lines, ChargeLine{Label: "Discount", Paise: -row.Discount, OriginalPaise: row.Discount, Struck: false})
 	}
 	if row.CodRound > 0 {
-		lines = append(lines, ChargeLine{Label: "Rounding (COD)", Paise: row.CodRound, Struck: false})
+		lines = append(lines, ChargeLine{Label: "Rounding (COD)", Paise: row.CodRound, OriginalPaise: row.CodRound, Struck: false})
 	}
 	return lines
 }
