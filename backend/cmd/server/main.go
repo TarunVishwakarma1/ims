@@ -220,14 +220,6 @@ func main() {
 			zap.String("slug", cfg.ShopOrgSlug),
 			zap.String("name", cfg.ShopOrgName))
 
-		if cfg.SeedDevData {
-			if err := devseed.Run(context.Background(), pool, shopOrgID); err != nil {
-				zap.L().Error("dev seed failed", zap.Error(err))
-			} else {
-				zap.L().Info("dev seed applied")
-			}
-		}
-
 		var smsSender sms.Sender
 		if cfg.MSG91AuthKey != "" {
 			smsSender = sms.NewMSG91(cfg.MSG91AuthKey, cfg.MSG91TemplateID, cfg.MSG91SenderID, &http.Client{Timeout: 10 * time.Second})
@@ -254,6 +246,21 @@ func main() {
 		catalogSvc := shopsvc.NewCatalogService(pool, cacheClient, shopOrgID)
 		feedSvc := shopsvc.NewFeedService(pool, cacheClient, shopOrgID)
 		shopCatalogH = shophandler.NewCatalogHandler(catalogSvc, feedSvc)
+
+		if cfg.SeedDevData {
+			seedCtx := context.Background()
+			if err := devseed.Run(seedCtx, pool, shopOrgID); err != nil {
+				zap.L().Error("dev seed failed", zap.Error(err))
+			} else {
+				zap.L().Info("dev seed applied")
+				if err := catalogSvc.InvalidateCategories(seedCtx); err != nil {
+					zap.L().Warn("dev seed: invalidate categories cache", zap.Error(err))
+				}
+				if err := catalogSvc.InvalidateProductList(seedCtx); err != nil {
+					zap.L().Warn("dev seed: invalidate product list cache", zap.Error(err))
+				}
+			}
+		}
 
 		bannerRepo := repository.NewBannerRepository(pool)
 		bannerSvc := shopsvc.NewBannerService(bannerRepo, cacheClient, shopOrgID)
