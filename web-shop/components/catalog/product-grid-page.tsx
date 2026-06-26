@@ -11,8 +11,13 @@ type Props = {
 };
 
 export function ProductGridPage({ initial, baseQuery, emptyMessage }: Props) {
+  // InfiniteGrid captures initialItems in useState; without a key it keeps
+  // stale state when the parent re-renders with a different sort/filter.
+  // Encode the query shape so a change forces a fresh mount.
+  const resetKey = `${baseQuery.category ?? ""}|${baseQuery.search ?? ""}|${baseQuery.sort ?? "newest"}|${baseQuery.in_stock ? "1" : "0"}`;
   return (
     <InfiniteGrid
+      key={resetKey}
       initialItems={initial.items}
       initialCursor={initial.next_cursor}
       loadMore={async (cursor) => {
