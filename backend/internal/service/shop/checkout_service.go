@@ -140,7 +140,7 @@ func (s *checkoutService) Summary(ctx context.Context, customerID, addressID uui
 			rate, available   int
 		)
 		_ = s.pool.QueryRow(ctx, `
-			SELECT p.slug,
+			SELECT COALESCE(p.shop_slug, ''),
 			       p.name,
 			       COALESCE(p.shop_image_urls[1], ''),
 			       p.gst_rate,

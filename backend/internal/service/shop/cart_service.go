@@ -78,10 +78,10 @@ func NewCartService(r repository.CartRepository, pool *pgxpool.Pool, mainOrgID u
 func (s *cartService) loadSnap(ctx context.Context, productID uuid.UUID) (*productSnap, error) {
 	sp := &productSnap{}
 	err := s.pool.QueryRow(ctx, `
-		SELECT p.slug,
+		SELECT COALESCE(p.shop_slug, ''),
 		       p.name,
 		       COALESCE(p.shop_image_urls[1], '') AS image_url,
-		       p.price AS unit_price_paise,
+		       COALESCE(p.shop_price_paise, p.price) AS unit_price_paise,
 		       COALESCE(i.quantity, 0) AS available
 		  FROM products p
 		  LEFT JOIN inventory i ON i.product_id = p.id
