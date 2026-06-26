@@ -84,6 +84,7 @@ type CustomerOrderRow struct {
 	Packing                 int64
 	Handling                int64
 	Surge                   int64
+	Platform                int64
 	DeliveryFee             int64
 	Discount                int64
 	CodRound                int64
@@ -434,6 +435,7 @@ func (r *orderRepository) ListByCustomer(ctx context.Context, customerID uuid.UU
 		       payment_id, COALESCE(subtotal,0),
 		       COALESCE(gst_paise,0), COALESCE(packing_paise,0),
 		       COALESCE(handling_paise,0), COALESCE(surge_paise,0),
+		       COALESCE(platform_paise,0),
 		       COALESCE(delivery_fee,0), COALESCE(discount,0),
 		       COALESCE(cod_round_paise,0),
 		       total_amount, COALESCE(delivery_address_snapshot, '{}'::jsonb),
@@ -458,7 +460,7 @@ func (r *orderRepository) ListByCustomer(ctx context.Context, customerID uuid.UU
 		if err := rows.Scan(
 			&c.ID, &c.OrgID, &c.CustomerID, &c.InvoiceNumber, &c.Status, &c.PaymentStatus,
 			&c.PaymentID, &c.Subtotal,
-			&c.GST, &c.Packing, &c.Handling, &c.Surge,
+			&c.GST, &c.Packing, &c.Handling, &c.Surge, &c.Platform,
 			&c.DeliveryFee, &c.Discount, &c.CodRound,
 			&c.TotalAmount, &c.DeliveryAddressSnapshot,
 			&c.CreatedAt, &c.UpdatedAt,
@@ -477,6 +479,7 @@ func (r *orderRepository) GetByCustomerAndID(ctx context.Context, customerID, or
 		       payment_id, COALESCE(subtotal,0),
 		       COALESCE(gst_paise,0), COALESCE(packing_paise,0),
 		       COALESCE(handling_paise,0), COALESCE(surge_paise,0),
+		       COALESCE(platform_paise,0),
 		       COALESCE(delivery_fee,0), COALESCE(discount,0),
 		       COALESCE(cod_round_paise,0),
 		       total_amount, COALESCE(delivery_address_snapshot, '{}'::jsonb),
@@ -487,7 +490,7 @@ func (r *orderRepository) GetByCustomerAndID(ctx context.Context, customerID, or
 	).Scan(
 		&c.ID, &c.OrgID, &c.CustomerID, &c.InvoiceNumber, &c.Status, &c.PaymentStatus,
 		&c.PaymentID, &c.Subtotal,
-		&c.GST, &c.Packing, &c.Handling, &c.Surge,
+		&c.GST, &c.Packing, &c.Handling, &c.Surge, &c.Platform,
 		&c.DeliveryFee, &c.Discount, &c.CodRound,
 		&c.TotalAmount, &c.DeliveryAddressSnapshot,
 		&c.CreatedAt, &c.UpdatedAt,

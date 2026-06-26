@@ -83,6 +83,7 @@ type checkoutService struct {
 	razorpayKeyID string
 	codMinPaise   int64
 	codMaxPaise   int64
+	platformPaise int64
 }
 
 // NewCheckoutService constructs a CheckoutService.
@@ -97,6 +98,7 @@ func NewCheckoutService(
 	razorpayKeyID string,
 	codMinPaise int64,
 	codMaxPaise int64,
+	platformPaise int64,
 ) CheckoutService {
 	return &checkoutService{
 		pool:          pool,
@@ -107,6 +109,7 @@ func NewCheckoutService(
 		orderRepo:     orderRepo,
 		razorpayKeyID: razorpayKeyID,
 		codMinPaise:   codMinPaise,
+		platformPaise: platformPaise,
 		codMaxPaise:   codMaxPaise,
 	}
 }
@@ -235,7 +238,9 @@ func (s *checkoutService) Place(ctx context.Context, in PlaceOrderInput) (*Place
 		).Scan(&rate)
 		gst += (int64(it.Qty) * it.UnitPricePaise * int64(rate)) / 100
 	}
-	total := subtotal + gst
+	// Platform fee always applies (non-waivable infra/support charge).
+	platform := s.platformPaise
+	total := subtotal + gst + platform
 
 	// --- COD totals round up to the nearest rupee so the rider doesn't have
 	//     to carry paise change. Capture the adjustment as its own line so
@@ -282,16 +287,16 @@ func (s *checkoutService) Place(ctx context.Context, in PlaceOrderInput) (*Place
 			id, org_id, customer_id, delivery_address_id,
 			status, order_type, total_amount, subtotal,
 			gst_paise, packing_paise, handling_paise, surge_paise,
-			delivery_fee, cod_round_paise,
+			platform_paise, delivery_fee, cod_round_paise,
 			payment_status, delivery_address_snapshot, created_at, updated_at
 		) VALUES (
 			$1, $2, $3, $4,
 			$5, 'b2c', $6, $7,
 			$8, 0, 0, 0,
-			0, $9,
-			'unpaid', $10, NOW(), NOW()
+			$9, 0, $10,
+			'unpaid', $11, NOW(), NOW()
 		)
-	`, orderID, s.orgID, custID, addrID, orderStatus, total, subtotal, gst, codRound, snapshot)
+	`, orderID, s.orgID, custID, addrID, orderStatus, total, subtotal, gst, platform, codRound, snapshot)
 	if err != nil {
 		return nil, fmt.Errorf("insert order: %w", err)
 	}

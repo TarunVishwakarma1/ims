@@ -40,8 +40,9 @@ type Config struct {
 
 	// B2C Shop
 	ShopEnabled     bool
-	ShopCODMinPaise int64
-	ShopCODMaxPaise int64
+	ShopCODMinPaise   int64
+	ShopCODMaxPaise   int64
+	ShopPlatformPaise int64 // flat per-order platform fee (e.g. 300 = ₹3)
 	ShopOrgID       string // optional — when set, overrides slug lookup
 	ShopOrgSlug     string // stable lookup key (default "kirana")
 	ShopOrgName     string // human name used when bootstrap creates the org
@@ -168,6 +169,18 @@ func LoadConfig() (*Config, error) {
 		return nil, fmt.Errorf("invalid COD bounds: min=%d max=%d", codMin, codMax)
 	}
 
+	platformPaise := int64(300) // default ₹3 per order
+	if v := os.Getenv("SHOP_PLATFORM_FEE_PAISE"); v != "" {
+		n, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid SHOP_PLATFORM_FEE_PAISE: %w", err)
+		}
+		if n < 0 {
+			return nil, fmt.Errorf("SHOP_PLATFORM_FEE_PAISE must be >= 0, got %d", n)
+		}
+		platformPaise = n
+	}
+
 	msg91SenderID := os.Getenv("MSG91_SENDER_ID")
 	if msg91SenderID == "" {
 		msg91SenderID = "IMSHOP"
@@ -233,6 +246,7 @@ func LoadConfig() (*Config, error) {
 		ShopEnabled:               shopEnabled,
 		ShopCODMinPaise:           codMin,
 		ShopCODMaxPaise:           codMax,
+		ShopPlatformPaise:         platformPaise,
 		ShopOrgID:                 os.Getenv("SHOP_ORG_ID"),
 		ShopOrgSlug:               firstNonEmpty(os.Getenv("SHOP_ORG_SLUG"), "kirana"),
 		ShopOrgName:               firstNonEmpty(os.Getenv("SHOP_ORG_NAME"), "Kirana"),

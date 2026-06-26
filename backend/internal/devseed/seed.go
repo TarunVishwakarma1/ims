@@ -72,7 +72,7 @@ func products() []prodSeed {
 
 		// Beverages
 		{mustUUID("d0000001-0000-4000-8000-000000000005"), bev, "KIRANA-BEV-COKE-750ML", "coca-cola-750ml", "Coca-Cola 750ml", "Refreshing cola in a sharing-size bottle.", 4000, 28, img("coke"), 80},
-		{mustUUID("d0000001-0000-4000-8000-000000000006"), bev, "KIRANA-BEV-BISLERI-1L", "bisleri-water-1l", "Bisleri Mineral Water 1L", "Purified mineral water, single bottle.", 2000, 0, img("bisleri"), 300},
+		{mustUUID("d0000001-0000-4000-8000-000000000006"), bev, "KIRANA-BEV-BISLERI-1L", "bisleri-water-1l", "Bisleri Mineral Water 1L", "Purified mineral water, single bottle.", 2000, 18, img("bisleri"), 300},
 		{mustUUID("d0000001-0000-4000-8000-000000000007"), bev, "KIRANA-BEV-TROPICANA-OJ-1L", "tropicana-orange-1l", "Tropicana Orange Juice 1L", "100% orange juice, no added sugar.", 11000, 12, img("tropicana"), 50},
 		{mustUUID("d0000001-0000-4000-8000-000000000008"), bev, "KIRANA-BEV-REAL-MIXED-1L", "real-mixed-fruit-1l", "Real Mixed Fruit Juice 1L", "Goodness of seven fruits in one pack.", 12500, 12, img("real-mf"), 45},
 
@@ -80,7 +80,7 @@ func products() []prodSeed {
 		{mustUUID("d0000001-0000-4000-8000-000000000009"), dairy, "KIRANA-DAI-AMUL-GOLD-1L", "amul-gold-milk-1l", "Amul Gold Full Cream Milk 1L", "Tetra-pack full-cream milk, 6% fat.", 7500, 5, img("amul-gold"), 100},
 		{mustUUID("d0000001-0000-4000-8000-00000000000a"), dairy, "KIRANA-DAI-MD-CURD-400G", "mother-dairy-curd-400g", "Mother Dairy Fresh Curd 400g", "Fresh thick set curd, classic taste.", 5500, 5, img("md-curd"), 70},
 		{mustUUID("d0000001-0000-4000-8000-00000000000b"), dairy, "KIRANA-DAI-AMUL-BUTTER-100G", "amul-butter-100g", "Amul Butter 100g", "Utterly butterly delicious salted butter.", 5800, 12, img("amul-butter"), 90},
-		{mustUUID("d0000001-0000-4000-8000-00000000000c"), dairy, "KIRANA-DAI-EGGS-12PC", "farm-eggs-12pc", "Farm Fresh Eggs (12 pcs)", "Locally sourced grade-A chicken eggs.", 9000, 0, img("eggs"), 60},
+		{mustUUID("d0000001-0000-4000-8000-00000000000c"), dairy, "KIRANA-DAI-EGGS-12PC", "farm-eggs-12pc", "Farm Fresh Eggs (12 pcs)", "Locally sourced grade-A chicken eggs.", 9000, 5, img("eggs"), 60},
 
 		// Staples
 		{mustUUID("d0000001-0000-4000-8000-00000000000d"), staples, "KIRANA-STA-INDIAGATE-1KG", "india-gate-basmati-1kg", "India Gate Classic Basmati Rice 1kg", "Long-grain aged basmati rice.", 22000, 5, img("indiagate"), 80},
@@ -128,7 +128,16 @@ func Run(ctx context.Context, pool *pgxpool.Pool, orgID uuid.UUID) error {
 			VALUES ($1, $2, $3, $4, $5, $6, $7, $7,
 			        $8, $9, TRUE, $10, $4,
 			        ARRAY[$11]::TEXT[], $6)
-			ON CONFLICT (id) DO NOTHING
+			ON CONFLICT (id) DO UPDATE SET
+			  name             = EXCLUDED.name,
+			  description      = EXCLUDED.description,
+			  gst_rate         = EXCLUDED.gst_rate,
+			  shop_visible     = EXCLUDED.shop_visible,
+			  shop_slug        = EXCLUDED.shop_slug,
+			  shop_image_urls  = EXCLUDED.shop_image_urls,
+			  shop_price_paise = EXCLUDED.shop_price_paise,
+			  shop_description = EXCLUDED.shop_description,
+			  updated_at       = EXCLUDED.updated_at
 		`, p.id, p.categoryID, p.name, p.description, p.sku, p.pricePaise, now,
 			orgID, p.gstRate, p.shopSlug, p.imageURL)
 		if err != nil {

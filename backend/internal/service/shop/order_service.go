@@ -304,6 +304,8 @@ func buildCharges(row *repository.CustomerOrderRow) []ChargeLine {
 		line("Handling", row.Handling, defaultHandlingPaise),
 		line("Shipping", row.DeliveryFee, defaultShippingPaise),
 		line("Surge", row.Surge, defaultSurgePaise),
+		// Platform fee is non-waivable; always render the actual value.
+		{Label: "Platform fee", Paise: row.Platform, OriginalPaise: row.Platform, Struck: false},
 	}
 	if row.Discount > 0 {
 		lines = append(lines, ChargeLine{Label: "Discount", Paise: -row.Discount, OriginalPaise: row.Discount, Struck: false})
