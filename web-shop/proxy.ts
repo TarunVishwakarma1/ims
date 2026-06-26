@@ -2,7 +2,10 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { SHOP_SESSION_COOKIE } from "@/lib/cookies";
 
-const PROTECTED_PREFIXES = ["/orders", "/checkout", "/addresses", "/profile"];
+// /checkout and /orders host their own LoginModal that drives the OTP flow
+// in-context (P3e2). Guard only pages that have no in-page auth path so we
+// don't end up showing the login UI twice (once full-page, once modal).
+const PROTECTED_PREFIXES = ["/addresses", "/profile"];
 
 export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
