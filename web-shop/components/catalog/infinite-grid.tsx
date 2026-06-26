@@ -47,7 +47,11 @@ export function InfiniteGrid<T>({
     setError(false);
     try {
       const next = await loadMore(cursorRef.current);
-      setItems((prev) => [...prev, ...next.items]);
+      setItems((prev) => {
+        const seen = new Set(prev.map(itemKey));
+        const fresh = next.items.filter((it) => !seen.has(itemKey(it)));
+        return fresh.length === next.items.length ? [...prev, ...next.items] : [...prev, ...fresh];
+      });
       if (next.next_cursor) {
         cursorRef.current = next.next_cursor;
       } else {
@@ -62,7 +66,7 @@ export function InfiniteGrid<T>({
       loadingRef.current = false;
       setLoading(false);
     }
-  }, [loadMore]);
+  }, [loadMore, itemKey]);
 
   const retry = useCallback(() => {
     setError(false);
