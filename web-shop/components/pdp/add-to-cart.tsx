@@ -1,32 +1,33 @@
 "use client";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { ShoppingCart } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { useCartStore } from "@/lib/cart-store";
+import type { CartItem } from "@/lib/shop-types";
 
-type Props = { productSlug: string; qty: number; disabled?: boolean };
+type Props = {
+  item: Omit<CartItem, "qty">;
+  qty: number;
+  disabled?: boolean;
+};
 
-export function AddToCart({ productSlug, qty, disabled }: Props) {
+export function AddToCart({ item, qty, disabled }: Props) {
   const [pending, setPending] = useState(false);
+  const add = useCartStore((s) => s.add);
+  const router = useRouter();
 
   async function onClick() {
     if (disabled || pending) return;
     setPending(true);
     try {
-      const res = await fetch("/api/cart/add", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ slug: productSlug, qty }),
+      await add({ ...item, qty: 0 }, qty);
+      toast.success("Added to cart", {
+        action: { label: "View cart", onClick: () => router.push("/cart") },
       });
-      if (res.status === 501) {
-        toast("Cart coming soon");
-      } else if (res.ok) {
-        toast.success("Added to cart");
-      } else {
-        toast.error("Could not add. Try again.");
-      }
     } catch {
-      toast.error("Could not add. Try again.");
+      toast.error("Could not add to cart");
     } finally {
       setPending(false);
     }

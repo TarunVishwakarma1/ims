@@ -93,8 +93,14 @@ export default async function ProductPage({ params }: PageProps) {
           </p>
 
           <PdpBuyBox
-            productSlug={product.slug}
-            max={product.available_qty}
+            item={{
+              product_id: product.id,
+              slug: product.slug,
+              name: product.name,
+              image: images[0] ?? "",
+              unit_price_paise: product.price_paise,
+              max_qty: product.available_qty,
+            }}
             outOfStock={outOfStock}
           />
 

@@ -1,6 +1,7 @@
 import Link from "next/link";
-import { ShoppingCart, User } from "lucide-react";
+import { User } from "lucide-react";
 import { HeaderSearch } from "@/components/search/header-search";
+import { CartIconButton } from "@/components/cart/cart-icon-button";
 
 export function SiteHeader() {
   return (
@@ -18,13 +19,7 @@ export function SiteHeader() {
           >
             <User className="size-5" />
           </Link>
-          <Link
-            href="/cart"
-            aria-label="Cart"
-            className="size-10 grid place-items-center rounded-full hover:bg-brand-50"
-          >
-            <ShoppingCart className="size-5" />
-          </Link>
+          <CartIconButton />
         </nav>
       </div>
     </header>
