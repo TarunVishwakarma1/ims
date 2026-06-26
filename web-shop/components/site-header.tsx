@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { User } from "lucide-react";
+import { Package, User } from "lucide-react";
 import { HeaderSearch } from "@/components/search/header-search";
 import { CartIconButton } from "@/components/cart/cart-icon-button";
 
@@ -12,6 +12,13 @@ export function SiteHeader() {
         </Link>
         <HeaderSearch />
         <nav className="ml-auto flex items-center gap-3">
+          <Link
+            href="/orders"
+            aria-label="My orders"
+            className="size-10 grid place-items-center rounded-full hover:bg-brand-50"
+          >
+            <Package className="size-5" />
+          </Link>
           <Link
             href="/profile"
             aria-label="Account"

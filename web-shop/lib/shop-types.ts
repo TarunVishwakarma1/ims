@@ -179,7 +179,7 @@ export type OrderListItem = {
   invoice_number: string;
   status: OrderStatus;
   payment_status: PaymentStatus;
-  payment_method: "razorpay" | "cod";
+  payment_method?: "razorpay" | "cod";
   total_paise: number;
   item_count: number;
   created_at: string;

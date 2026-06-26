@@ -30,7 +30,7 @@ type OrderCard struct {
 	InvoiceNumber  string    `json:"invoice_number"`
 	Status         string    `json:"status"`
 	PaymentStatus  string    `json:"payment_status"`
-	TotalAmount    int64     `json:"total_amount_paise"`
+	TotalAmount    int64     `json:"total_paise"`
 	CreatedAt      time.Time `json:"created_at"`
 	ItemCount      int       `json:"item_count"`
 	FirstItemName  string    `json:"first_item_name"`
@@ -52,8 +52,8 @@ type OrderItemView struct {
 	ProductID uuid.UUID `json:"product_id"`
 	Slug      string    `json:"slug"`
 	Name      string    `json:"name"`
-	ImageURL  string    `json:"image_url"`
-	Quantity  int       `json:"quantity"`
+	Image     string    `json:"image"`
+	Qty       int       `json:"qty"`
 	UnitPrice int64     `json:"unit_price_paise"`
 }
 
@@ -223,8 +223,8 @@ func (s *shopOrderService) Get(ctx context.Context, customerID, orderID uuid.UUI
 			ProductID: it.ProductID,
 			Slug:      it.ProductSlug,
 			Name:      it.ProductName,
-			ImageURL:  it.ProductImage,
-			Quantity:  it.Quantity,
+			Image:     it.ProductImage,
+			Qty:       it.Quantity,
 			UnitPrice: it.UnitPrice,
 		}
 		views = append(views, v)
