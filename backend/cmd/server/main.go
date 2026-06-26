@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/TarunVishwakarma1/ims/backend/config"
+	"github.com/TarunVishwakarma1/ims/backend/internal/devseed"
 	"github.com/TarunVishwakarma1/ims/backend/internal/handler"
 	shophandler "github.com/TarunVishwakarma1/ims/backend/internal/handler/shop"
 	"github.com/TarunVishwakarma1/ims/backend/internal/repository"
@@ -218,6 +219,14 @@ func main() {
 			zap.String("id", shopOrgID.String()),
 			zap.String("slug", cfg.ShopOrgSlug),
 			zap.String("name", cfg.ShopOrgName))
+
+		if cfg.SeedDevData {
+			if err := devseed.Run(context.Background(), pool, shopOrgID); err != nil {
+				zap.L().Error("dev seed failed", zap.Error(err))
+			} else {
+				zap.L().Info("dev seed applied")
+			}
+		}
 
 		var smsSender sms.Sender
 		if cfg.MSG91AuthKey != "" {

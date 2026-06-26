@@ -45,6 +45,7 @@ type Config struct {
 	ShopOrgID       string // optional — when set, overrides slug lookup
 	ShopOrgSlug     string // stable lookup key (default "kirana")
 	ShopOrgName     string // human name used when bootstrap creates the org
+	SeedDevData     bool   // seed demo categories/products/inventory at boot (dev only)
 	MSG91AuthKey    string
 	MSG91TemplateID string
 	MSG91SenderID   string
@@ -235,6 +236,7 @@ func LoadConfig() (*Config, error) {
 		ShopOrgID:                 os.Getenv("SHOP_ORG_ID"),
 		ShopOrgSlug:               firstNonEmpty(os.Getenv("SHOP_ORG_SLUG"), "kirana"),
 		ShopOrgName:               firstNonEmpty(os.Getenv("SHOP_ORG_NAME"), "Kirana"),
+		SeedDevData:               os.Getenv("SEED_DEV_DATA") == "true",
 		MSG91AuthKey:              os.Getenv("MSG91_AUTH_KEY"),
 		MSG91TemplateID:           os.Getenv("MSG91_TEMPLATE_ID"),
 		MSG91SenderID:             msg91SenderID,
