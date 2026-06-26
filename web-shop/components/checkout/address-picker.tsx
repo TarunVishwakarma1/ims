@@ -15,7 +15,7 @@ export function AddressPicker({ addresses, selected, onSelect, onAddNew }: Props
     <section aria-labelledby="addr-h">
       <h2 id="addr-h" className="font-semibold mb-3">Delivery address</h2>
       <ul className="space-y-2">
-        {addresses.map((a) => {
+        {(addresses ?? []).map((a) => {
           const isSel = selected?.id === a.id;
           return (
             <li key={a.id}>

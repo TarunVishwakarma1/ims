@@ -66,6 +66,11 @@ func (h *CustomerHandler) ListAddresses(w http.ResponseWriter, r *http.Request) 
 		writeErr(w, http.StatusInternalServerError, "fetch_failed")
 		return
 	}
+	// Encode a missing list as [] rather than null so JSON consumers can
+	// safely call .map without a guard.
+	if addrs == nil {
+		addrs = []domain.CustomerAddress{}
+	}
 	writeJSON(w, http.StatusOK, addrs)
 }
 
