@@ -183,6 +183,8 @@ export type OrderListItem = {
   total_paise: number;
   item_count: number;
   created_at: string;
+  first_item_name?: string;
+  first_item_image?: string;
 };
 
 export type OrderListResult = {
