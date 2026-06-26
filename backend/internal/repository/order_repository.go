@@ -486,7 +486,9 @@ func (r *orderRepository) GetByCustomerAndID(ctx context.Context, customerID, or
 		orderID, customerID,
 	).Scan(
 		&c.ID, &c.OrgID, &c.CustomerID, &c.InvoiceNumber, &c.Status, &c.PaymentStatus,
-		&c.PaymentID, &c.Subtotal, &c.DeliveryFee, &c.Discount,
+		&c.PaymentID, &c.Subtotal,
+		&c.GST, &c.Packing, &c.Handling, &c.Surge,
+		&c.DeliveryFee, &c.Discount, &c.CodRound,
 		&c.TotalAmount, &c.DeliveryAddressSnapshot,
 		&c.CreatedAt, &c.UpdatedAt,
 	)
