@@ -68,6 +68,7 @@ const (
 	defaultHandlingPaise = 1000 // ₹10
 	defaultShippingPaise = 4000 // ₹40
 	defaultSurgePaise    = 1500 // ₹15
+	defaultPlatformPaise = 300  // ₹3
 )
 
 type OrderItemView struct {
@@ -304,8 +305,7 @@ func buildCharges(row *repository.CustomerOrderRow) []ChargeLine {
 		line("Handling", row.Handling, defaultHandlingPaise),
 		line("Shipping", row.DeliveryFee, defaultShippingPaise),
 		line("Surge", row.Surge, defaultSurgePaise),
-		// Platform fee is non-waivable; always render the actual value.
-		{Label: "Platform fee", Paise: row.Platform, OriginalPaise: row.Platform, Struck: false},
+		line("Platform fee", row.Platform, defaultPlatformPaise),
 	}
 	if row.Discount > 0 {
 		lines = append(lines, ChargeLine{Label: "Discount", Paise: -row.Discount, OriginalPaise: row.Discount, Struck: false})
