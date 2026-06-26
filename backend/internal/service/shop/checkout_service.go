@@ -237,8 +237,15 @@ func (s *checkoutService) Place(ctx context.Context, in PlaceOrderInput) (*Place
 	}
 	total := subtotal + gst
 
-	// --- Gate COD by min/max bounds ---
+	// --- COD totals round up to the nearest rupee so the rider doesn't have
+	//     to carry paise change. The rounding adjustment lands in GST so the
+	//     subtotal still matches the line totals. ---
 	if in.PaymentMethod == "cod" {
+		if rem := total % 100; rem != 0 {
+			adjustment := int64(100) - rem
+			gst += adjustment
+			total += adjustment
+		}
 		if total < s.codMinPaise || total > s.codMaxPaise {
 			return nil, ErrCODIneligible
 		}
