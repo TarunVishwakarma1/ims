@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { Search, ShoppingCart, User } from "lucide-react";
+import { ShoppingCart, User } from "lucide-react";
+import { HeaderSearch } from "@/components/search/header-search";
 
 export function SiteHeader() {
   return (
@@ -8,13 +9,7 @@ export function SiteHeader() {
         <Link href="/" className="text-xl font-semibold text-brand-600">
           Shop
         </Link>
-        <Link
-          href="/search"
-          className="flex-1 max-w-md h-10 rounded-xl border border-border px-4 text-left text-muted flex items-center gap-2 hover:bg-brand-50"
-        >
-          <Search className="size-4" />
-          <span>Search products…</span>
-        </Link>
+        <HeaderSearch />
         <nav className="ml-auto flex items-center gap-3">
           <Link
             href="/profile"

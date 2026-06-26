@@ -24,9 +24,9 @@ import (
 
 // Event topics for payment lifecycle
 const (
-	TopicPaymentCreated  = "payment.created"
-	TopicPaymentCaptured = "payment.captured"
-	TopicPaymentFailed   = "payment.failed"
+	TopicPaymentCreated      = "payment.created"
+	TopicPaymentCaptured     = "payment.captured"
+	TopicPaymentFailed       = "payment.failed"
 	TopicPaymentRefunded     = "payment.refunded"
 	TopicPaymentRefundFailed = "payment.refund_failed"
 )
@@ -302,7 +302,7 @@ func (s *paymentService) CreateOrder(ctx context.Context, orgID, orderID uuid.UU
 		// Real RazorPay — round-trip to their API to create an order.
 		// Reference: https://razorpay.com/docs/api/orders/
 		data := map[string]any{
-			"amount":   amount,         // paise
+			"amount":   amount, // paise
 			"currency": "INR",
 			"receipt":  orderID.String(),
 			"notes": map[string]string{
@@ -828,6 +828,11 @@ func (s *paymentService) markOrderPaid(ctx context.Context, orderID, orgID uuid.
 	order.PaymentID = &rzpPaymentID
 	now := time.Now().UTC()
 	order.UpdatedAt = now
+	// B2C: pending orders auto-confirm on payment capture. B2B keeps its
+	// own workflow — status managed by shipping team, not payment events.
+	if order.OrderType == "b2c" && order.Status == "pending" {
+		order.Status = "confirmed"
+	}
 	if err := s.orderRepo.Update(ctx, order); err != nil {
 		return err
 	}
@@ -1377,9 +1382,9 @@ func (s *paymentService) reconcileRefundedFromRazorpay(ctx context.Context, paym
 			s.invalidateOrgOrders(ctx, payment.OrgID)
 			s.writeOrderAudit(ctx, payment.OrgID, *payment.OrderID, "payment.refunded")
 			_ = s.bus.Publish(ctx, events.NewEvent(TopicPaymentRefunded, payment.OrgID.String(), "", map[string]any{
-				"payment_id":  payment.ID,
-				"order_id":    payment.OrderID,
-				"reconciled":  true,
+				"payment_id": payment.ID,
+				"order_id":   payment.OrderID,
+				"reconciled": true,
 			}))
 		}
 	}
@@ -1402,13 +1407,13 @@ func verifyHMAC(body []byte, signature, secret string) bool {
 // ── RazorPay payload shapes (subset) ─────────────────────────────────────
 
 type rzpEnvelope struct {
-	Entity    string      `json:"entity"`     // "event"
-	AccountID string      `json:"account_id"` // unused in mock
-	Event     string      `json:"event"`      // e.g. "payment.captured"
-	EventID   string      `json:"id"`         // unique per event
-	Contains  []string    `json:"contains"`
-	Payload   rzpPayload  `json:"payload"`
-	CreatedAt int64       `json:"created_at"`
+	Entity    string     `json:"entity"`     // "event"
+	AccountID string     `json:"account_id"` // unused in mock
+	Event     string     `json:"event"`      // e.g. "payment.captured"
+	EventID   string     `json:"id"`         // unique per event
+	Contains  []string   `json:"contains"`
+	Payload   rzpPayload `json:"payload"`
+	CreatedAt int64      `json:"created_at"`
 }
 
 type rzpPayload struct {
@@ -1439,12 +1444,12 @@ type rzpPaymentEntity struct {
 // Refund webhooks have a different payload shape than payment ones.
 // `payment_id` links back to the original payment.
 type rzpRefundEntity struct {
-	ID        string `json:"id"`         // rfnd_xxx
-	Entity    string `json:"entity"`     // "refund"
-	Amount    int64  `json:"amount"`
-	Currency  string `json:"currency"`
-	Status    string `json:"status"`     // processed | failed | created
-	PaymentID string `json:"payment_id"` // pay_xxx — links to payment
+	ID        string            `json:"id"`     // rfnd_xxx
+	Entity    string            `json:"entity"` // "refund"
+	Amount    int64             `json:"amount"`
+	Currency  string            `json:"currency"`
+	Status    string            `json:"status"`     // processed | failed | created
+	PaymentID string            `json:"payment_id"` // pay_xxx — links to payment
 	Notes     map[string]string `json:"notes,omitempty"`
 }
 

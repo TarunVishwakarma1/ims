@@ -48,6 +48,7 @@ func NewRouter(
 	adminBannerH *handler.AdminBannerHandler,
 	shopBannerH *shophandler.BannerHandler,
 	shopOrderH *shophandler.OrderHandler,
+	shopPaymentH *shophandler.PaymentHandler,
 	uploadDir string,
 ) http.Handler {
 	r := chi.NewRouter()
@@ -283,7 +284,10 @@ func NewRouter(
 				r.Post("/cart/merge", shopCartH.Merge)
 
 				r.Get("/checkout/summary", shopCheckH.Summary)
+				r.Get("/checkout/payment-options", shopCheckH.PaymentOptions)
 				r.With(middleware.Idempotency(pool)).Post("/checkout/place", shopCheckH.Place)
+
+				r.With(middleware.Idempotency(pool)).Post("/payments/razorpay/verify", shopPaymentH.Verify)
 
 				r.Get("/orders", shopOrderH.List)
 				r.Get("/orders/{id}", shopOrderH.Get)

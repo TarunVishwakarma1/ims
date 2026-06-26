@@ -30,6 +30,10 @@ func (f *fakeCheckout) Place(_ context.Context, _ srv.PlaceOrderInput) (*srv.Pla
 	return f.placeResult, f.placeErr
 }
 
+func (f *fakeCheckout) PaymentOptions(_ context.Context, _ uuid.UUID) ([]srv.PaymentOption, error) {
+	return nil, nil
+}
+
 // withCIDCheckout injects a customer ID into the request context.
 // (mirrors withCID from cart_handler_test.go; same package so alias it locally)
 func withCIDCheckout(req *http.Request, cid uuid.UUID) *http.Request {

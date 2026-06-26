@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -33,6 +35,8 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/database/pgx/v5"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
 )
 
@@ -202,16 +206,18 @@ func main() {
 		shopCatalogH *shophandler.CatalogHandler
 		shopBannerH  *shophandler.BannerHandler
 		shopOrderH   *shophandler.OrderHandler
+		shopPaymentH *shophandler.PaymentHandler
 		adminBannerH *handler.AdminBannerHandler
 	)
 	if cfg.ShopEnabled {
-		if cfg.ShopOrgID == "" {
-			zap.L().Fatal("SHOP_ENABLED=true requires SHOP_ORG_ID")
-		}
-		shopOrgID, err := uuid.Parse(cfg.ShopOrgID)
+		shopOrgID, err := resolveShopOrg(context.Background(), pool, cfg.ShopOrgID, cfg.ShopOrgSlug, cfg.ShopOrgName)
 		if err != nil {
-			zap.L().Fatal("invalid SHOP_ORG_ID", zap.Error(err))
+			zap.L().Fatal("resolve shop org", zap.Error(err))
 		}
+		zap.L().Info("shop org resolved",
+			zap.String("id", shopOrgID.String()),
+			zap.String("slug", cfg.ShopOrgSlug),
+			zap.String("name", cfg.ShopOrgName))
 
 		var smsSender sms.Sender
 		if cfg.MSG91AuthKey != "" {
@@ -229,7 +235,7 @@ func main() {
 		otpSvc := shopsvc.NewOTPService(otpRepo, customerRepo, smsSender, cfg.JWTSecret)
 		custSvc := shopsvc.NewCustomerService(customerRepo, addrRepo)
 		cartSvc := shopsvc.NewCartService(cartRepo, pool, shopOrgID)
-		checkSvc := shopsvc.NewCheckoutService(pool, shopOrgID, cartRepo, addrRepo, paymentService, orderRepo, cfg.RazorpayKeyID)
+		checkSvc := shopsvc.NewCheckoutService(pool, shopOrgID, cartRepo, addrRepo, paymentService, orderRepo, cfg.RazorpayKeyID, cfg.ShopCODMinPaise, cfg.ShopCODMaxPaise)
 
 		shopAuthH = shophandler.NewAuthHandler(otpSvc)
 		shopCustH = shophandler.NewCustomerHandler(custSvc)
@@ -248,6 +254,15 @@ func main() {
 
 		orderSvcShop := shopsvc.NewShopOrderService(pool, orderRepo, paymentService, shopOrgID)
 		shopOrderH = shophandler.NewOrderHandler(orderSvcShop)
+
+		shopPaymentSvc := shopsvc.NewShopPaymentService(
+			pool, shopOrgID,
+			orderRepo,
+			paymentRepo,
+			cfg.RazorpayKeySecret,
+			cfg.RazorpayMockMode,
+		)
+		shopPaymentH = shophandler.NewPaymentHandler(shopPaymentSvc)
 
 		if cfg.BannerSeedEnabled {
 			go func() {
@@ -293,7 +308,7 @@ func main() {
 	webhookH := handler.NewWebhookHandler(paymentService)
 	eventsH := handler.NewEventsHandler(eventBus)
 
-	router := NewRouter(authH, userH, categoryH, productH, inventoryH, orderH, roleH, locationH, marketH, eventsH, paymentH, webhookH, partnerH, returnH, notificationH, auditH, totpH, couponH, cfg, pool, cacheClient, cfg.ShopEnabled, shopAuthH, shopCustH, shopCartH, shopCheckH, shopCatalogH, adminBannerH, shopBannerH, shopOrderH, cfg.UploadDir)
+	router := NewRouter(authH, userH, categoryH, productH, inventoryH, orderH, roleH, locationH, marketH, eventsH, paymentH, webhookH, partnerH, returnH, notificationH, auditH, totpH, couponH, cfg, pool, cacheClient, cfg.ShopEnabled, shopAuthH, shopCustH, shopCartH, shopCheckH, shopCatalogH, adminBannerH, shopBannerH, shopOrderH, shopPaymentH, cfg.UploadDir)
 
 	server := &http.Server{
 		Addr:         ":" + cfg.Port,
@@ -321,4 +336,67 @@ func main() {
 	}
 
 	zap.L().Info("Server exiting gracefully")
+}
+
+// resolveShopOrg returns the UUID of the B2C shop organization.
+//
+// Resolution order:
+//  1. If explicitOverride (SHOP_ORG_ID env) is set, parse and return it.
+//     Validates that a row with this id actually exists.
+//  2. Else SELECT id FROM organizations WHERE slug=$slug.
+//  3. Else INSERT a new row with (slug, name, plan_type='enterprise').
+//
+// The hybrid migration (000020_seed_shop_org) seeds a canonical row on
+// fresh DBs; this function handles existing DBs that pre-date the migration
+// and self-heals when an operator drops the row by mistake.
+func resolveShopOrg(ctx context.Context, pool *pgxpool.Pool, explicitID, slug, name string) (uuid.UUID, error) {
+	if explicitID != "" {
+		id, err := uuid.Parse(explicitID)
+		if err != nil {
+			return uuid.Nil, fmt.Errorf("invalid SHOP_ORG_ID %q: %w", explicitID, err)
+		}
+		var exists bool
+		if err := pool.QueryRow(ctx,
+			`SELECT EXISTS(SELECT 1 FROM organizations WHERE id=$1)`, id,
+		).Scan(&exists); err != nil {
+			return uuid.Nil, fmt.Errorf("verify SHOP_ORG_ID: %w", err)
+		}
+		if !exists {
+			return uuid.Nil, fmt.Errorf("SHOP_ORG_ID %s not present in organizations", id)
+		}
+		return id, nil
+	}
+
+	if slug == "" {
+		return uuid.Nil, fmt.Errorf("SHOP_ORG_SLUG empty and SHOP_ORG_ID unset")
+	}
+
+	var id uuid.UUID
+	err := pool.QueryRow(ctx,
+		`SELECT id FROM organizations WHERE slug=$1`, slug,
+	).Scan(&id)
+	if err == nil {
+		return id, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return uuid.Nil, fmt.Errorf("lookup shop org by slug %q: %w", slug, err)
+	}
+
+	// Self-heal: row missing (fresh DB pre-migration, or operator deletion).
+	displayName := name
+	if displayName == "" {
+		displayName = slug
+	}
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO organizations (name, slug, plan_type, is_active)
+		VALUES ($1, $2, 'enterprise', true)
+		RETURNING id
+	`, displayName, slug).Scan(&id); err != nil {
+		return uuid.Nil, fmt.Errorf("bootstrap shop org %q: %w", slug, err)
+	}
+	zap.L().Info("bootstrapped shop org",
+		zap.String("id", id.String()),
+		zap.String("slug", slug),
+		zap.String("name", displayName))
+	return id, nil
 }
