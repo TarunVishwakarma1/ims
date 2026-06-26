@@ -41,6 +41,8 @@ func (r *customerAddressRepository) WithTx(tx pgx.Tx) CustomerAddressRepository 
 // addrScanCols is the canonical column list for SELECT queries.
 const addrScanCols = `id, customer_id,
 	COALESCE(label,''),
+	COALESCE(name,''),
+	COALESCE(phone,''),
 	line1,
 	COALESCE(line2,''),
 	COALESCE(city,''),
@@ -53,7 +55,7 @@ func scanAddress(row interface{ Scan(dest ...any) error }) (*domain.CustomerAddr
 	a := &domain.CustomerAddress{}
 	err := row.Scan(
 		&a.ID, &a.CustomerID,
-		&a.Label, &a.Line1, &a.Line2,
+		&a.Label, &a.Name, &a.Phone, &a.Line1, &a.Line2,
 		&a.City, &a.State, &a.Country, &a.PostalCode,
 		&a.Lat, &a.Lng, &a.IsDefault, &a.CreatedAt,
 	)
@@ -84,14 +86,14 @@ func (r *customerAddressRepository) Create(ctx context.Context, a *domain.Custom
 		var id uuid.UUID
 		err = tx.QueryRow(ctx, `
 			INSERT INTO customer_addresses
-				(customer_id, label, line1, line2, city, state,
+				(customer_id, label, name, phone, line1, line2, city, state,
 				 country, postal_code, lat, lng, is_default)
 			VALUES
-				($1, $2, $3, $4, $5, $6,
-				 COALESCE(NULLIF($7,''),'IN'), $8, $9, $10, $11)
+				($1, $2, $3, $4, $5, $6, $7, $8,
+				 COALESCE(NULLIF($9,''),'IN'), $10, $11, $12, $13)
 			RETURNING id
 		`,
-			a.CustomerID, a.Label, a.Line1, a.Line2, a.City, a.State,
+			a.CustomerID, a.Label, a.Name, a.Phone, a.Line1, a.Line2, a.City, a.State,
 			a.Country, a.PostalCode, a.Lat, a.Lng, a.IsDefault,
 		).Scan(&id)
 		if err != nil {
@@ -104,14 +106,14 @@ func (r *customerAddressRepository) Create(ctx context.Context, a *domain.Custom
 	var id uuid.UUID
 	err := r.db.QueryRow(ctx, `
 		INSERT INTO customer_addresses
-			(customer_id, label, line1, line2, city, state,
+			(customer_id, label, name, phone, line1, line2, city, state,
 			 country, postal_code, lat, lng, is_default)
 		VALUES
-			($1, $2, $3, $4, $5, $6,
-			 COALESCE(NULLIF($7,''),'IN'), $8, $9, $10, $11)
+			($1, $2, $3, $4, $5, $6, $7, $8,
+			 COALESCE(NULLIF($9,''),'IN'), $10, $11, $12, $13)
 		RETURNING id
 	`,
-		a.CustomerID, a.Label, a.Line1, a.Line2, a.City, a.State,
+		a.CustomerID, a.Label, a.Name, a.Phone, a.Line1, a.Line2, a.City, a.State,
 		a.Country, a.PostalCode, a.Lat, a.Lng, a.IsDefault,
 	).Scan(&id)
 	if err != nil {
@@ -167,17 +169,19 @@ func (r *customerAddressRepository) Update(ctx context.Context, a *domain.Custom
 		UPDATE customer_addresses
 		SET
 			label       = $2,
-			line1       = $3,
-			line2       = $4,
-			city        = $5,
-			state       = $6,
-			country     = COALESCE(NULLIF($7,''),'IN'),
-			postal_code = $8,
-			lat         = $9,
-			lng         = $10
-		WHERE id = $1 AND customer_id = $11
+			name        = $3,
+			phone       = $4,
+			line1       = $5,
+			line2       = $6,
+			city        = $7,
+			state       = $8,
+			country     = COALESCE(NULLIF($9,''),'IN'),
+			postal_code = $10,
+			lat         = $11,
+			lng         = $12
+		WHERE id = $1 AND customer_id = $13
 	`,
-		a.ID, a.Label, a.Line1, a.Line2, a.City, a.State,
+		a.ID, a.Label, a.Name, a.Phone, a.Line1, a.Line2, a.City, a.State,
 		a.Country, a.PostalCode, a.Lat, a.Lng,
 		a.CustomerID,
 	)

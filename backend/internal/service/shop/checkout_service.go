@@ -2,6 +2,7 @@ package shop
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -253,17 +254,33 @@ func (s *checkoutService) Place(ctx context.Context, in PlaceOrderInput) (*Place
 	orderID := uuid.New()
 	addrID := in.AddressID
 	custID := in.CustomerID
+
+	// Snapshot the delivery address into the order so cancellations / edits /
+	// deletions on the source address row cannot alter historical records.
+	snapshot, err := json.Marshal(map[string]any{
+		"name":    addr.Name,
+		"phone":   addr.Phone,
+		"line1":   addr.Line1,
+		"line2":   addr.Line2,
+		"city":    addr.City,
+		"state":   addr.State,
+		"pincode": addr.PostalCode,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("encode delivery snapshot: %w", err)
+	}
+
 	_, err = tx.Exec(ctx, `
 		INSERT INTO orders (
 			id, org_id, customer_id, delivery_address_id,
 			status, order_type, total_amount, subtotal,
-			payment_status, created_at, updated_at
+			payment_status, delivery_address_snapshot, created_at, updated_at
 		) VALUES (
 			$1, $2, $3, $4,
 			$5, 'b2c', $6, $7,
-			'unpaid', NOW(), NOW()
+			'unpaid', $8, NOW(), NOW()
 		)
-	`, orderID, s.orgID, custID, addrID, orderStatus, total, subtotal)
+	`, orderID, s.orgID, custID, addrID, orderStatus, total, subtotal, snapshot)
 	if err != nil {
 		return nil, fmt.Errorf("insert order: %w", err)
 	}

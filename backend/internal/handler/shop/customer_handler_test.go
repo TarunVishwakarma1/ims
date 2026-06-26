@@ -175,7 +175,7 @@ func TestCustomerHandler_AddAddress(t *testing.T) {
 	h := shophandler.NewCustomerHandler(fc)
 	r := buildRouter(h)
 
-	body := bytes.NewReader([]byte(`{"line1":"123 Main St","city":"Mumbai","state":"MH","postal_code":"400001"}`))
+	body := bytes.NewReader([]byte(`{"name":"Tarun","phone":"9876543210","line1":"123 Main St","city":"Mumbai","state":"MH","postal_code":"400001"}`))
 	req := httptest.NewRequest(http.MethodPost, "/addresses", body)
 	req = withCID(req, cid)
 	rec := httptest.NewRecorder()
@@ -265,7 +265,7 @@ func TestCustomerHandler_DeleteAddress(t *testing.T) {
 	r := buildRouter(h)
 
 	// First add an address via POST
-	addBody := bytes.NewReader([]byte(`{"line1":"456 Park Ave","city":"Delhi","state":"DL","postal_code":"110001"}`))
+	addBody := bytes.NewReader([]byte(`{"name":"Tarun","phone":"9876543210","line1":"456 Park Ave","city":"Delhi","state":"DL","postal_code":"110001"}`))
 	addReq := httptest.NewRequest(http.MethodPost, "/addresses", addBody)
 	addReq = withCID(addReq, cid)
 	addRec := httptest.NewRecorder()

@@ -66,24 +66,64 @@ func (h *CustomerHandler) ListAddresses(w http.ResponseWriter, r *http.Request) 
 		writeErr(w, http.StatusInternalServerError, "fetch_failed")
 		return
 	}
-	// Encode a missing list as [] rather than null so JSON consumers can
-	// safely call .map without a guard.
-	if addrs == nil {
-		addrs = []domain.CustomerAddress{}
+	out := make([]addrResponse, 0, len(addrs))
+	for i := range addrs {
+		out = append(out, addrToResponse(&addrs[i]))
 	}
-	writeJSON(w, http.StatusOK, addrs)
+	writeJSON(w, http.StatusOK, out)
 }
 
 type addrBody struct {
 	Label      string   `json:"label"`
+	Name       string   `json:"name"`
+	Phone      string   `json:"phone"`
 	Line1      string   `json:"line1"`
 	Line2      string   `json:"line2"`
 	City       string   `json:"city"`
 	State      string   `json:"state"`
 	PostalCode string   `json:"postal_code"`
+	Pincode    string   `json:"pincode"` // frontend alias for postal_code
 	Lat        *float64 `json:"lat"`
 	Lng        *float64 `json:"lng"`
 	IsDefault  bool     `json:"is_default"`
+}
+
+// postal returns the chosen pincode value, preferring the frontend-shaped
+// `pincode` field but falling back to the legacy `postal_code` field.
+func (b addrBody) postal() string {
+	if b.Pincode != "" {
+		return b.Pincode
+	}
+	return b.PostalCode
+}
+
+// addrResponse mirrors the frontend Address shape (pincode, not postal_code).
+type addrResponse struct {
+	ID        uuid.UUID `json:"id"`
+	Name      string    `json:"name"`
+	Phone     string    `json:"phone"`
+	Label     string    `json:"label"`
+	Line1     string    `json:"line1"`
+	Line2     string    `json:"line2"`
+	City      string    `json:"city"`
+	State     string    `json:"state"`
+	Pincode   string    `json:"pincode"`
+	IsDefault bool      `json:"is_default"`
+}
+
+func addrToResponse(a *domain.CustomerAddress) addrResponse {
+	return addrResponse{
+		ID:        a.ID,
+		Name:      a.Name,
+		Phone:     a.Phone,
+		Label:     a.Label,
+		Line1:     a.Line1,
+		Line2:     a.Line2,
+		City:      a.City,
+		State:     a.State,
+		Pincode:   a.PostalCode,
+		IsDefault: a.IsDefault,
+	}
 }
 
 // AddAddress handles POST /addresses — adds a new address for the customer.
@@ -94,17 +134,21 @@ func (h *CustomerHandler) AddAddress(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid_body")
 		return
 	}
-	if req.Line1 == "" || req.City == "" || req.State == "" || req.PostalCode == "" {
+	postal := req.postal()
+	if req.Name == "" || req.Phone == "" || req.Line1 == "" ||
+		req.City == "" || req.State == "" || postal == "" {
 		writeErr(w, http.StatusBadRequest, "missing_fields")
 		return
 	}
 	a := &domain.CustomerAddress{
 		Label:      req.Label,
+		Name:       req.Name,
+		Phone:      req.Phone,
 		Line1:      req.Line1,
 		Line2:      req.Line2,
 		City:       req.City,
 		State:      req.State,
-		PostalCode: req.PostalCode,
+		PostalCode: postal,
 		Lat:        req.Lat,
 		Lng:        req.Lng,
 		IsDefault:  req.IsDefault,
@@ -114,7 +158,8 @@ func (h *CustomerHandler) AddAddress(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "create_failed")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]uuid.UUID{"id": id})
+	a.ID = id
+	writeJSON(w, http.StatusOK, addrToResponse(a))
 }
 
 // UpdateAddress handles PATCH /addresses/{id} — updates an existing address.
@@ -133,11 +178,13 @@ func (h *CustomerHandler) UpdateAddress(w http.ResponseWriter, r *http.Request) 
 	a := &domain.CustomerAddress{
 		ID:         addrID,
 		Label:      req.Label,
+		Name:       req.Name,
+		Phone:      req.Phone,
 		Line1:      req.Line1,
 		Line2:      req.Line2,
 		City:       req.City,
 		State:      req.State,
-		PostalCode: req.PostalCode,
+		PostalCode: req.postal(),
 		Lat:        req.Lat,
 		Lng:        req.Lng,
 		IsDefault:  req.IsDefault,

@@ -22,6 +22,8 @@ type CustomerAddress struct {
 	ID         uuid.UUID `json:"id"`
 	CustomerID uuid.UUID `json:"customer_id"`
 	Label      string    `json:"label"`
+	Name       string    `json:"name"`
+	Phone      string    `json:"phone"`
 	Line1      string    `json:"line1"`
 	Line2      string    `json:"line2"`
 	City       string    `json:"city"`
