@@ -68,8 +68,13 @@ type CustomerOrderRow struct {
 	PaymentStatus           string
 	PaymentID               *uuid.UUID
 	Subtotal                int64
+	GST                     int64
+	Packing                 int64
+	Handling                int64
+	Surge                   int64
 	DeliveryFee             int64
 	Discount                int64
+	CodRound                int64
 	TotalAmount             int64
 	DeliveryAddressSnapshot []byte
 	CreatedAt               time.Time
@@ -414,7 +419,11 @@ func (r *orderRepository) ListByCustomer(ctx context.Context, customerID uuid.UU
 	args := []any{customerID}
 	q := `
 		SELECT id, org_id, customer_id, COALESCE(invoice_number,''), status, payment_status,
-		       payment_id, COALESCE(subtotal,0), COALESCE(delivery_fee,0), COALESCE(discount,0),
+		       payment_id, COALESCE(subtotal,0),
+		       COALESCE(gst_paise,0), COALESCE(packing_paise,0),
+		       COALESCE(handling_paise,0), COALESCE(surge_paise,0),
+		       COALESCE(delivery_fee,0), COALESCE(discount,0),
+		       COALESCE(cod_round_paise,0),
 		       total_amount, COALESCE(delivery_address_snapshot, '{}'::jsonb),
 		       created_at, updated_at
 		  FROM orders
@@ -436,7 +445,9 @@ func (r *orderRepository) ListByCustomer(ctx context.Context, customerID uuid.UU
 		var c CustomerOrderRow
 		if err := rows.Scan(
 			&c.ID, &c.OrgID, &c.CustomerID, &c.InvoiceNumber, &c.Status, &c.PaymentStatus,
-			&c.PaymentID, &c.Subtotal, &c.DeliveryFee, &c.Discount,
+			&c.PaymentID, &c.Subtotal,
+			&c.GST, &c.Packing, &c.Handling, &c.Surge,
+			&c.DeliveryFee, &c.Discount, &c.CodRound,
 			&c.TotalAmount, &c.DeliveryAddressSnapshot,
 			&c.CreatedAt, &c.UpdatedAt,
 		); err != nil {
@@ -451,7 +462,11 @@ func (r *orderRepository) GetByCustomerAndID(ctx context.Context, customerID, or
 	var c CustomerOrderRow
 	err := r.pool.QueryRow(ctx, `
 		SELECT id, org_id, customer_id, COALESCE(invoice_number,''), status, payment_status,
-		       payment_id, COALESCE(subtotal,0), COALESCE(delivery_fee,0), COALESCE(discount,0),
+		       payment_id, COALESCE(subtotal,0),
+		       COALESCE(gst_paise,0), COALESCE(packing_paise,0),
+		       COALESCE(handling_paise,0), COALESCE(surge_paise,0),
+		       COALESCE(delivery_fee,0), COALESCE(discount,0),
+		       COALESCE(cod_round_paise,0),
 		       total_amount, COALESCE(delivery_address_snapshot, '{}'::jsonb),
 		       created_at, updated_at
 		  FROM orders

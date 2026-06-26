@@ -238,13 +238,13 @@ func (s *checkoutService) Place(ctx context.Context, in PlaceOrderInput) (*Place
 	total := subtotal + gst
 
 	// --- COD totals round up to the nearest rupee so the rider doesn't have
-	//     to carry paise change. The rounding adjustment lands in GST so the
-	//     subtotal still matches the line totals. ---
+	//     to carry paise change. Capture the adjustment as its own line so
+	//     the invoice can show it explicitly. ---
+	var codRound int64
 	if in.PaymentMethod == "cod" {
 		if rem := total % 100; rem != 0 {
-			adjustment := int64(100) - rem
-			gst += adjustment
-			total += adjustment
+			codRound = int64(100) - rem
+			total += codRound
 		}
 		if total < s.codMinPaise || total > s.codMaxPaise {
 			return nil, ErrCODIneligible
@@ -281,13 +281,17 @@ func (s *checkoutService) Place(ctx context.Context, in PlaceOrderInput) (*Place
 		INSERT INTO orders (
 			id, org_id, customer_id, delivery_address_id,
 			status, order_type, total_amount, subtotal,
+			gst_paise, packing_paise, handling_paise, surge_paise,
+			delivery_fee, cod_round_paise,
 			payment_status, delivery_address_snapshot, created_at, updated_at
 		) VALUES (
 			$1, $2, $3, $4,
 			$5, 'b2c', $6, $7,
-			'unpaid', $8, NOW(), NOW()
+			$8, 0, 0, 0,
+			0, $9,
+			'unpaid', $10, NOW(), NOW()
 		)
-	`, orderID, s.orgID, custID, addrID, orderStatus, total, subtotal, snapshot)
+	`, orderID, s.orgID, custID, addrID, orderStatus, total, subtotal, gst, codRound, snapshot)
 	if err != nil {
 		return nil, fmt.Errorf("insert order: %w", err)
 	}

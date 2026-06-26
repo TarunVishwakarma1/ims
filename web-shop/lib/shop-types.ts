@@ -190,8 +190,15 @@ export type OrderListResult = {
   next_cursor?: string;
 };
 
+export type ChargeLine = {
+  label: string;
+  paise: number;
+  struck: boolean;
+};
+
 export type OrderDetail = OrderListItem & {
   items: CartItem[];
+  charges: ChargeLine[];
   delivery_address: Address;
-  notes: string;
+  notes?: string;
 };

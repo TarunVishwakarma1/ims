@@ -39,13 +39,22 @@ type OrderCard struct {
 
 type OrderDetail struct {
 	OrderCard
-	Subtotal    int64                  `json:"subtotal_paise"`
-	DeliveryFee int64                  `json:"delivery_fee_paise"`
-	Discount    int64                  `json:"discount_paise"`
-	Items       []OrderItemView        `json:"items"`
-	Address     map[string]interface{} `json:"delivery_address"`
-	Timeline    []OrderEvent           `json:"timeline"`
-	Cancellable bool                   `json:"cancellable"`
+	Subtotal    int64           `json:"subtotal_paise"`
+	DeliveryFee int64           `json:"delivery_fee_paise"`
+	Discount    int64           `json:"discount_paise"`
+	Charges     []ChargeLine    `json:"charges"`
+	Items       []OrderItemView `json:"items"`
+	Address     map[string]any  `json:"delivery_address"`
+	Timeline    []OrderEvent    `json:"timeline"`
+	Cancellable bool            `json:"cancellable"`
+}
+
+// ChargeLine is a single row in the invoice price breakdown. Struck=true asks
+// the UI to render the amount with a strikethrough + "Free" label.
+type ChargeLine struct {
+	Label  string `json:"label"`
+	Paise  int64  `json:"paise"`
+	Struck bool   `json:"struck"`
 }
 
 type OrderItemView struct {
@@ -251,6 +260,7 @@ func (s *shopOrderService) Get(ctx context.Context, customerID, orderID uuid.UUI
 		Subtotal:    row.Subtotal,
 		DeliveryFee: row.DeliveryFee,
 		Discount:    row.Discount,
+		Charges:     buildCharges(row),
 		Items:       views,
 		Address:     addr,
 		// TODO(plan2c-followup): replace placeholder 2-event timeline with real
@@ -258,6 +268,27 @@ func (s *shopOrderService) Get(ctx context.Context, customerID, orderID uuid.UUI
 		Timeline:    []OrderEvent{{At: row.CreatedAt, Status: "created"}, {At: row.UpdatedAt, Status: row.Status}},
 		Cancellable: cancellable,
 	}, nil
+}
+
+// buildCharges turns a CustomerOrderRow's pricing fields into an ordered
+// breakdown ready for invoice rendering. A label appears even when its amount
+// is zero so the customer can see at a glance that, e.g., shipping was free.
+func buildCharges(row *repository.CustomerOrderRow) []ChargeLine {
+	lines := []ChargeLine{
+		{Label: "Subtotal", Paise: row.Subtotal, Struck: row.Subtotal == 0},
+		{Label: "GST", Paise: row.GST, Struck: row.GST == 0},
+		{Label: "Packing", Paise: row.Packing, Struck: row.Packing == 0},
+		{Label: "Handling", Paise: row.Handling, Struck: row.Handling == 0},
+		{Label: "Shipping", Paise: row.DeliveryFee, Struck: row.DeliveryFee == 0},
+		{Label: "Surge", Paise: row.Surge, Struck: row.Surge == 0},
+	}
+	if row.Discount > 0 {
+		lines = append(lines, ChargeLine{Label: "Discount", Paise: -row.Discount, Struck: false})
+	}
+	if row.CodRound > 0 {
+		lines = append(lines, ChargeLine{Label: "Rounding (COD)", Paise: row.CodRound, Struck: false})
+	}
+	return lines
 }
 
 // Cancel cancels a customer order. COD (unpaid) cancels immediately and restores
