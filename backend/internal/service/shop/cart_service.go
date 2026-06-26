@@ -31,13 +31,15 @@ type CartView struct {
 }
 
 // CartItemView represents a single line item in the cart view.
+// Field names align with frontend CartItem (slug/image/max_qty).
 type CartItemView struct {
 	ProductID      uuid.UUID `json:"product_id"`
+	Slug           string    `json:"slug"`
 	Name           string    `json:"name"`
-	ImageURL       string    `json:"image_url,omitempty"`
+	Image          string    `json:"image"`
 	Qty            int       `json:"qty"`
 	UnitPricePaise int64     `json:"unit_price_paise"`
-	AvailableQty   int       `json:"available_qty"`
+	MaxQty         int       `json:"max_qty"`
 }
 
 // MergeItem is a single entry in a Merge request.
@@ -47,9 +49,10 @@ type MergeItem struct {
 }
 
 // productSnap holds a lightweight snapshot of a product + its current stock.
-// V1 simplified: no shopVisible, no imageURL (Plan 2 columns).
 type productSnap struct {
+	slug      string
 	name      string
+	imageURL  string
 	priceP    int64
 	available int
 }
@@ -75,13 +78,15 @@ func NewCartService(r repository.CartRepository, pool *pgxpool.Pool, mainOrgID u
 func (s *cartService) loadSnap(ctx context.Context, productID uuid.UUID) (*productSnap, error) {
 	sp := &productSnap{}
 	err := s.pool.QueryRow(ctx, `
-		SELECT p.name,
+		SELECT p.slug,
+		       p.name,
+		       COALESCE(p.shop_image_urls[1], '') AS image_url,
 		       p.price AS unit_price_paise,
 		       COALESCE(i.quantity, 0) AS available
 		  FROM products p
 		  LEFT JOIN inventory i ON i.product_id = p.id
 		 WHERE p.id = $1 AND p.org_id = $2
-	`, productID, s.orgID).Scan(&sp.name, &sp.priceP, &sp.available)
+	`, productID, s.orgID).Scan(&sp.slug, &sp.name, &sp.imageURL, &sp.priceP, &sp.available)
 	if err != nil {
 		return nil, err
 	}
@@ -161,11 +166,12 @@ func (s *cartService) Get(ctx context.Context, customerID uuid.UUID) (*CartView,
 
 		v.Items = append(v.Items, CartItemView{
 			ProductID:      it.ProductID,
+			Slug:           sp.slug,
 			Name:           sp.name,
-			ImageURL:       "", // V1: no image_url column yet (Plan 2)
+			Image:          sp.imageURL,
 			Qty:            qty,
 			UnitPricePaise: sp.priceP,
-			AvailableQty:   sp.available,
+			MaxQty:         sp.available,
 		})
 		v.SubtotalPaise += int64(qty) * sp.priceP
 	}

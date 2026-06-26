@@ -135,16 +135,31 @@ func (s *checkoutService) Summary(ctx context.Context, customerID, addressID uui
 	for _, it := range cart.Items {
 		subtotal += int64(it.Qty) * it.UnitPricePaise
 
-		var rate int
-		_ = s.pool.QueryRow(ctx,
-			`SELECT gst_rate FROM products WHERE id = $1`, it.ProductID,
-		).Scan(&rate)
+		var (
+			slug, name, image string
+			rate, available   int
+		)
+		_ = s.pool.QueryRow(ctx, `
+			SELECT p.slug,
+			       p.name,
+			       COALESCE(p.shop_image_urls[1], ''),
+			       p.gst_rate,
+			       COALESCE(i.quantity, 0)
+			  FROM products p
+			  LEFT JOIN inventory i ON i.product_id = p.id
+			 WHERE p.id = $1
+		`, it.ProductID).Scan(&slug, &name, &image, &rate, &available)
+
 		gst += (int64(it.Qty) * it.UnitPricePaise * int64(rate)) / 100
 
 		views = append(views, CartItemView{
 			ProductID:      it.ProductID,
+			Slug:           slug,
+			Name:           name,
+			Image:          image,
 			Qty:            it.Qty,
 			UnitPricePaise: it.UnitPricePaise,
+			MaxQty:         available,
 		})
 	}
 
