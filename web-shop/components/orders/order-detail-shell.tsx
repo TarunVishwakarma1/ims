@@ -7,9 +7,11 @@ import type { OrderDetail } from "@/lib/shop-types";
 import { formatPaise } from "@/lib/format";
 import { toast } from "sonner";
 
+type CancelState = "idle" | "confirming" | "cancelling";
+
 export function OrderDetailShell({ id, placed }: { id: string; placed: boolean }) {
   const [data, setData] = useState<OrderDetail | null>(null);
-  const [cancelling, setCancelling] = useState(false);
+  const [cancelState, setCancelState] = useState<CancelState>("idle");
 
   const load = async () => {
     try {
@@ -25,9 +27,8 @@ export function OrderDetailShell({ id, placed }: { id: string; placed: boolean }
 
   const canCancel = data.status === "pending" || data.status === "confirmed";
 
-  const onCancel = async () => {
-    if (!confirm("Cancel this order?")) return;
-    setCancelling(true);
+  const onConfirmCancel = async () => {
+    setCancelState("cancelling");
     try {
       await cancelOrder(id);
       toast.success("Cancellation requested");
@@ -35,7 +36,7 @@ export function OrderDetailShell({ id, placed }: { id: string; placed: boolean }
     } catch {
       toast.error("Could not cancel");
     } finally {
-      setCancelling(false);
+      setCancelState("idle");
     }
   };
 
@@ -70,15 +71,35 @@ export function OrderDetailShell({ id, placed }: { id: string; placed: boolean }
           {data.delivery_address.city}, {data.delivery_address.state} {data.delivery_address.pincode}
         </p>
       </section>
-      {canCancel && (
+      {canCancel && cancelState === "idle" && (
         <button
           type="button"
-          onClick={onCancel}
-          disabled={cancelling}
-          className="h-10 px-6 rounded border border-danger text-danger hover:bg-danger hover:text-white disabled:opacity-60"
+          onClick={() => setCancelState("confirming")}
+          className="h-10 px-6 rounded border border-danger text-danger hover:bg-danger hover:text-white"
         >
-          {cancelling ? "Cancelling…" : "Cancel order"}
+          Cancel order
         </button>
+      )}
+      {canCancel && cancelState !== "idle" && (
+        <div role="alertdialog" aria-label="Confirm cancellation" className="border border-danger rounded-lg p-4 flex flex-wrap items-center gap-3">
+          <p className="text-sm flex-1 min-w-0">Cancel this order? This cannot be undone.</p>
+          <button
+            type="button"
+            onClick={onConfirmCancel}
+            disabled={cancelState === "cancelling"}
+            className="h-9 px-4 rounded bg-danger text-white disabled:opacity-60"
+          >
+            {cancelState === "cancelling" ? "Cancelling…" : "Yes, cancel"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setCancelState("idle")}
+            disabled={cancelState === "cancelling"}
+            className="h-9 px-4 rounded border border-border disabled:opacity-60"
+          >
+            Keep order
+          </button>
+        </div>
       )}
     </>
   );

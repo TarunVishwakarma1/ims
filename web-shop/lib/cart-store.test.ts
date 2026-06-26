@@ -29,7 +29,7 @@ const item = (overrides: Partial<CartItem> = {}): CartItem => ({
 describe("cart-store anonymous", () => {
   beforeEach(() => {
     localStorage.clear();
-    useCartStore.setState({ items: [], serverHydrated: false, loading: false });
+    useCartStore.setState({ items: [], serverHydrated: false });
     mockAdd.mockReset();
     mockRemove.mockReset();
     mockMerge.mockReset();
@@ -77,7 +77,7 @@ describe("cart-store anonymous", () => {
 describe("cart-store hydrated", () => {
   beforeEach(() => {
     localStorage.clear();
-    useCartStore.setState({ items: [], serverHydrated: true, loading: false });
+    useCartStore.setState({ items: [], serverHydrated: true });
     mockAdd.mockReset();
     mockRemove.mockReset();
   });

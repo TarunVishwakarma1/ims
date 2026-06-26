@@ -10,7 +10,6 @@ const STORAGE_KEY = "shop_cart_v1";
 type CartStore = {
   items: CartItem[];
   serverHydrated: boolean;
-  loading: boolean;
   add: (item: CartItem, qty: number) => Promise<void>;
   setQty: (productID: string, qty: number) => Promise<void>;
   remove: (productID: string) => Promise<void>;
@@ -30,7 +29,6 @@ export const useCartStore = create<CartStore>()(
     (set, get) => ({
       items: [],
       serverHydrated: false,
-      loading: false,
 
       add: async (item, qty) => {
         const existing = get().items.find((i) => i.product_id === item.product_id);
@@ -115,7 +113,7 @@ export const useCartStore = create<CartStore>()(
     {
       name: STORAGE_KEY,
       storage: createJSONStorage(() => localStorage),
-      partialize: (s) => ({ items: s.items }), // never persist serverHydrated/loading
+      partialize: (s) => ({ items: s.items }),
       version: 1,
     },
   ),

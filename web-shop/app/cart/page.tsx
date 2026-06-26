@@ -6,8 +6,6 @@ import { CartLine } from "@/components/cart/cart-line";
 import { formatPaise } from "@/lib/format";
 import { toast } from "sonner";
 
-export const dynamic = "force-dynamic";
-
 export default function CartPage() {
   const items = useCartStore((s) => s.items);
   const subtotal = useCartStore(selectSubtotalPaise);

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { fetchOrders } from "@/lib/shop-api";
 import type { OrderListItem } from "@/lib/shop-types";
 import { formatPaise } from "@/lib/format";
@@ -9,6 +10,7 @@ import { LoginModal } from "@/components/auth/login-modal";
 import { toast } from "sonner";
 
 export function OrdersShell() {
+  const router = useRouter();
   const [authed, setAuthed] = useState<boolean | null>(null);
   const [items, setItems] = useState<OrderListItem[]>([]);
   const [cursor, setCursor] = useState<string | undefined>(undefined);
@@ -35,7 +37,7 @@ export function OrdersShell() {
   useEffect(() => { load(); /* eslint-disable-line react-hooks/exhaustive-deps */ }, []);
 
   if (authed === false) {
-    return <LoginModal open onClose={() => {}} onSuccess={() => { setAuthed(null); load(); }} />;
+    return <LoginModal open onClose={() => router.push("/")} onSuccess={() => { setAuthed(null); load(); }} />;
   }
 
   if (authed === null) return <p>Loading…</p>;

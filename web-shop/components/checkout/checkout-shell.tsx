@@ -148,6 +148,17 @@ export function CheckoutShell() {
               customerName={selected?.name}
               customerPhone={selected?.phone}
               disabled={!selected || !options.find((o) => o.id === method && o.enabled)}
+              onAddressInvalid={() => {
+                setSelected(null);
+                setShowForm(true);
+                (async () => {
+                  try {
+                    setAddresses(await listAddresses());
+                  } catch {
+                    /* keep stale list — picker still functional */
+                  }
+                })();
+              }}
             />
           }
         />

@@ -12,8 +12,8 @@ type Props = {
 
 function codReason(o: Extract<PaymentOption, { id: "cod" }>): string {
   if (o.enabled) return "";
-  if (o.reason === "min_value_below") return `Cart total below ₹${o.min_paise / 100} minimum.`;
-  if (o.reason === "max_value_exceeded") return `Cart total exceeds ₹${o.max_paise / 100} COD limit.`;
+  if (o.reason === "min_value_below") return `Cart total below ${formatPaise(o.min_paise)} minimum.`;
+  if (o.reason === "max_value_exceeded") return `Cart total exceeds ${formatPaise(o.max_paise)} COD limit.`;
   return "Not available";
 }
 
@@ -52,7 +52,7 @@ export function PaymentMethod({ options, value, onChange }: Props) {
             />
             <span className="font-medium">Cash on Delivery</span>
             <div className="text-xs text-text-muted mt-1">
-              {cod.enabled ? `Pay in cash on delivery. ₹${cod.min_paise / 100}–₹${cod.max_paise / 100}.` : codReason(cod)}
+              {cod.enabled ? `Pay in cash on delivery. ${formatPaise(cod.min_paise)}–${formatPaise(cod.max_paise)}.` : codReason(cod)}
             </div>
           </label>
         )}

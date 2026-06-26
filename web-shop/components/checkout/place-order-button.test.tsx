@@ -23,7 +23,7 @@ beforeEach(() => {
   loadRazorpay.mockClear();
   loadRazorpay.mockResolvedValue(undefined);
   openRazorpayCheckout.mockReset();
-  useCartStore.setState({ items: [], serverHydrated: true, loading: false });
+  useCartStore.setState({ items: [], serverHydrated: true });
 });
 
 describe("PlaceOrderButton", () => {

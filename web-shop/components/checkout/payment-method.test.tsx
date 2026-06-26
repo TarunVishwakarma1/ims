@@ -16,7 +16,7 @@ describe("PaymentMethod", () => {
     );
     const cod = screen.getByRole("radio", { name: /Cash on Delivery/i });
     expect(cod).toBeDisabled();
-    expect(screen.getByText(/exceeds.+5000.+COD limit/i)).toBeInTheDocument();
+    expect(screen.getByText(/exceeds.+5,000.+COD limit/i)).toBeInTheDocument();
   });
 
   it("disables COD when under min", () => {

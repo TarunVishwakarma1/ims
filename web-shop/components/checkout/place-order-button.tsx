@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useCartStore } from "@/lib/cart-store";
-import { placeOrder, verifyRazorpayPayment } from "@/lib/shop-api";
+import { fetchCart, placeOrder, verifyRazorpayPayment } from "@/lib/shop-api";
 import { loadRazorpay, openRazorpayCheckout } from "@/lib/razorpay";
 
 type Props = {
@@ -13,15 +13,38 @@ type Props = {
   customerName?: string;
   customerPhone?: string;
   disabled?: boolean;
+  onAddressInvalid?: () => void;
 };
 
 function newIdemKey(): string {
   return crypto.randomUUID();
 }
 
-export function PlaceOrderButton({ addressID, paymentMethod, customerName, customerPhone, disabled }: Props) {
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+async function verifyWithRetry(input: Parameters<typeof verifyRazorpayPayment>[0]): Promise<void> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      await verifyRazorpayPayment(input);
+      return;
+    } catch (e) {
+      const code = (e as { code?: string }).code;
+      if (code === "already_paid") return;
+      if (code === "invalid_signature" || code === "order_mismatch") throw e;
+      lastErr = e;
+      if (attempt < 2) await sleep(1000 * (attempt + 1));
+    }
+  }
+  throw lastErr;
+}
+
+export function PlaceOrderButton({ addressID, paymentMethod, customerName, customerPhone, disabled, onAddressInvalid }: Props) {
   const [busy, setBusy] = useState(false);
   const clear = useCartStore((s) => s.clear);
+  const hydrate = useCartStore((s) => s.hydrateFromServer);
   const router = useRouter();
 
   const onClick = async () => {
@@ -55,17 +78,14 @@ export function PlaceOrderButton({ addressID, paymentMethod, customerName, custo
         prefill: { name: customerName, contact: customerPhone },
         onSuccess: async (rzp) => {
           try {
-            await verifyRazorpayPayment({
+            await verifyWithRetry({
               order_id: res.order_id,
               razorpay_order_id: rzp.razorpay_order_id,
               razorpay_payment_id: rzp.razorpay_payment_id,
               razorpay_signature: rzp.razorpay_signature,
             });
-          } catch (e) {
-            const code = (e as { code?: string }).code;
-            if (code !== "already_paid") {
-              toast.warning("Payment recorded — confirmation pending");
-            }
+          } catch {
+            toast.warning("Payment recorded by Razorpay — order will confirm in 1–10s, check My Orders");
           }
           clear();
           router.push(`/orders/${res.order_id}?placed=1`);
@@ -77,13 +97,24 @@ export function PlaceOrderButton({ addressID, paymentMethod, customerName, custo
       });
     } catch (e) {
       const code = (e as { code?: string }).code;
-      if (code === "stock_unavailable") toast.error("Item out of stock");
-      else if (code === "cod_ineligible") toast.error("COD not available for this order total");
-      else if (code === "address_required") toast.error("Address not valid");
-      else toast.error("Could not place order");
+      if (code === "stock_unavailable") {
+        toast.error("Item out of stock — cart updated");
+        try {
+          const cart = await fetchCart();
+          hydrate(cart);
+        } catch {
+          /* ignore — toast already shown */
+        }
+      } else if (code === "cod_ineligible") {
+        toast.error("COD not available for this order total");
+      } else if (code === "address_required") {
+        toast.error("Address not valid — please re-pick");
+        onAddressInvalid?.();
+      } else {
+        toast.error("Could not place order");
+      }
     } finally {
-      // Only reset busy here for non-Razorpay or error paths; Razorpay handler resets itself.
-      if (paymentMethod === "cod") setBusy(false);
+      setBusy(false);
     }
   };
 
