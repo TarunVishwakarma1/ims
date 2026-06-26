@@ -47,12 +47,16 @@ export function InfiniteGrid<T>({
     setError(false);
     try {
       const next = await loadMore(cursorRef.current);
+      let freshCount = next.items.length;
       setItems((prev) => {
         const seen = new Set(prev.map(itemKey));
         const fresh = next.items.filter((it) => !seen.has(itemKey(it)));
+        freshCount = fresh.length;
         return fresh.length === next.items.length ? [...prev, ...next.items] : [...prev, ...fresh];
       });
-      if (next.next_cursor) {
+      // Page that yielded 0 new items after dedup means the backend started
+      // recycling (random tier with a small catalog). Stop the loop.
+      if (next.next_cursor && freshCount > 0) {
         cursorRef.current = next.next_cursor;
       } else {
         cursorRef.current = undefined;
