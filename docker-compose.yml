@@ -60,6 +60,21 @@ services:
       backend:
         condition: service_started
 
+  web-shop:
+    build:
+      context: ./web-shop
+      dockerfile: Dockerfile
+      args:
+        BACKEND_URL: "http://backend:8080"
+    ports:
+      - 3001:3001
+    env_file:
+      - path: ./web-shop/.env.docker
+        required: false
+    depends_on:
+      backend:
+        condition: service_started
+
   # ngrok tunnel — exposes backend:8080 to the public internet so
   # third-party webhooks (RazorPay, etc) can reach our dev box.
   # Inspection UI: http://localhost:4040

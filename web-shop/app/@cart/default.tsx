@@ -1,3 +1,5 @@
+import { CartDrawer } from "@/components/cart/cart-drawer";
+
 export default function CartSlot() {
-  return null;
+  return <CartDrawer />;
 }
