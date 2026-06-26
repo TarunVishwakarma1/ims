@@ -5,7 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { Printer } from "lucide-react";
 import { fetchOrderDetail, cancelOrder } from "@/lib/shop-api";
-import type { ChargeLine, OrderDetail } from "@/lib/shop-types";
+import type { ChargeLine, OrderDetail, TimelineEvent } from "@/lib/shop-types";
 import { formatPaise } from "@/lib/format";
 import { toast } from "sonner";
 
@@ -31,6 +31,23 @@ function ChargeRow({ line }: { line: ChargeLine }) {
         {display}
       </dd>
     </div>
+  );
+}
+
+function TimelineRow({ event, last }: { event: TimelineEvent; last: boolean }) {
+  return (
+    <li className="relative pl-6 pb-4 last:pb-0">
+      <span
+        aria-hidden
+        className="absolute left-0 top-1 size-3 rounded-full bg-brand-600 ring-2 ring-bg"
+      />
+      {!last && (
+        <span aria-hidden className="absolute left-[5px] top-4 bottom-0 w-px bg-border" />
+      )}
+      <p className="text-sm font-medium capitalize">{event.status.replace(/_/g, " ")}</p>
+      {event.note && <p className="text-xs text-text-muted">{event.note}</p>}
+      <p className="text-xs text-text-muted">{formatDate(event.at)}</p>
+    </li>
   );
 }
 
@@ -145,6 +162,19 @@ export function OrderDetailShell({ id, placed }: { id: string; placed: boolean }
             <dd>{formatPaise(data.total_paise)}</dd>
           </div>
         </dl>
+      </section>
+
+      <section aria-labelledby="time-h" className="border border-border rounded-lg p-4">
+        <h2 id="time-h" className="font-semibold mb-3">Timeline</h2>
+        <ol className="space-y-0">
+          {data.timeline.map((ev, i) => (
+            <TimelineRow
+              key={`${ev.at}-${ev.status}-${i}`}
+              event={ev}
+              last={i === data.timeline.length - 1}
+            />
+          ))}
+        </ol>
       </section>
 
       <section aria-labelledby="deliv-h" className="border border-border rounded-lg p-4">

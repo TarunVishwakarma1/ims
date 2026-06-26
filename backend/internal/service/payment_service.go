@@ -830,11 +830,25 @@ func (s *paymentService) markOrderPaid(ctx context.Context, orderID, orgID uuid.
 	order.UpdatedAt = now
 	// B2C: pending orders auto-confirm on payment capture. B2B keeps its
 	// own workflow — status managed by shipping team, not payment events.
-	if order.OrderType == "b2c" && order.Status == "pending" {
+	isB2CConfirm := order.OrderType == "b2c" && order.Status == "pending"
+	if isB2CConfirm {
 		order.Status = "confirmed"
 	}
 	if err := s.orderRepo.Update(ctx, order); err != nil {
 		return err
+	}
+
+	// Append timeline events for the B2C invoice. Best-effort: a failure here
+	// must not roll back the captured payment.
+	if order.OrderType == "b2c" {
+		if evErr := s.orderRepo.AppendEvent(ctx, orderID, "paid", ""); evErr != nil {
+			zap.L().Warn("order_event paid failed", zap.String("order_id", orderID.String()), zap.Error(evErr))
+		}
+		if isB2CConfirm {
+			if evErr := s.orderRepo.AppendEvent(ctx, orderID, "confirmed", ""); evErr != nil {
+				zap.L().Warn("order_event confirmed failed", zap.String("order_id", orderID.String()), zap.Error(evErr))
+			}
+		}
 	}
 
 	// Allocate the invoice number on first capture. Idempotent — re-runs of

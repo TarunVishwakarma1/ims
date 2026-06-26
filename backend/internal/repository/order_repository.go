@@ -50,6 +50,18 @@ type OrderRepository interface {
 	// CountAndFirstItemForOrders returns item count + first-item name/image for
 	// each order ID in a single query, eliminating the N+1 pattern in List.
 	CountAndFirstItemForOrders(ctx context.Context, orderIDs []uuid.UUID) (map[uuid.UUID]OrderItemsSummary, error)
+
+	// AppendEvent records a single status transition for an order. Append-only.
+	AppendEvent(ctx context.Context, orderID uuid.UUID, status, note string) error
+	// ListEvents returns the timeline for an order in chronological order.
+	ListEvents(ctx context.Context, orderID uuid.UUID) ([]OrderEventRow, error)
+}
+
+// OrderEventRow is a single entry in the order timeline.
+type OrderEventRow struct {
+	Status    string
+	Note      string
+	CreatedAt time.Time
 }
 
 // OrderItemsSummary carries the List-view summary data fetched in one batch query.
@@ -655,6 +667,37 @@ func (r *orderRepository) itemsForOrder(ctx context.Context, orderID uuid.UUID) 
 			&it.ProductName, &it.ProductSlug, &it.ProductImage,
 		); err != nil { return nil, err }
 		out = append(out, it)
+	}
+	return out, rows.Err()
+}
+
+func (r *orderRepository) AppendEvent(ctx context.Context, orderID uuid.UUID, status, note string) error {
+	_, err := r.db.Exec(ctx,
+		`INSERT INTO order_events (order_id, status, note) VALUES ($1, $2, $3)`,
+		orderID, status, note,
+	)
+	return err
+}
+
+func (r *orderRepository) ListEvents(ctx context.Context, orderID uuid.UUID) ([]OrderEventRow, error) {
+	rows, err := r.db.Query(ctx,
+		`SELECT status, note, created_at
+		   FROM order_events
+		  WHERE order_id = $1
+		  ORDER BY created_at ASC`,
+		orderID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []OrderEventRow{}
+	for rows.Next() {
+		var ev OrderEventRow
+		if err := rows.Scan(&ev.Status, &ev.Note, &ev.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, ev)
 	}
 	return out, rows.Err()
 }

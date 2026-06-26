@@ -198,9 +198,16 @@ export type ChargeLine = {
   struck: boolean;
 };
 
+export type TimelineEvent = {
+  at: string;
+  status: string;
+  note?: string;
+};
+
 export type OrderDetail = OrderListItem & {
   items: CartItem[];
   charges: ChargeLine[];
+  timeline: TimelineEvent[];
   delivery_address: Address;
   notes?: string;
 };

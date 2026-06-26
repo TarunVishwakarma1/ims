@@ -69,6 +69,7 @@ type OrderItemView struct {
 type OrderEvent struct {
 	At     time.Time `json:"at"`
 	Status string    `json:"status"`
+	Note   string    `json:"note,omitempty"`
 }
 
 type CancelResult struct {
@@ -263,9 +264,7 @@ func (s *shopOrderService) Get(ctx context.Context, customerID, orderID uuid.UUI
 		Charges:     buildCharges(row),
 		Items:       views,
 		Address:     addr,
-		// TODO(plan2c-followup): replace placeholder 2-event timeline with real
-		//                       order_status_history fetch once that table exists.
-		Timeline:    []OrderEvent{{At: row.CreatedAt, Status: "created"}, {At: row.UpdatedAt, Status: row.Status}},
+		Timeline:    s.loadTimeline(ctx, row),
 		Cancellable: cancellable,
 	}, nil
 }
@@ -289,6 +288,24 @@ func buildCharges(row *repository.CustomerOrderRow) []ChargeLine {
 		lines = append(lines, ChargeLine{Label: "Rounding (COD)", Paise: row.CodRound, Struck: false})
 	}
 	return lines
+}
+
+// loadTimeline reads order_events rows for the order. Falls back to a synthetic
+// 2-event timeline (created + current status) if the table is empty — keeps
+// older orders renderable even before they were event-instrumented.
+func (s *shopOrderService) loadTimeline(ctx context.Context, row *repository.CustomerOrderRow) []OrderEvent {
+	events, err := s.repo.ListEvents(ctx, row.ID)
+	if err != nil || len(events) == 0 {
+		return []OrderEvent{
+			{At: row.CreatedAt, Status: "placed"},
+			{At: row.UpdatedAt, Status: row.Status},
+		}
+	}
+	out := make([]OrderEvent, 0, len(events))
+	for _, e := range events {
+		out = append(out, OrderEvent{At: e.CreatedAt, Status: e.Status, Note: e.Note})
+	}
+	return out
 }
 
 // Cancel cancels a customer order. COD (unpaid) cancels immediately and restores
@@ -333,6 +350,12 @@ func (s *shopOrderService) Cancel(ctx context.Context, customerID, orderID uuid.
 
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err
+	}
+
+	// Append timeline event for the cancel transition.
+	if evErr := s.repo.AppendEvent(ctx, orderID, newStatus, ""); evErr != nil {
+		zap.L().Warn("order_event cancel append failed",
+			zap.String("order_id", orderID.String()), zap.Error(evErr))
 	}
 
 	// Razorpay path: async refund goroutine.

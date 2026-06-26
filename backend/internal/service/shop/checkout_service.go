@@ -296,6 +296,23 @@ func (s *checkoutService) Place(ctx context.Context, in PlaceOrderInput) (*Place
 		return nil, fmt.Errorf("insert order: %w", err)
 	}
 
+	// Seed the timeline with a "placed" event (+ "confirmed" for COD which
+	// skips the payment-pending hop).
+	if _, err = tx.Exec(ctx,
+		`INSERT INTO order_events (order_id, status, note) VALUES ($1, 'placed', '')`,
+		orderID,
+	); err != nil {
+		return nil, fmt.Errorf("insert order_event placed: %w", err)
+	}
+	if orderStatus == "confirmed" {
+		if _, err = tx.Exec(ctx,
+			`INSERT INTO order_events (order_id, status, note) VALUES ($1, 'confirmed', 'COD — payment due at delivery')`,
+			orderID,
+		); err != nil {
+			return nil, fmt.Errorf("insert order_event confirmed: %w", err)
+		}
+	}
+
 	// --- Insert order_items ---
 	for _, it := range cart.Items {
 		itemID := uuid.New()
