@@ -21,6 +21,12 @@ function formatDate(iso: string): string {
   });
 }
 
+function paymentLabel(method?: string): string {
+  if (method === "cod") return "COD";
+  if (method === "razorpay") return "Online";
+  return "";
+}
+
 function statusClasses(status: OrderStatus): string {
   switch (status) {
     case "delivered": return "bg-emerald-100 text-emerald-700";
@@ -116,7 +122,10 @@ export function OrdersShell() {
                 </div>
                 <div className="text-right shrink-0">
                   <p className="font-medium text-sm">{formatPaise(o.total_paise)}</p>
-                  <p className="text-xs text-text-muted">{o.payment_status}</p>
+                  <p className="text-xs text-text-muted">
+                    {paymentLabel(o.payment_method) && `${paymentLabel(o.payment_method)} · `}
+                    {o.payment_status}
+                  </p>
                 </div>
               </Link>
             </li>

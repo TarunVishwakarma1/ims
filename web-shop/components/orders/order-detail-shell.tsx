@@ -3,13 +3,19 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { Printer } from "lucide-react";
+import { Printer, Package } from "lucide-react";
 import { fetchOrderDetail, cancelOrder } from "@/lib/shop-api";
 import type { ChargeLine, OrderDetail, TimelineEvent } from "@/lib/shop-types";
 import { formatPaise } from "@/lib/format";
 import { toast } from "sonner";
 
 type CancelState = "idle" | "confirming" | "cancelling";
+
+function paymentLabel(method?: string): string {
+  if (method === "cod") return "Cash on delivery";
+  if (method === "razorpay") return "Online (Razorpay)";
+  return "";
+}
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleString("en-IN", {
@@ -117,7 +123,10 @@ export function OrderDetailShell({ id, placed }: { id: string; placed: boolean }
           >
             {data.status}
           </span>
-          <p className="text-xs text-text-muted">Payment: {data.payment_status}</p>
+          <p className="text-xs text-text-muted">
+            Payment: {data.payment_status}
+            {paymentLabel(data.payment_method) ? ` · ${paymentLabel(data.payment_method)}` : ""}
+          </p>
           <button
             type="button"
             onClick={() => window.print()}
@@ -144,7 +153,9 @@ export function OrderDetailShell({ id, placed }: { id: string; placed: boolean }
                 >
                   {it.image ? (
                     <Image src={it.image} alt={it.name} fill sizes="56px" className="object-cover" />
-                  ) : null}
+                  ) : (
+                    <Package className="size-6 m-auto text-text-muted" aria-hidden />
+                  )}
                 </Link>
                 <div className="flex-1 min-w-0">
                   <Link href={`/p/${it.slug}`} className="font-medium text-sm line-clamp-2 hover:text-brand-600">
