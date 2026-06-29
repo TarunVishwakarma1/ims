@@ -173,6 +173,24 @@ export type Address = {
 
 export type AddressInput = Omit<Address, "id" | "is_default">;
 
+// ── Profile ─────────────────────────────────────────────────────────────
+
+export type CustomerProfile = {
+  id: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  is_verified: boolean;
+  is_guest: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ProfileInput = {
+  name: string;
+  email: string;
+};
+
 // ── Orders ──────────────────────────────────────────────────────────────
 
 export type OrderStatus =

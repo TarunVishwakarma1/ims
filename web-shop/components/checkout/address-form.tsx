@@ -2,20 +2,28 @@
 
 import { useState } from "react";
 import type { Address, AddressInput } from "@/lib/shop-types";
-import { addAddress } from "@/lib/shop-api";
+import { addAddress, updateAddress } from "@/lib/shop-api";
 import { toast } from "sonner";
 
 const PIN_RE = /^[1-9]\d{5}$/;
 const PHONE_RE = /^[6-9]\d{9}$/;
 
 type Props = {
+  initial?: Address; // present → edit mode
   onSave: (a: Address) => void;
   onCancel: () => void;
 };
 
-export function AddressForm({ onSave, onCancel }: Props) {
+export function AddressForm({ initial, onSave, onCancel }: Props) {
+  const editing = !!initial;
   const [v, setV] = useState<AddressInput>({
-    name: "", phone: "", line1: "", line2: "", city: "", state: "", pincode: "",
+    name: initial?.name ?? "",
+    phone: initial?.phone ?? "",
+    line1: initial?.line1 ?? "",
+    line2: initial?.line2 ?? "",
+    city: initial?.city ?? "",
+    state: initial?.state ?? "",
+    pincode: initial?.pincode ?? "",
   });
   const [saving, setSaving] = useState(false);
 
@@ -38,8 +46,13 @@ export function AddressForm({ onSave, onCancel }: Props) {
     }
     setSaving(true);
     try {
-      const created = await addAddress(v);
-      onSave(created);
+      if (editing) {
+        await updateAddress(initial!.id, v);
+        onSave({ ...initial!, ...v });
+      } else {
+        const created = await addAddress(v);
+        onSave(created);
+      }
     } catch {
       toast.error("Could not save address");
     } finally {
@@ -49,7 +62,7 @@ export function AddressForm({ onSave, onCancel }: Props) {
 
   return (
     <form onSubmit={submit} className="space-y-3 mt-3 p-3 border border-border rounded">
-      <h3 className="font-medium">New address</h3>
+      <h3 className="font-medium">{editing ? "Edit address" : "New address"}</h3>
       <div className="grid grid-cols-2 gap-2">
         <label className="block text-sm col-span-2">
           Name
@@ -82,7 +95,7 @@ export function AddressForm({ onSave, onCancel }: Props) {
       </div>
       <div className="flex gap-2 justify-end">
         <button type="button" onClick={onCancel} className="h-10 px-4 rounded border border-border text-sm hover:bg-brand-50">Cancel</button>
-        <button type="submit" disabled={saving} className="h-10 px-4 rounded bg-brand-600 text-white text-sm disabled:opacity-60">{saving ? "Saving…" : "Save address"}</button>
+        <button type="submit" disabled={saving} className="h-10 px-4 rounded bg-brand-600 text-white text-sm disabled:opacity-60">{saving ? "Saving…" : editing ? "Update address" : "Save address"}</button>
       </div>
     </form>
   );

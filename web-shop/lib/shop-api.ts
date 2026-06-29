@@ -3,6 +3,7 @@ import type {
   AddressInput,
   Cart,
   CheckoutSummary,
+  CustomerProfile,
   FeedPage,
   OrderDetail,
   OrderListResult,
@@ -13,6 +14,7 @@ import type {
   ProductCard,
   ProductListQuery,
   ProductListResult,
+  ProfileInput,
   VerifyRazorpayInput,
   VerifyRazorpayResult,
 } from "@/lib/shop-types";
@@ -204,6 +206,25 @@ export async function cancelOrder(id: string): Promise<{ status: string }> {
     await fetch(`/api/shop/orders/${encodeURIComponent(id)}/cancel`, {
       method: "POST",
       credentials: "include",
+    }),
+  );
+}
+
+// ── Profile ─────────────────────────────────────────────────────────────
+
+export async function getMe(): Promise<CustomerProfile> {
+  return jsonOrThrow<CustomerProfile>(
+    await fetch("/api/shop/me", { credentials: "include" }),
+  );
+}
+
+export async function updateMe(input: ProfileInput): Promise<void> {
+  await jsonOrThrow<{ status: string }>(
+    await fetch("/api/shop/me", {
+      method: "PATCH",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
     }),
   );
 }

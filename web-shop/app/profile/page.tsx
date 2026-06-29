@@ -1,8 +1,12 @@
-export default function ProfilePlaceholder() {
+import { ProfileShell } from "@/components/account/profile-shell";
+
+export const dynamic = "force-dynamic";
+
+export default function ProfilePage() {
   return (
-    <div className="max-w-md mx-auto space-y-4">
-      <h1 className="text-2xl font-semibold">My account</h1>
-      <p className="text-muted">Plan 3f adds profile + addresses + orders nav here.</p>
-    </div>
+    <main className="max-w-(--spacing-shop-page-max) mx-auto px-4 py-8">
+      <h1 className="text-2xl font-semibold mb-4">My account</h1>
+      <ProfileShell />
+    </main>
   );
 }
