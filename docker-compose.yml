@@ -68,6 +68,11 @@ services:
         BACKEND_URL: "http://backend:8080"
     ports:
       - 3001:3001
+    environment:
+      # Served on http://localhost:3001 — a Secure cookie would be dropped by
+      # the browser over http, breaking login + all authed /api/shop calls.
+      # Set to "true" only when serving the shop over https.
+      COOKIE_SECURE: "false"
     env_file:
       - path: ./web-shop/.env.docker
         required: false
