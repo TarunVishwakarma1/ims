@@ -3,7 +3,7 @@ import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { codeSchema, type CodeInput } from "@/lib/login-schemas";
 import { safeNext } from "@/lib/safe-next";
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,11 @@ export function CodeStep({ otpId, phone, onResend, onChangeNumber }: Props) {
   const router = useRouter();
   const params = useSearchParams();
   const [submitting, setSubmitting] = useState(false);
+  // Synchronous guard: the `submitting` state lags a render, so auto-submit
+  // (on the 6th digit) and a manual Verify click could both fire a verify for
+  // the same single-use OTP — the second request hits a consumed code and the
+  // backend returns otp_expired. A ref blocks the duplicate immediately.
+  const inFlight = useRef(false);
   const {
     control,
     handleSubmit,
@@ -35,6 +40,8 @@ export function CodeStep({ otpId, phone, onResend, onChangeNumber }: Props) {
   });
 
   async function onSubmit(data: CodeInput) {
+    if (inFlight.current) return;
+    inFlight.current = true;
     setSubmitting(true);
     try {
       const res = await fetch("/api/auth/login/verify", {
@@ -56,6 +63,7 @@ export function CodeStep({ otpId, phone, onResend, onChangeNumber }: Props) {
       toast.error("Network error. Try again.");
     } finally {
       setSubmitting(false);
+      inFlight.current = false;
     }
   }
 

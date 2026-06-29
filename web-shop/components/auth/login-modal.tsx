@@ -24,6 +24,7 @@ export function LoginModal({ open, onClose, onSuccess }: Props) {
   const [otp, setOtp] = useState("");
   const [loading, setLoading] = useState(false);
   const phoneRef = useRef<HTMLInputElement>(null);
+  const verifyInFlight = useRef(false);
 
   useEffect(() => {
     if (open) {
@@ -70,6 +71,10 @@ export function LoginModal({ open, onClose, onSuccess }: Props) {
       toast.error("Enter the 6-digit OTP");
       return;
     }
+    // Block duplicate submits (double Enter / click) — a single-use OTP would
+    // be consumed by the first call and the second would report otp_expired.
+    if (verifyInFlight.current) return;
+    verifyInFlight.current = true;
     setLoading(true);
     try {
       const r = await fetch("/api/auth/login/verify", {
@@ -101,6 +106,7 @@ export function LoginModal({ open, onClose, onSuccess }: Props) {
       toast.error("Invalid or expired OTP. Please try again.");
     } finally {
       setLoading(false);
+      verifyInFlight.current = false;
     }
   };
 
