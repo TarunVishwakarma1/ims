@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import {
@@ -19,6 +19,7 @@ import { AddressPicker } from "@/components/checkout/address-picker";
 import { AddressForm } from "@/components/checkout/address-form";
 import { PaymentMethod } from "@/components/checkout/payment-method";
 import { OrderSummary } from "@/components/checkout/order-summary";
+import { CouponInput } from "@/components/checkout/coupon-input";
 import { PlaceOrderButton } from "@/components/checkout/place-order-button";
 import { LoginModal } from "@/components/auth/login-modal";
 
@@ -33,6 +34,9 @@ export function CheckoutShell() {
   const [options, setOptions] = useState<PaymentOption[]>([]);
   const [method, setMethod] = useState<Method>("razorpay");
   const [summary, setSummary] = useState<CheckoutSummaryT | null>(null);
+  const [couponCode, setCouponCode] = useState("");
+  const [couponBusy, setCouponBusy] = useState(false);
+  const [couponError, setCouponError] = useState("");
   const hydrate = useCartStore((s) => s.hydrateFromServer);
   const itemCount = useCartStore(selectItemCount);
 
@@ -75,20 +79,55 @@ export function CheckoutShell() {
     })();
   }, [authed]);
 
-  // Step 3: refetch summary when address changes
+  const loadSummary = useCallback(async (addrID: string, coupon: string) => {
+    const s = await fetchCheckoutSummary(addrID, coupon || undefined);
+    setSummary(s);
+    return s;
+  }, []);
+
+  // Step 3: refetch summary when address changes (carry applied coupon)
   useEffect(() => {
     if (!selected) return;
     (async () => {
       try {
-        const s = await fetchCheckoutSummary(selected.id);
-        setSummary(s);
+        await loadSummary(selected.id, couponCode);
       } catch (e) {
         const code = (e as { code?: string }).code;
         if (code === "cart_empty") toast.error("Cart is empty");
         else toast.error("Could not load summary");
       }
     })();
-  }, [selected]);
+    // couponCode intentionally omitted: coupon changes go through apply/remove handlers
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected, loadSummary]);
+
+  const onApplyCoupon = async (c: string) => {
+    if (!selected) return;
+    setCouponBusy(true);
+    setCouponError("");
+    try {
+      await loadSummary(selected.id, c);
+      setCouponCode(c);
+    } catch (e) {
+      const code = (e as { code?: string }).code;
+      const detail = (e as { detail?: string }).detail;
+      setCouponError(code === "coupon_invalid" ? detail || "Invalid coupon" : "Could not apply coupon");
+    } finally {
+      setCouponBusy(false);
+    }
+  };
+
+  const onRemoveCoupon = async () => {
+    setCouponCode("");
+    setCouponError("");
+    if (selected) {
+      try {
+        await loadSummary(selected.id, "");
+      } catch {
+        /* keep last summary */
+      }
+    }
+  };
 
   if (authed === null) {
     return <main className="max-w-(--spacing-shop-page-max) mx-auto px-4 py-16 text-center">Loading…</main>;
@@ -141,10 +180,20 @@ export function CheckoutShell() {
       {summary && (
         <OrderSummary
           summary={summary}
+          coupon={
+            <CouponInput
+              applied={summary.coupon}
+              busy={couponBusy}
+              error={couponError}
+              onApply={onApplyCoupon}
+              onRemove={onRemoveCoupon}
+            />
+          }
           action={
             <PlaceOrderButton
               addressID={selected?.id ?? ""}
               paymentMethod={method}
+              couponCode={summary.coupon?.code}
               customerName={selected?.name}
               customerPhone={selected?.phone}
               disabled={!selected || !options.find((o) => o.id === method && o.enabled)}

@@ -77,13 +77,16 @@ export async function fetchProductSuggestions(
 async function jsonOrThrow<T>(res: Response): Promise<T> {
   if (!res.ok) {
     let code = `http_${res.status}`;
+    let detail = "";
     try {
-      const body = (await res.json()) as { error?: string };
+      const body = (await res.json()) as { error?: string; message?: string };
       if (body.error) code = body.error;
+      if (body.message) detail = body.message;
     } catch {}
-    const err = new Error(code) as Error & { status: number; code: string };
+    const err = new Error(code) as Error & { status: number; code: string; detail: string };
     err.status = res.status;
     err.code = code;
+    err.detail = detail;
     throw err;
   }
   return (await res.json()) as T;
@@ -132,9 +135,14 @@ export async function mergeCart(
 
 // ── Checkout ────────────────────────────────────────────────────────────
 
-export async function fetchCheckoutSummary(addressID: string): Promise<CheckoutSummary> {
+export async function fetchCheckoutSummary(
+  addressID: string,
+  couponCode?: string,
+): Promise<CheckoutSummary> {
+  const qs = new URLSearchParams({ address_id: addressID });
+  if (couponCode) qs.set("coupon", couponCode);
   return jsonOrThrow<CheckoutSummary>(
-    await fetch(`/api/shop/checkout/summary?address_id=${encodeURIComponent(addressID)}`, {
+    await fetch(`/api/shop/checkout/summary?${qs.toString()}`, {
       credentials: "include",
     }),
   );

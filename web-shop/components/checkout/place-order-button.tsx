@@ -10,6 +10,7 @@ import { loadRazorpay, openRazorpayCheckout } from "@/lib/razorpay";
 type Props = {
   addressID: string;
   paymentMethod: "razorpay" | "cod";
+  couponCode?: string;
   customerName?: string;
   customerPhone?: string;
   disabled?: boolean;
@@ -41,7 +42,7 @@ async function verifyWithRetry(input: Parameters<typeof verifyRazorpayPayment>[0
   throw lastErr;
 }
 
-export function PlaceOrderButton({ addressID, paymentMethod, customerName, customerPhone, disabled, onAddressInvalid }: Props) {
+export function PlaceOrderButton({ addressID, paymentMethod, couponCode, customerName, customerPhone, disabled, onAddressInvalid }: Props) {
   const [busy, setBusy] = useState(false);
   const clear = useCartStore((s) => s.clear);
   const hydrate = useCartStore((s) => s.hydrateFromServer);
@@ -55,7 +56,10 @@ export function PlaceOrderButton({ addressID, paymentMethod, customerName, custo
     setBusy(true);
     try {
       const idem = newIdemKey();
-      const res = await placeOrder({ address_id: addressID, payment_method: paymentMethod }, idem);
+      const res = await placeOrder(
+        { address_id: addressID, payment_method: paymentMethod, coupon_code: couponCode },
+        idem,
+      );
 
       if (paymentMethod === "cod") {
         clear();
@@ -110,6 +114,9 @@ export function PlaceOrderButton({ addressID, paymentMethod, customerName, custo
       } else if (code === "address_required") {
         toast.error("Address not valid — please re-pick");
         onAddressInvalid?.();
+      } else if (code === "coupon_invalid") {
+        const detail = (e as { detail?: string }).detail;
+        toast.error(detail || "Coupon no longer valid");
       } else {
         toast.error("Could not place order");
       }

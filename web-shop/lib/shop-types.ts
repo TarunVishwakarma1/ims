@@ -98,12 +98,21 @@ export type Cart = {
 
 // ── Checkout ────────────────────────────────────────────────────────────
 
+export type AppliedCoupon = {
+  code: string;
+  discount_type: string;
+  amount_off_paise: number;
+};
+
 export type CheckoutSummary = {
   items: CartItem[];
   subtotal_paise: number;
   gst_paise: number;
+  platform_paise: number;
+  discount_paise: number;
   shipping_paise: number;
   total_payable_paise: number;
+  coupon?: AppliedCoupon;
 };
 
 export type PaymentOption =
@@ -121,6 +130,7 @@ export type PaymentOptionsResponse = { methods: PaymentOption[] };
 export type PlaceOrderInput = {
   address_id: string;
   payment_method: "razorpay" | "cod";
+  coupon_code?: string;
   notes?: string;
 };
 
