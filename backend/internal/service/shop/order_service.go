@@ -30,6 +30,7 @@ type OrderCard struct {
 	InvoiceNumber  string    `json:"invoice_number"`
 	Status         string    `json:"status"`
 	PaymentStatus  string    `json:"payment_status"`
+	PaymentMethod  string    `json:"payment_method,omitempty"`
 	TotalAmount    int64     `json:"total_paise"`
 	CreatedAt      time.Time `json:"created_at"`
 	ItemCount      int       `json:"item_count"`
@@ -180,6 +181,7 @@ func (s *shopOrderService) List(ctx context.Context, customerID uuid.UUID, q Ord
 			InvoiceNumber: r.InvoiceNumber,
 			Status:        r.Status,
 			PaymentStatus: r.PaymentStatus,
+			PaymentMethod: r.PaymentMethod,
 			TotalAmount:   r.TotalAmount,
 			CreatedAt:     r.CreatedAt,
 		}
@@ -266,6 +268,7 @@ func (s *shopOrderService) Get(ctx context.Context, customerID, orderID uuid.UUI
 			InvoiceNumber:  row.InvoiceNumber,
 			Status:         row.Status,
 			PaymentStatus:  row.PaymentStatus,
+			PaymentMethod:  row.PaymentMethod,
 			TotalAmount:    row.TotalAmount,
 			CreatedAt:      row.CreatedAt,
 			ItemCount:      len(items),

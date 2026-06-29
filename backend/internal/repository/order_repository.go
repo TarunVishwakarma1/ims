@@ -78,6 +78,7 @@ type CustomerOrderRow struct {
 	InvoiceNumber           string
 	Status                  string
 	PaymentStatus           string
+	PaymentMethod           string
 	PaymentID               *uuid.UUID
 	Subtotal                int64
 	GST                     int64
@@ -432,6 +433,7 @@ func (r *orderRepository) ListByCustomer(ctx context.Context, customerID uuid.UU
 	args := []any{customerID}
 	q := `
 		SELECT id, org_id, customer_id, COALESCE(invoice_number,''), status, payment_status,
+		       COALESCE(payment_method,''),
 		       payment_id, COALESCE(subtotal,0),
 		       COALESCE(gst_paise,0), COALESCE(packing_paise,0),
 		       COALESCE(handling_paise,0), COALESCE(surge_paise,0),
@@ -459,6 +461,7 @@ func (r *orderRepository) ListByCustomer(ctx context.Context, customerID uuid.UU
 		var c CustomerOrderRow
 		if err := rows.Scan(
 			&c.ID, &c.OrgID, &c.CustomerID, &c.InvoiceNumber, &c.Status, &c.PaymentStatus,
+			&c.PaymentMethod,
 			&c.PaymentID, &c.Subtotal,
 			&c.GST, &c.Packing, &c.Handling, &c.Surge, &c.Platform,
 			&c.DeliveryFee, &c.Discount, &c.CodRound,
@@ -476,6 +479,7 @@ func (r *orderRepository) GetByCustomerAndID(ctx context.Context, customerID, or
 	var c CustomerOrderRow
 	err := r.pool.QueryRow(ctx, `
 		SELECT id, org_id, customer_id, COALESCE(invoice_number,''), status, payment_status,
+		       COALESCE(payment_method,''),
 		       payment_id, COALESCE(subtotal,0),
 		       COALESCE(gst_paise,0), COALESCE(packing_paise,0),
 		       COALESCE(handling_paise,0), COALESCE(surge_paise,0),
@@ -489,6 +493,7 @@ func (r *orderRepository) GetByCustomerAndID(ctx context.Context, customerID, or
 		orderID, customerID,
 	).Scan(
 		&c.ID, &c.OrgID, &c.CustomerID, &c.InvoiceNumber, &c.Status, &c.PaymentStatus,
+		&c.PaymentMethod,
 		&c.PaymentID, &c.Subtotal,
 		&c.GST, &c.Packing, &c.Handling, &c.Surge, &c.Platform,
 		&c.DeliveryFee, &c.Discount, &c.CodRound,

@@ -374,15 +374,15 @@ func (s *checkoutService) Place(ctx context.Context, in PlaceOrderInput) (*Place
 			status, order_type, total_amount, subtotal,
 			gst_paise, packing_paise, handling_paise, surge_paise,
 			platform_paise, delivery_fee, discount, cod_round_paise,
-			payment_status, delivery_address_snapshot, created_at, updated_at
+			payment_status, payment_method, delivery_address_snapshot, created_at, updated_at
 		) VALUES (
 			$1, $2, $3, $4,
 			$5, 'b2c', $6, $7,
 			$8, 0, 0, 0,
 			$9, $10, $11, $12,
-			'unpaid', $13, NOW(), NOW()
+			'unpaid', $13, $14, NOW(), NOW()
 		)
-	`, orderID, s.orgID, custID, addrID, orderStatus, total, subtotal, gst, platform, shipping, discount, codRound, snapshot)
+	`, orderID, s.orgID, custID, addrID, orderStatus, total, subtotal, gst, platform, shipping, discount, codRound, in.PaymentMethod, snapshot)
 	if err != nil {
 		return nil, fmt.Errorf("insert order: %w", err)
 	}
