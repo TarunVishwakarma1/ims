@@ -71,8 +71,9 @@ func (h *PaymentHandler) Verify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Payment verified — order is now confirmed. Email the receipt.
-	h.notifier.PaymentReceived(r.Context(), cid, req.OrderID)
+	// Payment receipt email is sent by the Razorpay webhook (payment.captured)
+	// so it fires exactly once even if the browser never reaches this verify
+	// call. See the shop notification listener wired in main.go.
 
 	writeJSON(w, http.StatusOK, res)
 }

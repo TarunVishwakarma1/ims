@@ -611,6 +611,7 @@ func (s *paymentService) handleFailed(ctx context.Context, env rzpEnvelope, raw 
 	}
 	_ = s.bus.Publish(ctx, events.NewEvent(TopicPaymentFailed, payment.OrgID.String(), "", map[string]any{
 		"payment_id": payment.ID,
+		"order_id":   payment.OrderID,
 		"reason":     reason,
 	}))
 	metrics.PaymentsFailedTotal.WithLabelValues(truncate(reason, 32)).Inc()

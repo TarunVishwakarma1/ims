@@ -2,6 +2,7 @@ package shop
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/TarunVishwakarma1/ims/backend/internal/domain"
 	"github.com/TarunVishwakarma1/ims/backend/internal/repository"
+	"github.com/TarunVishwakarma1/ims/backend/pkg/events"
 )
 
 // ShopNotifier builds and enqueues customer-facing emails for shop order
@@ -96,6 +98,72 @@ func (n *ShopNotifier) orderSummaryLines(ctx context.Context, customerID, orderI
 		inv = orderID.String()[:8]
 	}
 	return inv, row.TotalAmount, b.String(), true
+}
+
+// customerForOrder resolves the owning customer of an org-scoped order. Used by
+// the webhook-driven (order-scoped) entry points where only the order id is
+// known. Returns false when the order is missing or has no customer (B2B).
+func (n *ShopNotifier) customerForOrder(ctx context.Context, orgID, orderID uuid.UUID) (uuid.UUID, bool) {
+	o, err := n.orders.GetByID(ctx, orderID, orgID)
+	if err != nil || o == nil || o.CustomerID == nil {
+		return uuid.Nil, false
+	}
+	return *o.CustomerID, true
+}
+
+// PaymentReceivedForOrder is the webhook (payment.captured) entry point. It
+// resolves the customer from the order, then emails the receipt.
+func (n *ShopNotifier) PaymentReceivedForOrder(ctx context.Context, orgID, orderID uuid.UUID) {
+	if n == nil {
+		return
+	}
+	if cid, ok := n.customerForOrder(ctx, orgID, orderID); ok {
+		n.PaymentReceived(ctx, cid, orderID)
+	}
+}
+
+// PaymentFailedForOrder is the webhook (payment.failed) entry point.
+func (n *ShopNotifier) PaymentFailedForOrder(ctx context.Context, orgID, orderID uuid.UUID) {
+	if n == nil {
+		return
+	}
+	if cid, ok := n.customerForOrder(ctx, orgID, orderID); ok {
+		n.PaymentFailed(ctx, cid, orderID)
+	}
+}
+
+// RefundProcessedForOrder is the webhook (refund.processed / payment.refunded)
+// entry point. amountPaise is the refunded amount; full marks a complete refund.
+func (n *ShopNotifier) RefundProcessedForOrder(ctx context.Context, orgID, orderID uuid.UUID, amountPaise int64, full bool) {
+	if n == nil {
+		return
+	}
+	cid, ok := n.customerForOrder(ctx, orgID, orderID)
+	if !ok {
+		return
+	}
+	to := n.recipientEmail(ctx, cid)
+	if to == "" {
+		return
+	}
+	row, _, err := n.orders.GetByCustomerAndID(ctx, cid, orderID)
+	if err != nil || row == nil {
+		return
+	}
+	inv := row.InvoiceNumber
+	if inv == "" {
+		inv = orderID.String()[:8]
+	}
+	kind := "A partial refund"
+	if full {
+		kind = "A full refund"
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s of %s has been processed for order %s.\n\nIt should reflect in your account within 5–7 business days.\n", kind, rupees(amountPaise), inv)
+	if link := n.orderLink(orderID); link != "" {
+		fmt.Fprintf(&b, "\nView order: %s\n", link)
+	}
+	n.enqueue(ctx, to, fmt.Sprintf("Refund processed — %s", inv), b.String())
 }
 
 // OrderConfirmed emails the customer that their order was placed.
@@ -226,4 +294,66 @@ func (n *ShopNotifier) OrderStatusChanged(ctx context.Context, customerID, order
 		fmt.Fprintf(&b, "\nView order: %s\n", link)
 	}
 	n.enqueue(ctx, to, fmt.Sprintf("%s — %s", subject, inv), b.String())
+}
+
+// paymentEventData is the subset of a payment.* / refund.* bus event payload
+// the listener needs to route a customer email.
+type paymentEventData struct {
+	OrderID *uuid.UUID `json:"order_id"`
+	Amount  int64      `json:"amount"` // refund delta for refund events
+	Status  string     `json:"status"` // payment status after a refund event
+}
+
+// StartPaymentEventListener subscribes to the shop org's event bus and turns
+// Razorpay-driven payment/refund events into customer emails. It runs until
+// ctx is cancelled. The underlying webhook handler already verifies the HMAC
+// signature and enforces idempotency, so each event fires at most once.
+//
+// payment_link.* events are intentionally ignored: the shop checkout uses the
+// Orders API, not Razorpay Payment Links, so those events have no order to map.
+func StartPaymentEventListener(ctx context.Context, bus events.Bus, orgID uuid.UUID, n *ShopNotifier) {
+	if bus == nil || n == nil {
+		return
+	}
+	stream, cancel, err := bus.Subscribe(ctx, orgID.String())
+	if err != nil {
+		zap.L().Error("shop payment listener: subscribe failed", zap.Error(err))
+		return
+	}
+	go func() {
+		defer cancel()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case evt, ok := <-stream:
+				if !ok {
+					return
+				}
+				n.handlePaymentEvent(ctx, orgID, evt)
+			}
+		}
+	}()
+}
+
+// handlePaymentEvent routes a single bus event to the matching email.
+func (n *ShopNotifier) handlePaymentEvent(ctx context.Context, orgID uuid.UUID, evt events.Event) {
+	switch evt.Type {
+	case "payment.captured", "payment.failed", "payment.refunded", "refund.processed":
+	default:
+		return
+	}
+	var d paymentEventData
+	if err := json.Unmarshal(evt.Data, &d); err != nil || d.OrderID == nil {
+		return
+	}
+	switch evt.Type {
+	case "payment.captured":
+		n.PaymentReceivedForOrder(ctx, orgID, *d.OrderID)
+	case "payment.failed":
+		n.PaymentFailedForOrder(ctx, orgID, *d.OrderID)
+	case "payment.refunded", "refund.processed":
+		full := d.Status == string(domain.PaymentStatusRefunded)
+		n.RefundProcessedForOrder(ctx, orgID, *d.OrderID, d.Amount, full)
+	}
 }
