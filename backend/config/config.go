@@ -39,17 +39,19 @@ type Config struct {
 	WebAppURL     string // for action links in emails (e.g. https://app.example.com)
 
 	// B2C Shop
-	ShopEnabled     bool
-	ShopCODMinPaise   int64
-	ShopCODMaxPaise   int64
-	ShopPlatformPaise int64 // flat per-order platform fee (e.g. 300 = ₹3)
-	ShopOrgID       string // optional — when set, overrides slug lookup
-	ShopOrgSlug     string // stable lookup key (default "kirana")
-	ShopOrgName     string // human name used when bootstrap creates the org
-	SeedDevData     bool   // seed demo categories/products/inventory at boot (dev only)
-	MSG91AuthKey    string
-	MSG91TemplateID string
-	MSG91SenderID   string
+	ShopEnabled             bool
+	ShopCODMinPaise         int64
+	ShopCODMaxPaise         int64
+	ShopPlatformPaise       int64  // flat per-order platform fee (e.g. 300 = ₹3)
+	ShopShippingPaise       int64  // flat delivery fee charged below the free-ship threshold
+	ShopFreeShipThreshPaise int64  // subtotal at/above which delivery is free (0 = always charge)
+	ShopOrgID               string // optional — when set, overrides slug lookup
+	ShopOrgSlug             string // stable lookup key (default "kirana")
+	ShopOrgName             string // human name used when bootstrap creates the org
+	SeedDevData             bool   // seed demo categories/products/inventory at boot (dev only)
+	MSG91AuthKey            string
+	MSG91TemplateID         string
+	MSG91SenderID           string
 
 	// Banner CMS (Plan 2b)
 	UploadDir           string
@@ -181,6 +183,30 @@ func LoadConfig() (*Config, error) {
 		platformPaise = n
 	}
 
+	shippingPaise := int64(4000) // default ₹40 flat delivery fee
+	if v := os.Getenv("SHOP_SHIPPING_FEE_PAISE"); v != "" {
+		n, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid SHOP_SHIPPING_FEE_PAISE: %w", err)
+		}
+		if n < 0 {
+			return nil, fmt.Errorf("SHOP_SHIPPING_FEE_PAISE must be >= 0, got %d", n)
+		}
+		shippingPaise = n
+	}
+
+	freeShipThreshPaise := int64(50000) // default: free delivery at/above ₹500
+	if v := os.Getenv("SHOP_FREE_SHIP_THRESHOLD_PAISE"); v != "" {
+		n, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid SHOP_FREE_SHIP_THRESHOLD_PAISE: %w", err)
+		}
+		if n < 0 {
+			return nil, fmt.Errorf("SHOP_FREE_SHIP_THRESHOLD_PAISE must be >= 0, got %d", n)
+		}
+		freeShipThreshPaise = n
+	}
+
 	msg91SenderID := os.Getenv("MSG91_SENDER_ID")
 	if msg91SenderID == "" {
 		msg91SenderID = "IMSHOP"
@@ -247,6 +273,8 @@ func LoadConfig() (*Config, error) {
 		ShopCODMinPaise:           codMin,
 		ShopCODMaxPaise:           codMax,
 		ShopPlatformPaise:         platformPaise,
+		ShopShippingPaise:         shippingPaise,
+		ShopFreeShipThreshPaise:   freeShipThreshPaise,
 		ShopOrgID:                 os.Getenv("SHOP_ORG_ID"),
 		ShopOrgSlug:               firstNonEmpty(os.Getenv("SHOP_ORG_SLUG"), "kirana"),
 		ShopOrgName:               firstNonEmpty(os.Getenv("SHOP_ORG_NAME"), "Kirana"),

@@ -68,6 +68,7 @@ type CheckoutSummary struct {
 	PlatformPaise     int64          `json:"platform_paise"`
 	DiscountPaise     int64          `json:"discount_paise"`
 	ShippingPaise     int64          `json:"shipping_paise"`
+	FreeShipThreshold int64          `json:"free_ship_threshold_paise"`
 	TotalPayablePaise int64          `json:"total_payable_paise"`
 	Coupon            *AppliedCoupon `json:"coupon,omitempty"`
 }
@@ -91,17 +92,19 @@ type PlaceOrderResult struct {
 }
 
 type checkoutService struct {
-	pool          *pgxpool.Pool
-	orgID         uuid.UUID
-	cartRepo      repository.CartRepository
-	addrRepo      repository.CustomerAddressRepository
-	paymentSvc    paymentCreator
-	orderRepo     repository.OrderRepository
-	couponSvc     couponValidator
-	razorpayKeyID string
-	codMinPaise   int64
-	codMaxPaise   int64
-	platformPaise int64
+	pool              *pgxpool.Pool
+	orgID             uuid.UUID
+	cartRepo          repository.CartRepository
+	addrRepo          repository.CustomerAddressRepository
+	paymentSvc        paymentCreator
+	orderRepo         repository.OrderRepository
+	couponSvc         couponValidator
+	razorpayKeyID     string
+	codMinPaise       int64
+	codMaxPaise       int64
+	platformPaise     int64
+	shippingPaise     int64
+	freeShipThreshold int64
 }
 
 // NewCheckoutService constructs a CheckoutService.
@@ -119,20 +122,33 @@ func NewCheckoutService(
 	codMinPaise int64,
 	codMaxPaise int64,
 	platformPaise int64,
+	shippingPaise int64,
+	freeShipThreshold int64,
 ) CheckoutService {
 	return &checkoutService{
-		pool:          pool,
-		orgID:         orgID,
-		cartRepo:      cartRepo,
-		addrRepo:      addrRepo,
-		paymentSvc:    paymentSvc,
-		orderRepo:     orderRepo,
-		couponSvc:     couponSvc,
-		razorpayKeyID: razorpayKeyID,
-		codMinPaise:   codMinPaise,
-		platformPaise: platformPaise,
-		codMaxPaise:   codMaxPaise,
+		pool:              pool,
+		orgID:             orgID,
+		cartRepo:          cartRepo,
+		addrRepo:          addrRepo,
+		paymentSvc:        paymentSvc,
+		orderRepo:         orderRepo,
+		couponSvc:         couponSvc,
+		razorpayKeyID:     razorpayKeyID,
+		codMinPaise:       codMinPaise,
+		platformPaise:     platformPaise,
+		codMaxPaise:       codMaxPaise,
+		shippingPaise:     shippingPaise,
+		freeShipThreshold: freeShipThreshold,
 	}
+}
+
+// shippingFor returns the delivery fee for a given subtotal, applying the
+// free-shipping threshold (0 threshold = always charge the flat fee).
+func (s *checkoutService) shippingFor(subtotal int64) int64 {
+	if s.freeShipThreshold > 0 && subtotal >= s.freeShipThreshold {
+		return 0
+	}
+	return s.shippingPaise
 }
 
 // Summary returns a pre-checkout price breakdown for the customer's cart.
@@ -208,7 +224,9 @@ func (s *checkoutService) Summary(ctx context.Context, customerID, addressID uui
 		}
 	}
 
-	total := subtotal + gst + platform - discount
+	shipping := s.shippingFor(subtotal)
+
+	total := subtotal + gst + platform + shipping - discount
 	if total < 0 {
 		total = 0
 	}
@@ -219,7 +237,8 @@ func (s *checkoutService) Summary(ctx context.Context, customerID, addressID uui
 		GSTPaise:          gst,
 		PlatformPaise:     platform,
 		DiscountPaise:     discount,
-		ShippingPaise:     0,
+		ShippingPaise:     shipping,
+		FreeShipThreshold: s.freeShipThreshold,
 		TotalPayablePaise: total,
 		Coupon:            applied,
 	}, nil
@@ -302,7 +321,9 @@ func (s *checkoutService) Place(ctx context.Context, in PlaceOrderInput) (*Place
 		discount = off
 	}
 
-	total := subtotal + gst + platform - discount
+	shipping := s.shippingFor(subtotal)
+
+	total := subtotal + gst + platform + shipping - discount
 	if total < 0 {
 		total = 0
 	}
@@ -358,10 +379,10 @@ func (s *checkoutService) Place(ctx context.Context, in PlaceOrderInput) (*Place
 			$1, $2, $3, $4,
 			$5, 'b2c', $6, $7,
 			$8, 0, 0, 0,
-			$9, 0, $10, $11,
-			'unpaid', $12, NOW(), NOW()
+			$9, $10, $11, $12,
+			'unpaid', $13, NOW(), NOW()
 		)
-	`, orderID, s.orgID, custID, addrID, orderStatus, total, subtotal, gst, platform, discount, codRound, snapshot)
+	`, orderID, s.orgID, custID, addrID, orderStatus, total, subtotal, gst, platform, shipping, discount, codRound, snapshot)
 	if err != nil {
 		return nil, fmt.Errorf("insert order: %w", err)
 	}

@@ -236,7 +236,7 @@ func main() {
 		otpSvc := shopsvc.NewOTPService(otpRepo, customerRepo, smsSender, cfg.JWTSecret)
 		custSvc := shopsvc.NewCustomerService(customerRepo, addrRepo)
 		cartSvc := shopsvc.NewCartService(cartRepo, pool, shopOrgID)
-		checkSvc := shopsvc.NewCheckoutService(pool, shopOrgID, cartRepo, addrRepo, paymentService, orderRepo, couponService, cfg.RazorpayKeyID, cfg.ShopCODMinPaise, cfg.ShopCODMaxPaise, cfg.ShopPlatformPaise)
+		checkSvc := shopsvc.NewCheckoutService(pool, shopOrgID, cartRepo, addrRepo, paymentService, orderRepo, couponService, cfg.RazorpayKeyID, cfg.ShopCODMinPaise, cfg.ShopCODMaxPaise, cfg.ShopPlatformPaise, cfg.ShopShippingPaise, cfg.ShopFreeShipThreshPaise)
 
 		shopAuthH = shophandler.NewAuthHandler(otpSvc)
 		shopCustH = shophandler.NewCustomerHandler(custSvc)

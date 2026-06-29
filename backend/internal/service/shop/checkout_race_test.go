@@ -29,7 +29,7 @@ func TestCheckoutSvc_Race_LastUnitExactlyOneWinner(t *testing.T) {
 	addrRepo := repository.NewCustomerAddressRepository(pool)
 	orderRepo := repository.NewOrderRepository(pool)
 	cartSvc := shop.NewCartService(cartRepo, pool, orgID)
-	checkSvc := shop.NewCheckoutService(pool, orgID, cartRepo, addrRepo, nil, orderRepo, nil, "", 0, 1<<31, 0)
+	checkSvc := shop.NewCheckoutService(pool, orgID, cartRepo, addrRepo, nil, orderRepo, nil, "", 0, 1<<31, 0, 0, 0)
 
 	const N = 50
 	type seed struct {
