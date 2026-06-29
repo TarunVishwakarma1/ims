@@ -283,8 +283,12 @@ func (s *paymentService) CreateOrder(ctx context.Context, orgID, orderID uuid.UU
 	if err != nil {
 		return nil, fmt.Errorf("order not found in your organization: %w", err)
 	}
-	// Amount sanity: must match the order total (prevents tampering).
-	expected := order.TotalAmount + order.DeliveryFee - order.Discount
+	// Amount sanity: must match the order's stored grand total (prevents
+	// tampering). total_amount is the final payable — it already includes
+	// delivery and is net of any discount (see shop checkout + marketplace
+	// order creation), so it must NOT be re-adjusted by delivery_fee/discount
+	// here or the check double-counts (breaks shipping fees + coupons).
+	expected := order.TotalAmount
 	if expected > 0 && amount != expected {
 		return nil, fmt.Errorf("amount mismatch: order expects %d, got %d", expected, amount)
 	}

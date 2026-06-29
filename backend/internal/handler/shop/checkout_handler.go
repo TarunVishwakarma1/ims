@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 
 	srv "github.com/TarunVishwakarma1/ims/backend/internal/service/shop"
 	"github.com/TarunVishwakarma1/ims/backend/pkg/middleware"
@@ -106,6 +107,9 @@ func (h *CheckoutHandler) Place(w http.ResponseWriter, r *http.Request) {
 				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "coupon_invalid", "message": err.Error()})
 				return
 			}
+			zap.L().Error("checkout place failed",
+				zap.String("payment_method", req.PaymentMethod),
+				zap.Error(err))
 			writeErr(w, http.StatusInternalServerError, "place_failed")
 		}
 		return
