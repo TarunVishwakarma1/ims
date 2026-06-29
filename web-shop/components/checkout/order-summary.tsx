@@ -3,6 +3,7 @@
 import { type ReactNode } from "react";
 import type { CheckoutSummary } from "@/lib/shop-types";
 import { formatPaise } from "@/lib/format";
+import { SHIPPING_FEE_PAISE } from "@/lib/shop-config";
 
 type Props = { summary: CheckoutSummary; coupon?: ReactNode; action?: ReactNode };
 
@@ -25,7 +26,18 @@ export function OrderSummary({ summary, coupon, action }: Props) {
         {summary.platform_paise > 0 && (
           <div className="flex justify-between"><dt>Platform fee</dt><dd>{formatPaise(summary.platform_paise)}</dd></div>
         )}
-        <div className="flex justify-between"><dt>Shipping</dt><dd>{summary.shipping_paise === 0 ? "Free" : formatPaise(summary.shipping_paise)}</dd></div>
+        <div className="flex justify-between">
+          <dt>Delivery</dt>
+          <dd>
+            {summary.shipping_paise === 0 ? (
+              <span className="text-emerald-600">
+                <s className="text-text-muted">{formatPaise(SHIPPING_FEE_PAISE)}</s> Free
+              </span>
+            ) : (
+              formatPaise(summary.shipping_paise)
+            )}
+          </dd>
+        </div>
         {summary.discount_paise > 0 && (
           <div className="flex justify-between text-emerald-600">
             <dt>Discount{summary.coupon ? ` (${summary.coupon.code})` : ""}</dt>
@@ -34,6 +46,13 @@ export function OrderSummary({ summary, coupon, action }: Props) {
         )}
         <div className="flex justify-between font-semibold pt-2 border-t border-border"><dt>Total</dt><dd>{formatPaise(summary.total_payable_paise)}</dd></div>
       </dl>
+      {summary.shipping_paise > 0 &&
+        summary.free_ship_threshold_paise > 0 &&
+        summary.subtotal_paise < summary.free_ship_threshold_paise && (
+          <p className="text-xs text-emerald-600">
+            Add {formatPaise(summary.free_ship_threshold_paise - summary.subtotal_paise)} more for FREE delivery 🚚
+          </p>
+        )}
       {action}
     </aside>
   );

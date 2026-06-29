@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCartStore, selectSubtotalPaise } from "@/lib/cart-store";
 import { CartLine } from "@/components/cart/cart-line";
 import { formatPaise } from "@/lib/format";
+import { FREE_SHIP_THRESHOLD_PAISE } from "@/lib/shop-config";
 import { toast } from "sonner";
 
 export default function CartPage() {
@@ -49,7 +50,24 @@ export default function CartPage() {
           <span>Subtotal</span>
           <span>{formatPaise(subtotal)}</span>
         </div>
-        <p className="text-xs text-text-muted">GST + shipping at checkout</p>
+        {FREE_SHIP_THRESHOLD_PAISE > 0 && (
+          <div className="space-y-1">
+            {subtotal >= FREE_SHIP_THRESHOLD_PAISE ? (
+              <p className="text-xs font-medium text-emerald-600">🎉 You’ve unlocked FREE delivery</p>
+            ) : (
+              <p className="text-xs text-emerald-600">
+                Add {formatPaise(FREE_SHIP_THRESHOLD_PAISE - subtotal)} more for FREE delivery
+              </p>
+            )}
+            <div className="h-1.5 rounded-full bg-brand-50 overflow-hidden">
+              <div
+                className="h-full bg-emerald-500 transition-all"
+                style={{ width: `${Math.min(100, (subtotal / FREE_SHIP_THRESHOLD_PAISE) * 100)}%` }}
+              />
+            </div>
+          </div>
+        )}
+        <p className="text-xs text-text-muted">GST + delivery calculated at checkout</p>
         <Link
           href="/checkout"
           className="block h-10 rounded bg-brand-600 text-white text-sm grid place-items-center hover:bg-brand-700"

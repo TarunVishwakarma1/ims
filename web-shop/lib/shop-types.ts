@@ -111,6 +111,7 @@ export type CheckoutSummary = {
   platform_paise: number;
   discount_paise: number;
   shipping_paise: number;
+  free_ship_threshold_paise: number;
   total_payable_paise: number;
   coupon?: AppliedCoupon;
 };
