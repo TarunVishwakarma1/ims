@@ -20,7 +20,7 @@ type fakeCheckoutPaymentOptions struct {
 	err  error
 }
 
-func (f *fakeCheckoutPaymentOptions) Summary(_ context.Context, _, _ uuid.UUID) (*srv.CheckoutSummary, error) {
+func (f *fakeCheckoutPaymentOptions) Summary(_ context.Context, _, _ uuid.UUID, _ string) (*srv.CheckoutSummary, error) {
 	return nil, nil
 }
 

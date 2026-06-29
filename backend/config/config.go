@@ -169,7 +169,7 @@ func LoadConfig() (*Config, error) {
 		return nil, fmt.Errorf("invalid COD bounds: min=%d max=%d", codMin, codMax)
 	}
 
-	platformPaise := int64(300) // default ₹3 per order
+	platformPaise := int64(0) // default: platform fee waived. Override via env when needed.
 	if v := os.Getenv("SHOP_PLATFORM_FEE_PAISE"); v != "" {
 		n, err := strconv.ParseInt(v, 10, 64)
 		if err != nil {

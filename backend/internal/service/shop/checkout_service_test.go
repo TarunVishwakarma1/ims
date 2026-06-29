@@ -50,7 +50,7 @@ func TestCheckoutSvc_PlaceCOD_Success(t *testing.T) {
 		t.Fatalf("AddOrSet: %v", err)
 	}
 
-	svc := shop.NewCheckoutService(pool, orgID, cartRepo, repository.NewCustomerAddressRepository(pool), nil, testdb.OrderRepo(pool), "", 10000, 500000, 300)
+	svc := shop.NewCheckoutService(pool, orgID, cartRepo, repository.NewCustomerAddressRepository(pool), nil, testdb.OrderRepo(pool), nil, "", 10000, 500000, 300)
 
 	res, err := svc.Place(ctx, shop.PlaceOrderInput{
 		CustomerID:    cust.ID,
@@ -145,7 +145,7 @@ func TestCheckoutSvc_PlaceInsufficientStock(t *testing.T) {
 	// drop stock to 0 out-of-band to simulate race
 	testdb.SetStock(t, pool, prodID, 0)
 
-	svc := shop.NewCheckoutService(pool, orgID, cartRepo, repository.NewCustomerAddressRepository(pool), nil, testdb.OrderRepo(pool), "", 10000, 500000, 300)
+	svc := shop.NewCheckoutService(pool, orgID, cartRepo, repository.NewCustomerAddressRepository(pool), nil, testdb.OrderRepo(pool), nil, "", 10000, 500000, 300)
 	_, err = svc.Place(ctx, shop.PlaceOrderInput{
 		CustomerID:    cust.ID,
 		AddressID:     addrID,
@@ -188,7 +188,7 @@ func TestCheckoutSvc_PlaceEmptyCart(t *testing.T) {
 	addrID := testdb.SeedAddress(t, pool, cust.ID)
 
 	cartRepo := repository.NewCartRepository(pool)
-	svc := shop.NewCheckoutService(pool, orgID, cartRepo, repository.NewCustomerAddressRepository(pool), nil, testdb.OrderRepo(pool), "", 10000, 500000, 300)
+	svc := shop.NewCheckoutService(pool, orgID, cartRepo, repository.NewCustomerAddressRepository(pool), nil, testdb.OrderRepo(pool), nil, "", 10000, 500000, 300)
 
 	_, err = svc.Place(ctx, shop.PlaceOrderInput{
 		CustomerID:    cust.ID,
@@ -219,7 +219,7 @@ func TestCheckoutSvc_PlaceMissingAddress(t *testing.T) {
 	})
 
 	cartRepo := repository.NewCartRepository(pool)
-	svc := shop.NewCheckoutService(pool, orgID, cartRepo, repository.NewCustomerAddressRepository(pool), nil, testdb.OrderRepo(pool), "", 10000, 500000, 300)
+	svc := shop.NewCheckoutService(pool, orgID, cartRepo, repository.NewCustomerAddressRepository(pool), nil, testdb.OrderRepo(pool), nil, "", 10000, 500000, 300)
 
 	_, err = svc.Place(ctx, shop.PlaceOrderInput{
 		CustomerID:    cust.ID,
@@ -263,7 +263,7 @@ func TestCheckoutSvc_Place_AddressNotOwned(t *testing.T) {
 	})
 
 	cartRepo := repository.NewCartRepository(pool)
-	svc := shop.NewCheckoutService(pool, orgID, cartRepo, repository.NewCustomerAddressRepository(pool), nil, testdb.OrderRepo(pool), "", 10000, 500000, 300)
+	svc := shop.NewCheckoutService(pool, orgID, cartRepo, repository.NewCustomerAddressRepository(pool), nil, testdb.OrderRepo(pool), nil, "", 10000, 500000, 300)
 
 	// Customer B attempts to place an order with customer A's address.
 	_, err = svc.Place(ctx, shop.PlaceOrderInput{
@@ -295,7 +295,7 @@ func TestCheckoutSvc_PaymentOptions_EmptyCart(t *testing.T) {
 	})
 
 	cartRepo := repository.NewCartRepository(pool)
-	svc := shop.NewCheckoutService(pool, orgID, cartRepo, repository.NewCustomerAddressRepository(pool), nil, testdb.OrderRepo(pool), "", 10000, 500000, 300)
+	svc := shop.NewCheckoutService(pool, orgID, cartRepo, repository.NewCustomerAddressRepository(pool), nil, testdb.OrderRepo(pool), nil, "", 10000, 500000, 300)
 
 	opts, err := svc.PaymentOptions(ctx, cust.ID)
 	if err != nil {
@@ -341,7 +341,7 @@ func TestCheckoutSvc_PaymentOptions_UnderMin(t *testing.T) {
 		t.Fatalf("AddOrSet: %v", err)
 	}
 
-	svc := shop.NewCheckoutService(pool, orgID, cartRepo, repository.NewCustomerAddressRepository(pool), nil, testdb.OrderRepo(pool), "", 10000, 500000, 300)
+	svc := shop.NewCheckoutService(pool, orgID, cartRepo, repository.NewCustomerAddressRepository(pool), nil, testdb.OrderRepo(pool), nil, "", 10000, 500000, 300)
 
 	opts, err := svc.PaymentOptions(ctx, cust.ID)
 	if err != nil {
@@ -384,7 +384,7 @@ func TestCheckoutSvc_PaymentOptions_OverMax(t *testing.T) {
 		t.Fatalf("AddOrSet: %v", err)
 	}
 
-	svc := shop.NewCheckoutService(pool, orgID, cartRepo, repository.NewCustomerAddressRepository(pool), nil, testdb.OrderRepo(pool), "", 10000, 500000, 300)
+	svc := shop.NewCheckoutService(pool, orgID, cartRepo, repository.NewCustomerAddressRepository(pool), nil, testdb.OrderRepo(pool), nil, "", 10000, 500000, 300)
 
 	opts, err := svc.PaymentOptions(ctx, cust.ID)
 	if err != nil {
@@ -427,7 +427,7 @@ func TestCheckoutSvc_PaymentOptions_InRange(t *testing.T) {
 		t.Fatalf("AddOrSet: %v", err)
 	}
 
-	svc := shop.NewCheckoutService(pool, orgID, cartRepo, repository.NewCustomerAddressRepository(pool), nil, testdb.OrderRepo(pool), "", 10000, 500000, 300)
+	svc := shop.NewCheckoutService(pool, orgID, cartRepo, repository.NewCustomerAddressRepository(pool), nil, testdb.OrderRepo(pool), nil, "", 10000, 500000, 300)
 
 	opts, err := svc.PaymentOptions(ctx, cust.ID)
 	if err != nil {
@@ -479,7 +479,7 @@ func TestPlace_COD_UnderMin_ReturnsIneligible(t *testing.T) {
 		t.Fatalf("AddOrSet: %v", err)
 	}
 
-	svc := shop.NewCheckoutService(pool, orgID, cartRepo, repository.NewCustomerAddressRepository(pool), nil, testdb.OrderRepo(pool), "", 10000, 500000, 300)
+	svc := shop.NewCheckoutService(pool, orgID, cartRepo, repository.NewCustomerAddressRepository(pool), nil, testdb.OrderRepo(pool), nil, "", 10000, 500000, 300)
 
 	_, err = svc.Place(ctx, shop.PlaceOrderInput{
 		CustomerID:    cust.ID,
@@ -518,7 +518,7 @@ func TestPlace_COD_OverMax_ReturnsIneligible(t *testing.T) {
 		t.Fatalf("AddOrSet: %v", err)
 	}
 
-	svc := shop.NewCheckoutService(pool, orgID, cartRepo, repository.NewCustomerAddressRepository(pool), nil, testdb.OrderRepo(pool), "", 10000, 500000, 300)
+	svc := shop.NewCheckoutService(pool, orgID, cartRepo, repository.NewCustomerAddressRepository(pool), nil, testdb.OrderRepo(pool), nil, "", 10000, 500000, 300)
 
 	_, err = svc.Place(ctx, shop.PlaceOrderInput{
 		CustomerID:    cust.ID,
@@ -557,7 +557,7 @@ func TestPlace_COD_InRange_Places(t *testing.T) {
 		t.Fatalf("AddOrSet: %v", err)
 	}
 
-	svc := shop.NewCheckoutService(pool, orgID, cartRepo, repository.NewCustomerAddressRepository(pool), nil, testdb.OrderRepo(pool), "", 10000, 500000, 300)
+	svc := shop.NewCheckoutService(pool, orgID, cartRepo, repository.NewCustomerAddressRepository(pool), nil, testdb.OrderRepo(pool), nil, "", 10000, 500000, 300)
 
 	res, err := svc.Place(ctx, shop.PlaceOrderInput{
 		CustomerID:    cust.ID,
@@ -614,7 +614,7 @@ func TestPlace_Razorpay_NotGatedByCODBounds(t *testing.T) {
 		},
 	}
 
-	svc := shop.NewCheckoutService(pool, orgID, cartRepo, repository.NewCustomerAddressRepository(pool), stubPayment, testdb.OrderRepo(pool), "test_key_id", 10000, 500000, 300)
+	svc := shop.NewCheckoutService(pool, orgID, cartRepo, repository.NewCustomerAddressRepository(pool), stubPayment, testdb.OrderRepo(pool), nil, "test_key_id", 10000, 500000, 300)
 
 	res, err := svc.Place(ctx, shop.PlaceOrderInput{
 		CustomerID:    cust.ID,

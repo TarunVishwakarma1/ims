@@ -155,8 +155,72 @@ func Run(ctx context.Context, pool *pgxpool.Pool, orgID uuid.UUID) error {
 		}
 	}
 
+	for _, c := range coupons() {
+		_, err := tx.Exec(ctx, `
+			INSERT INTO coupons
+			  (id, org_id, code, discount_type, discount_value,
+			   min_subtotal, max_uses, is_active, description,
+			   created_at, updated_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE, $8, $9, $9)
+			ON CONFLICT (id) DO UPDATE SET
+			  discount_type  = EXCLUDED.discount_type,
+			  discount_value = EXCLUDED.discount_value,
+			  min_subtotal   = EXCLUDED.min_subtotal,
+			  max_uses       = EXCLUDED.max_uses,
+			  is_active      = EXCLUDED.is_active,
+			  description    = EXCLUDED.description,
+			  updated_at     = EXCLUDED.updated_at
+		`, c.id, orgID, c.code, c.kind, c.value, c.minSubtotal, c.maxUses, c.description, now)
+		if err != nil {
+			return fmt.Errorf("seed coupon %s: %w", c.code, err)
+		}
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit: %w", err)
 	}
 	return nil
+}
+
+type couponSeed struct {
+	id          uuid.UUID
+	code        string
+	kind        string // "percent" | "fixed"
+	value       int64
+	minSubtotal int64
+	maxUses     *int
+	description string
+}
+
+func coupons() []couponSeed {
+	maxThousand := 1000
+	return []couponSeed{
+		{
+			id:          mustUUID("e0000001-0000-4000-8000-000000000001"),
+			code:        "WELCOME10",
+			kind:        "percent",
+			value:       10,
+			minSubtotal: 10000, // ₹100 min
+			maxUses:     &maxThousand,
+			description: "10% off your first order (min ₹100)",
+		},
+		{
+			id:          mustUUID("e0000001-0000-4000-8000-000000000002"),
+			code:        "FLAT50",
+			kind:        "fixed",
+			value:       5000, // ₹50 off
+			minSubtotal: 30000,
+			maxUses:     nil,
+			description: "Flat ₹50 off on orders above ₹300",
+		},
+		{
+			id:          mustUUID("e0000001-0000-4000-8000-000000000003"),
+			code:        "KIRANA20",
+			kind:        "percent",
+			value:       20,
+			minSubtotal: 50000,
+			maxUses:     nil,
+			description: "20% off on orders above ₹500",
+		},
+	}
 }

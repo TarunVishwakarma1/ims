@@ -22,7 +22,7 @@ type fakeCheckout struct {
 	placeErr      error
 }
 
-func (f *fakeCheckout) Summary(_ context.Context, _, _ uuid.UUID) (*srv.CheckoutSummary, error) {
+func (f *fakeCheckout) Summary(_ context.Context, _, _ uuid.UUID, _ string) (*srv.CheckoutSummary, error) {
 	return f.summaryResult, f.summaryErr
 }
 

@@ -32,9 +32,22 @@ var (
 
 // CheckoutService handles order placement (Summary + Place) for the B2C shop.
 type CheckoutService interface {
-	Summary(ctx context.Context, customerID, addressID uuid.UUID) (*CheckoutSummary, error)
+	Summary(ctx context.Context, customerID, addressID uuid.UUID, couponCode string) (*CheckoutSummary, error)
 	Place(ctx context.Context, in PlaceOrderInput) (*PlaceOrderResult, error)
 	PaymentOptions(ctx context.Context, customerID uuid.UUID) ([]PaymentOption, error)
+}
+
+// couponValidator is the slice of CouponService that we need.
+type couponValidator interface {
+	Validate(ctx context.Context, orgID uuid.UUID, code string, subtotal int64) (*domain.Coupon, int64, error)
+	Apply(ctx context.Context, c *domain.Coupon, orderID uuid.UUID, amountOff int64) error
+}
+
+// AppliedCoupon describes a coupon attached to a checkout summary or order.
+type AppliedCoupon struct {
+	Code         string `json:"code"`
+	DiscountType string `json:"discount_type"`
+	AmountOff    int64  `json:"amount_off_paise"`
 }
 
 // PaymentOption describes a single available payment method and whether it is
@@ -52,8 +65,11 @@ type CheckoutSummary struct {
 	Items             []CartItemView `json:"items"`
 	SubtotalPaise     int64          `json:"subtotal_paise"`
 	GSTPaise          int64          `json:"gst_paise"`
+	PlatformPaise     int64          `json:"platform_paise"`
+	DiscountPaise     int64          `json:"discount_paise"`
 	ShippingPaise     int64          `json:"shipping_paise"`
 	TotalPayablePaise int64          `json:"total_payable_paise"`
+	Coupon            *AppliedCoupon `json:"coupon,omitempty"`
 }
 
 // PlaceOrderInput carries everything needed to place a B2C order.
@@ -61,6 +77,7 @@ type PlaceOrderInput struct {
 	CustomerID    uuid.UUID
 	AddressID     uuid.UUID
 	PaymentMethod string // "razorpay" | "cod"
+	CouponCode    string // optional, applied at place time after re-validation
 	Notes         string
 }
 
@@ -80,6 +97,7 @@ type checkoutService struct {
 	addrRepo      repository.CustomerAddressRepository
 	paymentSvc    paymentCreator
 	orderRepo     repository.OrderRepository
+	couponSvc     couponValidator
 	razorpayKeyID string
 	codMinPaise   int64
 	codMaxPaise   int64
@@ -88,6 +106,7 @@ type checkoutService struct {
 
 // NewCheckoutService constructs a CheckoutService.
 // paymentSvc may be nil when only testing the COD path.
+// couponSvc may be nil when coupons are disabled.
 func NewCheckoutService(
 	pool *pgxpool.Pool,
 	orgID uuid.UUID,
@@ -95,6 +114,7 @@ func NewCheckoutService(
 	addrRepo repository.CustomerAddressRepository,
 	paymentSvc paymentCreator,
 	orderRepo repository.OrderRepository,
+	couponSvc couponValidator,
 	razorpayKeyID string,
 	codMinPaise int64,
 	codMaxPaise int64,
@@ -107,6 +127,7 @@ func NewCheckoutService(
 		addrRepo:      addrRepo,
 		paymentSvc:    paymentSvc,
 		orderRepo:     orderRepo,
+		couponSvc:     couponSvc,
 		razorpayKeyID: razorpayKeyID,
 		codMinPaise:   codMinPaise,
 		platformPaise: platformPaise,
@@ -115,8 +136,11 @@ func NewCheckoutService(
 }
 
 // Summary returns a pre-checkout price breakdown for the customer's cart.
-// V1: ShippingPaise = 0 (free shipping).
-func (s *checkoutService) Summary(ctx context.Context, customerID, addressID uuid.UUID) (*CheckoutSummary, error) {
+// If couponCode is non-empty and resolves to a valid coupon for the org +
+// subtotal, the discount is applied and surfaced in the returned summary.
+// An invalid coupon does not fail Summary — the caller can re-render and
+// surface the failure to the user via the returned error.
+func (s *checkoutService) Summary(ctx context.Context, customerID, addressID uuid.UUID, couponCode string) (*CheckoutSummary, error) {
 	addr, err := s.addrRepo.GetByID(ctx, addressID)
 	if err != nil {
 		return nil, err
@@ -167,12 +191,37 @@ func (s *checkoutService) Summary(ctx context.Context, customerID, addressID uui
 		})
 	}
 
+	platform := s.platformPaise
+
+	var discount int64
+	var applied *AppliedCoupon
+	if couponCode != "" && s.couponSvc != nil {
+		c, off, err := s.couponSvc.Validate(ctx, s.orgID, couponCode, subtotal)
+		if err != nil {
+			return nil, err
+		}
+		discount = off
+		applied = &AppliedCoupon{
+			Code:         c.Code,
+			DiscountType: string(c.DiscountType),
+			AmountOff:    off,
+		}
+	}
+
+	total := subtotal + gst + platform - discount
+	if total < 0 {
+		total = 0
+	}
+
 	return &CheckoutSummary{
 		Items:             views,
 		SubtotalPaise:     subtotal,
 		GSTPaise:          gst,
+		PlatformPaise:     platform,
+		DiscountPaise:     discount,
 		ShippingPaise:     0,
-		TotalPayablePaise: subtotal + gst,
+		TotalPayablePaise: total,
+		Coupon:            applied,
 	}, nil
 }
 
@@ -238,9 +287,25 @@ func (s *checkoutService) Place(ctx context.Context, in PlaceOrderInput) (*Place
 		).Scan(&rate)
 		gst += (int64(it.Qty) * it.UnitPricePaise * int64(rate)) / 100
 	}
-	// Platform fee always applies (non-waivable infra/support charge).
 	platform := s.platformPaise
-	total := subtotal + gst + platform
+
+	// Re-validate the coupon inside the tx so usage caps remain consistent
+	// across concurrent placements. Returns the discount we'll apply.
+	var discount int64
+	var couponDomain *domain.Coupon
+	if in.CouponCode != "" && s.couponSvc != nil {
+		c, off, err := s.couponSvc.Validate(ctx, s.orgID, in.CouponCode, subtotal)
+		if err != nil {
+			return nil, err
+		}
+		couponDomain = c
+		discount = off
+	}
+
+	total := subtotal + gst + platform - discount
+	if total < 0 {
+		total = 0
+	}
 
 	// --- COD totals round up to the nearest rupee so the rider doesn't have
 	//     to carry paise change. Capture the adjustment as its own line so
@@ -287,18 +352,25 @@ func (s *checkoutService) Place(ctx context.Context, in PlaceOrderInput) (*Place
 			id, org_id, customer_id, delivery_address_id,
 			status, order_type, total_amount, subtotal,
 			gst_paise, packing_paise, handling_paise, surge_paise,
-			platform_paise, delivery_fee, cod_round_paise,
+			platform_paise, delivery_fee, discount, cod_round_paise,
 			payment_status, delivery_address_snapshot, created_at, updated_at
 		) VALUES (
 			$1, $2, $3, $4,
 			$5, 'b2c', $6, $7,
 			$8, 0, 0, 0,
-			$9, 0, $10,
-			'unpaid', $11, NOW(), NOW()
+			$9, 0, $10, $11,
+			'unpaid', $12, NOW(), NOW()
 		)
-	`, orderID, s.orgID, custID, addrID, orderStatus, total, subtotal, gst, platform, codRound, snapshot)
+	`, orderID, s.orgID, custID, addrID, orderStatus, total, subtotal, gst, platform, discount, codRound, snapshot)
 	if err != nil {
 		return nil, fmt.Errorf("insert order: %w", err)
+	}
+
+	// Record coupon redemption + bump usage counter.
+	if couponDomain != nil {
+		if err := s.couponSvc.Apply(ctx, couponDomain, orderID, discount); err != nil {
+			return nil, fmt.Errorf("apply coupon: %w", err)
+		}
 	}
 
 	// Seed the timeline with a "placed" event (+ "confirmed" for COD which

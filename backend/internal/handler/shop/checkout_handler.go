@@ -31,12 +31,18 @@ func (h *CheckoutHandler) Summary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s, err := h.svc.Summary(r.Context(), cid, addrID)
+	coupon := r.URL.Query().Get("coupon")
+	s, err := h.svc.Summary(r.Context(), cid, addrID, coupon)
 	if err != nil {
 		switch {
 		case errors.Is(err, srv.ErrCartEmpty):
 			writeErr(w, http.StatusConflict, "cart_empty")
 		default:
+			// Coupon validation errors fall through to surface the message.
+			if coupon != "" {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "coupon_invalid", "message": err.Error()})
+				return
+			}
 			writeErr(w, http.StatusInternalServerError, "summary_failed")
 		}
 		return
@@ -60,6 +66,7 @@ func (h *CheckoutHandler) PaymentOptions(w http.ResponseWriter, r *http.Request)
 type placeReq struct {
 	AddressID     uuid.UUID `json:"address_id"`
 	PaymentMethod string    `json:"payment_method"`
+	CouponCode    string    `json:"coupon_code"`
 	Notes         string    `json:"notes"`
 }
 
@@ -77,6 +84,7 @@ func (h *CheckoutHandler) Place(w http.ResponseWriter, r *http.Request) {
 		CustomerID:    cid,
 		AddressID:     req.AddressID,
 		PaymentMethod: req.PaymentMethod,
+		CouponCode:    req.CouponCode,
 		Notes:         req.Notes,
 	})
 	if err != nil {
@@ -92,6 +100,10 @@ func (h *CheckoutHandler) Place(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, srv.ErrCODIneligible):
 			writeErr(w, http.StatusBadRequest, "cod_ineligible")
 		default:
+			if req.CouponCode != "" {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "coupon_invalid", "message": err.Error()})
+				return
+			}
 			writeErr(w, http.StatusInternalServerError, "place_failed")
 		}
 		return
