@@ -42,7 +42,7 @@ func withCustomerCtx(req *http.Request, customerID uuid.UUID) *http.Request {
 func TestOrderHandler_List_200(t *testing.T) {
 	h := shophandler.NewOrderHandler(&fakeShopOrders{
 		list: &srv.OrderListResult{Items: []srv.OrderCard{{InvoiceNumber: "INV1"}}},
-	})
+	}, nil)
 	customerID := uuid.New()
 	r := chi.NewRouter()
 	r.Get("/orders", h.List)
@@ -61,7 +61,7 @@ func TestOrderHandler_List_200(t *testing.T) {
 }
 
 func TestOrderHandler_Get_404(t *testing.T) {
-	h := shophandler.NewOrderHandler(&fakeShopOrders{detailErr: srv.ErrOrderNotFound})
+	h := shophandler.NewOrderHandler(&fakeShopOrders{detailErr: srv.ErrOrderNotFound}, nil)
 	customerID := uuid.New()
 	r := chi.NewRouter()
 	r.Get("/orders/{id}", h.Get)
@@ -77,7 +77,7 @@ func TestOrderHandler_Get_404(t *testing.T) {
 }
 
 func TestOrderHandler_List_InvalidCursor_400(t *testing.T) {
-	h := shophandler.NewOrderHandler(&fakeShopOrders{listErr: srv.ErrInvalidCursor})
+	h := shophandler.NewOrderHandler(&fakeShopOrders{listErr: srv.ErrInvalidCursor}, nil)
 	customerID := uuid.New()
 	r := chi.NewRouter()
 	r.Get("/orders", h.List)
@@ -96,7 +96,7 @@ func TestOrderHandler_List_InvalidCursor_400(t *testing.T) {
 }
 
 func TestOrderHandler_Cancel_409_ConflictState(t *testing.T) {
-	h := shophandler.NewOrderHandler(&fakeShopOrders{cancelErr: srv.ErrCancelNotAllowed})
+	h := shophandler.NewOrderHandler(&fakeShopOrders{cancelErr: srv.ErrCancelNotAllowed}, nil)
 	customerID := uuid.New()
 	r := chi.NewRouter()
 	r.Post("/orders/{id}/cancel", h.Cancel)

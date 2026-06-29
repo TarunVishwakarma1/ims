@@ -49,7 +49,7 @@ func TestPaymentOptions_EmptyCart_BothEnabled(t *testing.T) {
 			{ID: "cod", Enabled: true, MinPaise: 10000, MaxPaise: 500000},
 		},
 	}
-	h := NewCheckoutHandler(fake)
+	h := NewCheckoutHandler(fake, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/checkout/payment-options", nil)
 	req = withCIDPaymentOptions(req, uuid.New())
@@ -88,7 +88,7 @@ func TestPaymentOptions_CartUnderMin_CODDisabled_min_value_below(t *testing.T) {
 			{ID: "cod", Enabled: false, MinPaise: 10000, MaxPaise: 500000, Reason: "min_value_below"},
 		},
 	}
-	h := NewCheckoutHandler(fake)
+	h := NewCheckoutHandler(fake, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/checkout/payment-options", nil)
 	req = withCIDPaymentOptions(req, uuid.New())
@@ -124,7 +124,7 @@ func TestPaymentOptions_CartOverMax_CODDisabled_max_value_exceeded(t *testing.T)
 			{ID: "cod", Enabled: false, MinPaise: 10000, MaxPaise: 500000, Reason: "max_value_exceeded"},
 		},
 	}
-	h := NewCheckoutHandler(fake)
+	h := NewCheckoutHandler(fake, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/checkout/payment-options", nil)
 	req = withCIDPaymentOptions(req, uuid.New())
@@ -160,7 +160,7 @@ func TestPaymentOptions_CartInRange_BothEnabled(t *testing.T) {
 			{ID: "cod", Enabled: true, MinPaise: 10000, MaxPaise: 500000},
 		},
 	}
-	h := NewCheckoutHandler(fake)
+	h := NewCheckoutHandler(fake, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/checkout/payment-options", nil)
 	req = withCIDPaymentOptions(req, uuid.New())

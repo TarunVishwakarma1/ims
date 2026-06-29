@@ -46,7 +46,7 @@ func validVerifyBody(t *testing.T) []byte {
 }
 
 func newPaymentHandler(stub *stubPaySvc) *PaymentHandler {
-	return NewPaymentHandler(stub)
+	return NewPaymentHandler(stub, nil)
 }
 
 func doVerify(t *testing.T, h *PaymentHandler, body []byte, injectCID *uuid.UUID) *httptest.ResponseRecorder {

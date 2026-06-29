@@ -16,10 +16,13 @@ import (
 )
 
 type OrderHandler struct {
-	svc srv.ShopOrderService
+	svc      srv.ShopOrderService
+	notifier *srv.ShopNotifier // may be nil — notifications disabled
 }
 
-func NewOrderHandler(s srv.ShopOrderService) *OrderHandler { return &OrderHandler{s} }
+func NewOrderHandler(s srv.ShopOrderService, notifier *srv.ShopNotifier) *OrderHandler {
+	return &OrderHandler{svc: s, notifier: notifier}
+}
 
 func (h *OrderHandler) List(w http.ResponseWriter, r *http.Request) {
 	t0 := time.Now()
@@ -111,6 +114,8 @@ func (h *OrderHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 		writeErrShop(w, 500, "fetch_failed")
 		return
 	}
+
+	h.notifier.OrderCancelled(r.Context(), customerID, orderID)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "private, no-store")

@@ -13,12 +13,14 @@ import (
 
 // CheckoutHandler handles GET /checkout/summary and POST /checkout/place.
 type CheckoutHandler struct {
-	svc srv.CheckoutService
+	svc      srv.CheckoutService
+	notifier *srv.ShopNotifier // may be nil — notifications disabled
 }
 
 // NewCheckoutHandler constructs a CheckoutHandler backed by the given service.
-func NewCheckoutHandler(s srv.CheckoutService) *CheckoutHandler {
-	return &CheckoutHandler{s}
+// notifier may be nil to disable order emails.
+func NewCheckoutHandler(s srv.CheckoutService, notifier *srv.ShopNotifier) *CheckoutHandler {
+	return &CheckoutHandler{svc: s, notifier: notifier}
 }
 
 // Summary handles GET /checkout/summary?address_id=<uuid>.
@@ -107,6 +109,13 @@ func (h *CheckoutHandler) Place(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusInternalServerError, "place_failed")
 		}
 		return
+	}
+
+	// COD orders are confirmed immediately — email the customer now.
+	// Razorpay orders stay pending until payment; their confirmation email
+	// is sent on successful verification (PaymentReceived).
+	if req.PaymentMethod == "cod" {
+		h.notifier.OrderConfirmed(r.Context(), cid, res.OrderID)
 	}
 
 	writeJSON(w, http.StatusOK, res)

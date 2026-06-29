@@ -238,10 +238,13 @@ func main() {
 		cartSvc := shopsvc.NewCartService(cartRepo, pool, shopOrgID)
 		checkSvc := shopsvc.NewCheckoutService(pool, shopOrgID, cartRepo, addrRepo, paymentService, orderRepo, couponService, cfg.RazorpayKeyID, cfg.ShopCODMinPaise, cfg.ShopCODMaxPaise, cfg.ShopPlatformPaise, cfg.ShopShippingPaise, cfg.ShopFreeShipThreshPaise)
 
+		// Customer-facing order emails (queued for the notification worker).
+		shopNotifier := shopsvc.NewShopNotifier(notificationRepo, customerRepo, orderRepo, cfg.WebAppURL)
+
 		shopAuthH = shophandler.NewAuthHandler(otpSvc)
 		shopCustH = shophandler.NewCustomerHandler(custSvc)
 		shopCartH = shophandler.NewCartHandler(cartSvc)
-		shopCheckH = shophandler.NewCheckoutHandler(checkSvc)
+		shopCheckH = shophandler.NewCheckoutHandler(checkSvc, shopNotifier)
 
 		catalogSvc := shopsvc.NewCatalogService(pool, cacheClient, shopOrgID)
 		feedSvc := shopsvc.NewFeedService(pool, cacheClient, shopOrgID)
@@ -269,7 +272,7 @@ func main() {
 		shopBannerH = shophandler.NewBannerHandler(bannerSvc)
 
 		orderSvcShop := shopsvc.NewShopOrderService(pool, orderRepo, paymentService, shopOrgID)
-		shopOrderH = shophandler.NewOrderHandler(orderSvcShop)
+		shopOrderH = shophandler.NewOrderHandler(orderSvcShop, shopNotifier)
 
 		shopPaymentSvc := shopsvc.NewShopPaymentService(
 			pool, shopOrgID,
@@ -278,7 +281,7 @@ func main() {
 			cfg.RazorpayKeySecret,
 			cfg.RazorpayMockMode,
 		)
-		shopPaymentH = shophandler.NewPaymentHandler(shopPaymentSvc)
+		shopPaymentH = shophandler.NewPaymentHandler(shopPaymentSvc, shopNotifier)
 
 		if cfg.BannerSeedEnabled {
 			go func() {

@@ -13,12 +13,14 @@ import (
 
 // PaymentHandler handles Razorpay payment verification.
 type PaymentHandler struct {
-	svc srv.ShopPaymentService
+	svc      srv.ShopPaymentService
+	notifier *srv.ShopNotifier // may be nil — notifications disabled
 }
 
 // NewPaymentHandler constructs a PaymentHandler backed by the given service.
-func NewPaymentHandler(s srv.ShopPaymentService) *PaymentHandler {
-	return &PaymentHandler{svc: s}
+// notifier may be nil to disable payment emails.
+func NewPaymentHandler(s srv.ShopPaymentService, notifier *srv.ShopNotifier) *PaymentHandler {
+	return &PaymentHandler{svc: s, notifier: notifier}
 }
 
 type razorpayVerifyReq struct {
@@ -68,5 +70,9 @@ func (h *PaymentHandler) Verify(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+
+	// Payment verified — order is now confirmed. Email the receipt.
+	h.notifier.PaymentReceived(r.Context(), cid, req.OrderID)
+
 	writeJSON(w, http.StatusOK, res)
 }

@@ -55,7 +55,7 @@ func TestCheckoutHandler_Summary(t *testing.T) {
 	}
 
 	fake := &fakeCheckout{summaryResult: expected}
-	h := NewCheckoutHandler(fake)
+	h := NewCheckoutHandler(fake, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/checkout/summary?address_id="+addrID.String(), nil)
 	req = withCIDCheckout(req, cid)
@@ -78,7 +78,7 @@ func TestCheckoutHandler_Summary(t *testing.T) {
 // TestCheckoutHandler_Summary_MissingAddress: no address_id query param → 400 + "address_required".
 func TestCheckoutHandler_Summary_MissingAddress(t *testing.T) {
 	fake := &fakeCheckout{}
-	h := NewCheckoutHandler(fake)
+	h := NewCheckoutHandler(fake, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/checkout/summary", nil)
 	req = withCIDCheckout(req, uuid.New())
@@ -110,7 +110,7 @@ func TestCheckoutHandler_Place_COD(t *testing.T) {
 	}
 
 	fake := &fakeCheckout{placeResult: expected}
-	h := NewCheckoutHandler(fake)
+	h := NewCheckoutHandler(fake, nil)
 
 	body := map[string]interface{}{
 		"address_id":     addrID,
@@ -145,7 +145,7 @@ func TestCheckoutHandler_Place_StockUnavailable(t *testing.T) {
 	addrID := uuid.New()
 
 	fake := &fakeCheckout{placeErr: srv.ErrInsufficientStock}
-	h := NewCheckoutHandler(fake)
+	h := NewCheckoutHandler(fake, nil)
 
 	body := map[string]interface{}{
 		"address_id":     addrID,
