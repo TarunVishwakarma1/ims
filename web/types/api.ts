@@ -388,3 +388,20 @@ export interface BannerInput {
   is_hero?: boolean;
   category_slug?: string;
 }
+
+// ── Admin: B2C shop orders ──────────────────────────────────────────────
+export type ShopOrderStatus =
+  | "pending" | "confirmed" | "shipped" | "delivered" | "cancelling" | "cancelled";
+
+export interface AdminShopOrder {
+  id: UUID;
+  invoice_number: string;
+  customer_name: string;
+  customer_phone: string;
+  status: ShopOrderStatus;
+  payment_status: string;
+  payment_method?: string;
+  total_paise: number;
+  item_count: number;
+  created_at: ISODate;
+}

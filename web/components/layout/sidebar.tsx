@@ -54,6 +54,7 @@ import {
   CreditCard,
   Ticket,
   Image as ImageIcon,
+  PackageCheck,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -96,6 +97,7 @@ const GROUPS: NavGroup[] = [
     icon: ShoppingCart,
     items: [
       { href: '/orders',      label: 'Orders',      icon: ShoppingCart, permission: PERMISSIONS.ORDERS_VIEW },
+      { href: '/shop-orders', label: 'Shop orders', icon: PackageCheck,  permission: PERMISSIONS.ORDERS_VIEW },
       { href: '/payments',    label: 'Payments',    icon: CreditCard,   permission: PERMISSIONS.PAYMENTS_VIEW },
       { href: '/coupons',     label: 'Coupons',     icon: Ticket,       permission: PERMISSIONS.COUPONS_VIEW },
       { href: '/returns',     label: 'Returns',     icon: Undo2,        permission: PERMISSIONS.ORDERS_VIEW },
