@@ -15,6 +15,7 @@ import type {
   ProductListQuery,
   ProductListResult,
   ProfileInput,
+  ShopSummary,
   VerifyRazorpayInput,
   VerifyRazorpayResult,
 } from "@/lib/shop-types";
@@ -208,6 +209,16 @@ export async function cancelOrder(id: string): Promise<{ status: string }> {
       credentials: "include",
     }),
   );
+}
+
+// ── Shop directory ──────────────────────────────────────────────────────
+
+export async function fetchShops(pincode?: string): Promise<ShopSummary[]> {
+  const qs = pincode ? `?pincode=${encodeURIComponent(pincode)}` : "";
+  const r = await jsonOrThrow<{ shops: ShopSummary[] }>(
+    await fetch(`/api/shop/shops${qs}`, { credentials: "include" }),
+  );
+  return r.shops;
 }
 
 // ── Profile ─────────────────────────────────────────────────────────────

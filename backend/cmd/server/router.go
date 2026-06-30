@@ -50,6 +50,7 @@ func NewRouter(
 	shopOrderH *shophandler.OrderHandler,
 	shopPaymentH *shophandler.PaymentHandler,
 	adminShopOrderH *shophandler.AdminOrderHandler,
+	shopDirectoryH *shophandler.DirectoryHandler,
 	uploadDir string,
 ) http.Handler {
 	r := chi.NewRouter()
@@ -262,6 +263,7 @@ func NewRouter(
 	// B2C Shop routes
 	if shopEnabled {
 		r.Route("/api/shop", func(r chi.Router) {
+			r.Get("/shops", shopDirectoryH.List)
 			r.Get("/categories", shopCatalogH.ListCategories)
 			r.Get("/products", shopCatalogH.ListProducts)
 			r.Get("/products/{slug}", shopCatalogH.GetProductBySlug)

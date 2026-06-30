@@ -98,6 +98,17 @@ export type Cart = {
 
 // ── Checkout ────────────────────────────────────────────────────────────
 
+// ── Shop directory (P4 multi-shopkeeper) ────────────────────────────────
+export type ShopSummary = {
+  slug: string;
+  name: string;
+  tagline?: string;
+  logo_url?: string;
+  area?: string;
+  city?: string;
+  pincodes: string[];
+};
+
 export type AppliedCoupon = {
   code: string;
   discount_type: string;
