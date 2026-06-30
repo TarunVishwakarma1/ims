@@ -115,10 +115,10 @@ export function OrderDetailShell({ id, placed }: { id: string; placed: boolean }
           <span
             className={`inline-block px-2 py-1 rounded text-xs font-medium ${
               data.status === "delivered"
-                ? "bg-emerald-100 text-emerald-700"
+                ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
                 : data.status === "cancelled"
-                  ? "bg-red-100 text-red-700"
-                  : "bg-amber-100 text-amber-700"
+                  ? "bg-red-500/15 text-red-700 dark:text-red-400"
+                  : "bg-amber-500/15 text-amber-700 dark:text-amber-400"
             }`}
           >
             {data.status}

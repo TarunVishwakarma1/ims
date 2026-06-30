@@ -18,11 +18,11 @@ export function CouponInput({ applied, busy, error, onApply, onRemove }: Props) 
 
   if (applied) {
     return (
-      <div className="flex items-center justify-between gap-2 rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm">
-        <span className="flex items-center gap-2 font-medium text-emerald-700">
+      <div className="flex items-center justify-between gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm">
+        <span className="flex items-center gap-2 font-medium text-emerald-700 dark:text-emerald-400">
           <Tag className="size-4" />
           {applied.code}
-          <span className="font-normal text-emerald-600">
+          <span className="font-normal text-emerald-600 dark:text-emerald-500">
             −{formatPaise(applied.amount_off_paise)} applied
           </span>
         </span>
@@ -30,7 +30,7 @@ export function CouponInput({ applied, busy, error, onApply, onRemove }: Props) 
           type="button"
           onClick={onRemove}
           aria-label="Remove coupon"
-          className="rounded p-1 text-emerald-700 hover:bg-emerald-100"
+          className="rounded p-1 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/15"
         >
           <X className="size-4" />
         </button>

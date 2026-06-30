@@ -42,11 +42,12 @@ export function ProductCard({ product }: { product: ProductCardType }) {
   return (
     <article
       className={cn(
-        "group rounded-2xl bg-bg border border-border overflow-hidden hover:shadow-md transition-shadow",
-        outOfStock && "opacity-60",
+        "group rounded-2xl bg-surface border border-border overflow-hidden transition-all duration-200",
+        "hover:-translate-y-0.5 hover:shadow-lg hover:border-brand-300",
+        outOfStock && "opacity-70",
       )}
     >
-      <div className="relative aspect-square bg-brand-50">
+      <div className="relative aspect-square bg-brand-50 overflow-hidden">
         <Link href={href} className="block absolute inset-0" aria-label={product.name}>
           {product.image_url ? (
             <Image
@@ -54,12 +55,17 @@ export function ProductCard({ product }: { product: ProductCardType }) {
               alt=""
               fill
               sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
-              className="object-cover"
+              className="object-cover transition-transform duration-300 group-hover:scale-105"
             />
           ) : (
             <div className="size-full bg-brand-100" />
           )}
         </Link>
+        {outOfStock && (
+          <span className="absolute top-2 left-2 z-10 rounded-full bg-fg/80 px-2 py-0.5 text-[10px] font-medium text-bg">
+            Out of stock
+          </span>
+        )}
         <button
           type="button"
           onClick={handleAdd}
@@ -67,21 +73,20 @@ export function ProductCard({ product }: { product: ProductCardType }) {
           aria-label={`Add ${product.name} to cart`}
           className={cn(
             "absolute bottom-2 right-2 z-10 size-9 rounded-full bg-brand-600 text-white",
-            "grid place-items-center shadow-md hover:bg-brand-700",
-            "disabled:bg-muted disabled:cursor-not-allowed",
+            "grid place-items-center shadow-md transition-transform hover:bg-brand-700 hover:scale-105 active:scale-95",
+            "disabled:bg-muted disabled:text-text-muted disabled:cursor-not-allowed disabled:shadow-none",
           )}
         >
           <Plus className="size-4" aria-hidden />
         </button>
       </div>
       <Link href={href} className="block p-3 space-y-1">
-        <h3 className="text-sm font-medium line-clamp-2 min-h-[2.5rem]">
+        <h3 className="text-sm font-medium line-clamp-2 min-h-[2.5rem] group-hover:text-brand-700 transition-colors">
           {product.name}
         </h3>
         <p className="text-base font-semibold text-brand-700">
           {paiseToINR(product.price_paise)}
         </p>
-        {outOfStock && <p className="text-xs text-text-muted">Out of stock</p>}
       </Link>
     </article>
   );
