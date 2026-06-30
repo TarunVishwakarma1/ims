@@ -1,44 +1,30 @@
 "use client";
 import Link from "next/link";
 import Image from "next/image";
-import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
-import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { paiseToINR } from "@/lib/format";
-import { useCartStore } from "@/lib/cart-store";
 import { useShopHref } from "@/lib/use-shop-slug";
+import { useAddToCart } from "@/lib/use-add-to-cart";
 import type { ProductCard as ProductCardType } from "@/lib/shop-types";
 
 export function ProductCard({ product }: { product: ProductCardType }) {
   const outOfStock = product.available_qty <= 0;
   const shopHref = useShopHref();
   const href = shopHref(`/p/${product.slug}`);
-  const add = useCartStore((s) => s.add);
-  const router = useRouter();
+  const addToCart = useAddToCart();
 
   async function handleAdd() {
     if (outOfStock) return;
-    try {
-      await add(
-        {
-          product_id: product.id,
-          slug: product.slug,
-          name: product.name,
-          image: product.image_url ?? "",
-          unit_price_paise: product.price_paise,
-          max_qty: product.available_qty,
-          qty: 0,
-        },
-        1,
-      );
-      toast.success("Added to cart", {
-        description: product.name,
-        action: { label: "View cart", onClick: () => router.push("/cart") },
-      });
-    } catch {
-      toast.error("Could not add to cart");
-    }
+    await addToCart({
+      product_id: product.id,
+      slug: product.slug,
+      name: product.name,
+      image: product.image_url ?? "",
+      unit_price_paise: product.price_paise,
+      max_qty: product.available_qty,
+      qty: 0,
+    });
   }
 
   return (

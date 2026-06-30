@@ -18,6 +18,9 @@ type CartRepository interface {
 	RemoveItem(ctx context.Context, customerID, productID uuid.UUID) error
 	Clear(ctx context.Context, customerID uuid.UUID) error
 	EnsureCart(ctx context.Context, customerID uuid.UUID) error
+	// SetShop binds the cart to a shop org (Zomato-style single-shop cart).
+	// Passing uuid.Nil clears the binding (used when the cart empties).
+	SetShop(ctx context.Context, customerID, orgID uuid.UUID) error
 }
 
 type cartRepository struct{ pool *pgxpool.Pool }
@@ -58,6 +61,23 @@ func (r *cartRepository) UpsertItem(ctx context.Context, customerID, productID u
 	return err
 }
 
+// SetShop binds (or, with uuid.Nil, unbinds) the cart's shop org. Ensures the
+// cart row exists first so a binding can be set before the first item lands.
+func (r *cartRepository) SetShop(ctx context.Context, customerID, orgID uuid.UUID) error {
+	if err := r.EnsureCart(ctx, customerID); err != nil {
+		return err
+	}
+	var org *uuid.UUID
+	if orgID != uuid.Nil {
+		org = &orgID
+	}
+	_, err := r.pool.Exec(ctx,
+		`UPDATE customer_carts SET org_id = $2, updated_at = NOW() WHERE customer_id = $1`,
+		customerID, org,
+	)
+	return err
+}
+
 // RemoveItem deletes a single item from the cart.
 func (r *cartRepository) RemoveItem(ctx context.Context, customerID, productID uuid.UUID) error {
 	_, err := r.pool.Exec(ctx,
@@ -67,10 +87,16 @@ func (r *cartRepository) RemoveItem(ctx context.Context, customerID, productID u
 	return err
 }
 
-// Clear removes all items from the customer's cart.
+// Clear removes all items from the customer's cart and unbinds its shop.
 func (r *cartRepository) Clear(ctx context.Context, customerID uuid.UUID) error {
-	_, err := r.pool.Exec(ctx,
+	if _, err := r.pool.Exec(ctx,
 		`DELETE FROM customer_cart_items WHERE customer_id = $1`,
+		customerID,
+	); err != nil {
+		return err
+	}
+	_, err := r.pool.Exec(ctx,
+		`UPDATE customer_carts SET org_id = NULL, updated_at = NOW() WHERE customer_id = $1`,
 		customerID,
 	)
 	return err
@@ -83,12 +109,17 @@ func (r *cartRepository) Get(ctx context.Context, customerID uuid.UUID) (*domain
 		CustomerID: customerID,
 		Items:      []domain.CartItem{},
 	}
-	// Scan updated_at if the cart row exists; ignore ErrNoRows (cart not yet created)
+	// Scan updated_at + bound shop if the cart row exists; ignore ErrNoRows
+	// (cart not yet created). org_id is NULL for an empty/unbound cart.
+	var org *uuid.UUID
 	if err := r.pool.QueryRow(ctx,
-		`SELECT updated_at FROM customer_carts WHERE customer_id = $1`,
+		`SELECT updated_at, org_id FROM customer_carts WHERE customer_id = $1`,
 		customerID,
-	).Scan(&cart.UpdatedAt); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+	).Scan(&cart.UpdatedAt, &org); err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return nil, err
+	}
+	if org != nil {
+		cart.ShopOrgID = *org
 	}
 
 	rows, err := r.pool.Query(ctx, `

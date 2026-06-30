@@ -1,10 +1,8 @@
 "use client";
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { ShoppingCart } from "lucide-react";
-import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { useCartStore } from "@/lib/cart-store";
+import { useAddToCart } from "@/lib/use-add-to-cart";
 import type { CartItem } from "@/lib/shop-types";
 
 type Props = {
@@ -15,19 +13,13 @@ type Props = {
 
 export function AddToCart({ item, qty, disabled }: Props) {
   const [pending, setPending] = useState(false);
-  const add = useCartStore((s) => s.add);
-  const router = useRouter();
+  const addToCart = useAddToCart();
 
   async function onClick() {
     if (disabled || pending) return;
     setPending(true);
     try {
-      await add({ ...item, qty: 0 }, qty);
-      toast.success("Added to cart", {
-        action: { label: "View cart", onClick: () => router.push("/cart") },
-      });
-    } catch {
-      toast.error("Could not add to cart");
+      await addToCart({ ...item, qty: 0 }, qty);
     } finally {
       setPending(false);
     }

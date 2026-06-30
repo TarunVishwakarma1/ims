@@ -111,15 +111,51 @@ export async function fetchCart(): Promise<Cart> {
   );
 }
 
-export async function addCartItem(productID: string, qty: number): Promise<Cart> {
-  return jsonOrThrow<Cart>(
-    await fetch("/api/shop/cart/items", {
+/**
+ * Thrown when adding an item from a different shop than the cart's current one
+ * (HTTP 409 cart_other_shop). Carries the cart's current shop so the UI can
+ * prompt "start a new cart?". Retry with replace=true to switch shops.
+ */
+export class CartShopConflictError extends Error {
+  code = "cart_other_shop" as const;
+  currentSlug: string;
+  currentName: string;
+  constructor(currentSlug: string, currentName: string) {
+    super("cart_other_shop");
+    this.currentSlug = currentSlug;
+    this.currentName = currentName;
+  }
+}
+
+export async function addCartItem(
+  shop: string,
+  productID: string,
+  qty: number,
+  replace = false,
+): Promise<Cart> {
+  const qs = replace ? "?replace=true" : "";
+  const res = await fetch(
+    `/api/shop/s/${encodeURIComponent(shop)}/cart/items${qs}`,
+    {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ product_id: productID, qty }),
-    }),
+    },
   );
+  if (res.status === 409) {
+    let slug = "",
+      name = "another shop";
+    try {
+      const b = (await res.json()) as { current_shop?: { slug: string; name: string } };
+      if (b.current_shop) {
+        slug = b.current_shop.slug;
+        name = b.current_shop.name || name;
+      }
+    } catch {}
+    throw new CartShopConflictError(slug, name);
+  }
+  return jsonOrThrow<Cart>(res);
 }
 
 export async function removeCartItem(productID: string): Promise<Cart> {
@@ -132,10 +168,11 @@ export async function removeCartItem(productID: string): Promise<Cart> {
 }
 
 export async function mergeCart(
+  shop: string,
   items: { product_id: string; qty: number }[],
 ): Promise<Cart> {
   return jsonOrThrow<Cart>(
-    await fetch("/api/shop/cart/merge", {
+    await fetch(`/api/shop/s/${encodeURIComponent(shop)}/cart/merge`, {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },

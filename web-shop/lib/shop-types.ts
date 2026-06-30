@@ -89,10 +89,18 @@ export type CartItem = {
   max_qty: number;
 };
 
+// The single shop a cart is bound to (Zomato-style one-shop cart).
+export type CartShop = {
+  org_id: string;
+  slug: string;
+  name: string;
+};
+
 export type Cart = {
   items: CartItem[];
   subtotal_paise: number;
   item_count: number;
+  shop?: CartShop;
   removed_items?: string[];
 };
 

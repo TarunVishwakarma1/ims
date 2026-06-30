@@ -16,16 +16,34 @@ import (
 // CartService manages a customer's shopping cart with stock clamping.
 type CartService interface {
 	Get(ctx context.Context, customerID uuid.UUID) (*CartView, error)
-	AddOrSet(ctx context.Context, customerID, productID uuid.UUID, qty int) (*CartView, error)
+	AddOrSet(ctx context.Context, customerID, productID uuid.UUID, qty int, replace bool) (*CartView, error)
 	Remove(ctx context.Context, customerID, productID uuid.UUID) (*CartView, error)
 	Clear(ctx context.Context, customerID uuid.UUID) error
 	Merge(ctx context.Context, customerID uuid.UUID, items []MergeItem) (*CartView, error)
+}
+
+// CartShopConflict is returned by AddOrSet when the cart already holds items
+// from a different shop and replace was not requested. It carries the current
+// shop's identity so the UI can prompt "start a new cart?".
+type CartShopConflict struct {
+	CurrentSlug string
+	CurrentName string
+}
+
+func (e *CartShopConflict) Error() string { return "cart_other_shop" }
+
+// CartShop identifies the single shop a cart is bound to.
+type CartShop struct {
+	OrgID uuid.UUID `json:"org_id"`
+	Slug  string    `json:"slug"`
+	Name  string    `json:"name"`
 }
 
 // CartView is the read model returned to callers.
 type CartView struct {
 	Items         []CartItemView `json:"items"`
 	SubtotalPaise int64          `json:"subtotal_paise"`
+	Shop          *CartShop      `json:"shop,omitempty"`
 	RemovedItems  []uuid.UUID    `json:"removed_items,omitempty"`
 	Warnings      []string       `json:"warnings,omitempty"`
 }
@@ -70,12 +88,34 @@ func NewCartService(r repository.CartRepository, pool *pgxpool.Pool, mainOrgID u
 	return &cartService{repo: r, pool: pool, orgID: mainOrgID}
 }
 
+// org returns the per-request shop org (slug-resolved by ResolveShop) or the
+// default org. AddOrSet/Merge run inside a shop storefront, so the request
+// carries the shop; Get/Remove run on the global cart and derive the shop from
+// the stored cart instead.
+func (s *cartService) org(ctx context.Context) uuid.UUID {
+	if id, ok := shopOrgFromContext(ctx); ok {
+		return id
+	}
+	return s.orgID
+}
+
+// shopInfo resolves a shop org's slug + display name for the cart view. Returns
+// empty strings when the org has no live profile (shouldn't happen for a bound
+// cart, but kept non-fatal).
+func (s *cartService) shopInfo(ctx context.Context, orgID uuid.UUID) (slug, name string) {
+	_ = s.pool.QueryRow(ctx,
+		`SELECT slug, display_name FROM shop_profiles WHERE org_id = $1`,
+		orgID,
+	).Scan(&slug, &name)
+	return slug, name
+}
+
 // loadSnap queries the product name, price, and current inventory for the
-// given product within the service's org. Returns pgx.ErrNoRows if the product
-// does not exist (or is not in the shop org).
+// given product within the given shop org. Returns pgx.ErrNoRows if the product
+// does not exist (or is not in that shop).
 //
 // V1: every product in the shop org is visible. shop_visible column lands in Plan 2 (000017).
-func (s *cartService) loadSnap(ctx context.Context, productID uuid.UUID) (*productSnap, error) {
+func (s *cartService) loadSnap(ctx context.Context, orgID, productID uuid.UUID) (*productSnap, error) {
 	sp := &productSnap{}
 	err := s.pool.QueryRow(ctx, `
 		SELECT COALESCE(p.shop_slug, ''),
@@ -86,7 +126,7 @@ func (s *cartService) loadSnap(ctx context.Context, productID uuid.UUID) (*produ
 		  FROM products p
 		  LEFT JOIN inventory i ON i.product_id = p.id
 		 WHERE p.id = $1 AND p.org_id = $2
-	`, productID, s.orgID).Scan(&sp.slug, &sp.name, &sp.imageURL, &sp.priceP, &sp.available)
+	`, productID, orgID).Scan(&sp.slug, &sp.name, &sp.imageURL, &sp.priceP, &sp.available)
 	if err != nil {
 		return nil, err
 	}
@@ -97,17 +137,40 @@ func (s *cartService) loadSnap(ctx context.Context, productID uuid.UUID) (*produ
 // qty must be positive. qty is clamped to available stock; if clamped-to-zero,
 // returns "out of stock". A "stock_clamped" warning is appended to the returned
 // CartView when clamping occurs.
-func (s *cartService) AddOrSet(ctx context.Context, customerID, productID uuid.UUID, qty int) (*CartView, error) {
+//
+// The cart is bound to a single shop (Zomato-style). The shop is taken from the
+// request (ResolveShop). If the cart already holds items from a different shop
+// and replace is false, returns *CartShopConflict so the UI can prompt; with
+// replace true the existing cart is cleared first and rebound to this shop.
+func (s *cartService) AddOrSet(ctx context.Context, customerID, productID uuid.UUID, qty int, replace bool) (*CartView, error) {
 	if qty <= 0 {
 		return nil, errors.New("qty must be positive")
 	}
 
-	sp, err := s.loadSnap(ctx, productID)
+	shopOrg := s.org(ctx)
+
+	sp, err := s.loadSnap(ctx, shopOrg, productID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, errors.New("product not found")
 		}
 		return nil, err
+	}
+
+	// Single-shop guard: a non-empty cart bound to a different shop blocks the
+	// add unless the caller explicitly replaces it.
+	cart, err := s.repo.Get(ctx, customerID)
+	if err != nil {
+		return nil, err
+	}
+	if len(cart.Items) > 0 && cart.ShopOrgID != uuid.Nil && cart.ShopOrgID != shopOrg {
+		if !replace {
+			slug, name := s.shopInfo(ctx, cart.ShopOrgID)
+			return nil, &CartShopConflict{CurrentSlug: slug, CurrentName: name}
+		}
+		if err := s.repo.Clear(ctx, customerID); err != nil {
+			return nil, err
+		}
 	}
 
 	warning := ""
@@ -120,6 +183,10 @@ func (s *cartService) AddOrSet(ctx context.Context, customerID, productID uuid.U
 	}
 
 	if err := s.repo.UpsertItem(ctx, customerID, productID, qty, sp.priceP); err != nil {
+		return nil, err
+	}
+	// Bind (or rebind) the cart to this shop now that it holds an item.
+	if err := s.repo.SetShop(ctx, customerID, shopOrg); err != nil {
 		return nil, err
 	}
 
@@ -145,8 +212,15 @@ func (s *cartService) Get(ctx context.Context, customerID uuid.UUID) (*CartView,
 
 	v := &CartView{Items: []CartItemView{}}
 
+	// Items belong to the cart's bound shop — snap against THAT org, not the
+	// request org (Get runs on the global cart route with no shop in context).
+	snapOrg := cart.ShopOrgID
+	if snapOrg == uuid.Nil {
+		snapOrg = s.org(ctx)
+	}
+
 	for _, it := range cart.Items {
-		sp, err := s.loadSnap(ctx, it.ProductID)
+		sp, err := s.loadSnap(ctx, snapOrg, it.ProductID)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				// Product no longer exists — remove from cart, report to caller.
@@ -176,16 +250,29 @@ func (s *cartService) Get(ctx context.Context, customerID uuid.UUID) (*CartView,
 		v.SubtotalPaise += int64(qty) * sp.priceP
 	}
 
+	if cart.ShopOrgID != uuid.Nil && len(v.Items) > 0 {
+		slug, name := s.shopInfo(ctx, cart.ShopOrgID)
+		v.Shop = &CartShop{OrgID: cart.ShopOrgID, Slug: slug, Name: name}
+	}
+
 	return v, nil
 }
 
 // Remove deletes a single item from the customer's cart and returns the
-// updated CartView.
+// updated CartView. When the cart empties, its shop binding is cleared so the
+// next add can pick any shop.
 func (s *cartService) Remove(ctx context.Context, customerID, productID uuid.UUID) (*CartView, error) {
 	if err := s.repo.RemoveItem(ctx, customerID, productID); err != nil {
 		return nil, err
 	}
-	return s.Get(ctx, customerID)
+	v, err := s.Get(ctx, customerID)
+	if err != nil {
+		return nil, err
+	}
+	if len(v.Items) == 0 {
+		_ = s.repo.SetShop(ctx, customerID, uuid.Nil)
+	}
+	return v, nil
 }
 
 // Clear removes all items from the customer's cart.
@@ -193,13 +280,15 @@ func (s *cartService) Clear(ctx context.Context, customerID uuid.UUID) error {
 	return s.repo.Clear(ctx, customerID)
 }
 
-// Merge applies a list of MergeItem entries to the customer's cart via AddOrSet.
-// Errors for individual items (e.g. product not found, out of stock) are
-// swallowed so a partial guest-cart merge does not fail entirely.
+// Merge folds a guest cart (single-shop) into the customer's server cart on
+// login. The guest cart belongs to the shop in context; replace=true so an
+// existing server cart from a different shop is superseded by the just-chosen
+// guest cart rather than erroring on the first item. Per-item errors (missing
+// product, out of stock) are swallowed so a partial merge still succeeds.
 func (s *cartService) Merge(ctx context.Context, customerID uuid.UUID, items []MergeItem) (*CartView, error) {
-	for _, it := range items {
-		if _, err := s.AddOrSet(ctx, customerID, it.ProductID, it.Qty); err != nil {
-			// Swallow per-item errors (missing product, out of stock, etc.)
+	for i, it := range items {
+		// Only the first item may need to clear a stale other-shop cart.
+		if _, err := s.AddOrSet(ctx, customerID, it.ProductID, it.Qty, i == 0); err != nil {
 			continue
 		}
 	}

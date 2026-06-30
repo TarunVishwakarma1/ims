@@ -8,6 +8,7 @@ import (
 
 type Cart struct {
 	CustomerID uuid.UUID  `json:"customer_id"`
+	ShopOrgID  uuid.UUID  `json:"shop_org_id"` // bound shop; uuid.Nil when cart is empty
 	UpdatedAt  time.Time  `json:"updated_at"`
 	Items      []CartItem `json:"items"`
 }

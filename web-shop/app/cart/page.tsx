@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Store } from "lucide-react";
 import { useCartStore, selectSubtotalPaise } from "@/lib/cart-store";
 import { CartLine } from "@/components/cart/cart-line";
 import { formatPaise } from "@/lib/format";
@@ -12,14 +13,17 @@ export default function CartPage() {
   const subtotal = useCartStore(selectSubtotalPaise);
   const setQty = useCartStore((s) => s.setQty);
   const remove = useCartStore((s) => s.remove);
+  const shopSlug = useCartStore((s) => s.shopSlug);
+  const shopName = useCartStore((s) => s.shopName);
+  const continueHref = shopSlug ? `/s/${shopSlug}` : "/shops";
 
   if (items.length === 0) {
     return (
       <main className="max-w-(--spacing-shop-page-max) mx-auto px-4 py-16 text-center">
         <h1 className="text-2xl font-semibold mb-3">Your cart is empty</h1>
         <p className="text-text-muted mb-6">Find something to start shopping.</p>
-        <Link href="/" className="inline-block h-10 px-6 rounded bg-brand-600 text-white grid place-items-center hover:bg-brand-700">
-          Browse shop
+        <Link href="/shops" className="inline-block h-10 px-6 rounded bg-brand-600 text-white grid place-items-center hover:bg-brand-700">
+          Browse shops
         </Link>
       </main>
     );
@@ -28,7 +32,16 @@ export default function CartPage() {
   return (
     <main className="max-w-(--spacing-shop-page-max) mx-auto px-4 py-8 grid gap-8 lg:grid-cols-[1fr_320px]">
       <section>
-        <h1 className="text-2xl font-semibold mb-4">Cart ({items.length})</h1>
+        <h1 className="text-2xl font-semibold mb-1">Cart ({items.length})</h1>
+        {shopName && (
+          <p className="mb-4 inline-flex items-center gap-1.5 text-sm text-text-muted">
+            <Store className="size-4 text-brand-600" aria-hidden />
+            from{" "}
+            <Link href={continueHref} className="font-medium text-fg hover:text-brand-700">
+              {shopName}
+            </Link>
+          </p>
+        )}
         <div className="border border-border rounded-lg px-4">
           {items.map((it) => (
             <CartLine
@@ -75,7 +88,7 @@ export default function CartPage() {
           Proceed to checkout
         </Link>
         <Link
-          href="/"
+          href={continueHref}
           className="block h-10 rounded border border-border text-sm grid place-items-center hover:bg-brand-50"
         >
           Continue shopping

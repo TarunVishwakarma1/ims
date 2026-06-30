@@ -39,7 +39,7 @@ func (f *fakeCart) Get(ctx context.Context, customerID uuid.UUID) (*srv.CartView
 	return v, nil
 }
 
-func (f *fakeCart) AddOrSet(ctx context.Context, customerID, productID uuid.UUID, qty int) (*srv.CartView, error) {
+func (f *fakeCart) AddOrSet(ctx context.Context, customerID, productID uuid.UUID, qty int, replace bool) (*srv.CartView, error) {
 	if qty <= 0 {
 		return nil, &validationError{"qty must be positive"}
 	}
@@ -64,7 +64,7 @@ func (f *fakeCart) Clear(ctx context.Context, customerID uuid.UUID) error {
 
 func (f *fakeCart) Merge(ctx context.Context, customerID uuid.UUID, items []srv.MergeItem) (*srv.CartView, error) {
 	for _, it := range items {
-		_, _ = f.AddOrSet(ctx, customerID, it.ProductID, it.Qty)
+		_, _ = f.AddOrSet(ctx, customerID, it.ProductID, it.Qty, false)
 	}
 	return f.Get(ctx, customerID)
 }

@@ -2,6 +2,7 @@ package shop
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -35,7 +36,10 @@ func (h *CartHandler) Get(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, v)
 }
 
-// AddItem adds or updates a product in the customer's cart
+// AddItem adds or updates a product in the customer's cart. The shop is taken
+// from the route ({shop} → ResolveShop). When the cart already holds items from
+// a different shop, responds 409 cart_other_shop with that shop's identity so
+// the UI can prompt; ?replace=true clears the old cart and switches shops.
 func (h *CartHandler) AddItem(w http.ResponseWriter, r *http.Request) {
 	cid, _ := middleware.GetCustomerIDFromContext(r.Context())
 	var req addItemReq
@@ -43,8 +47,20 @@ func (h *CartHandler) AddItem(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid_body")
 		return
 	}
-	v, err := h.svc.AddOrSet(r.Context(), cid, req.ProductID, req.Qty)
+	replace := r.URL.Query().Get("replace") == "true"
+	v, err := h.svc.AddOrSet(r.Context(), cid, req.ProductID, req.Qty, replace)
 	if err != nil {
+		var conflict *srv.CartShopConflict
+		if errors.As(err, &conflict) {
+			writeJSON(w, http.StatusConflict, map[string]any{
+				"error": "cart_other_shop",
+				"current_shop": map[string]string{
+					"slug": conflict.CurrentSlug,
+					"name": conflict.CurrentName,
+				},
+			})
+			return
+		}
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}

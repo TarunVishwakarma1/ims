@@ -287,9 +287,7 @@ func NewRouter(
 				r.Post("/addresses/{id}/default", shopCustH.SetDefaultAddress)
 
 				r.Get("/cart", shopCartH.Get)
-				r.Post("/cart/items", shopCartH.AddItem)
 				r.Delete("/cart/items/{product_id}", shopCartH.RemoveItem)
-				r.Post("/cart/merge", shopCartH.Merge)
 
 				r.Get("/checkout/summary", shopCheckH.Summary)
 				r.Get("/checkout/payment-options", shopCheckH.PaymentOptions)
@@ -312,6 +310,16 @@ func NewRouter(
 			r.Get("/products/{slug}", shopCatalogH.GetProductBySlug)
 			r.Get("/feed", shopCatalogH.Feed)
 			r.Get("/banners/active", shopBannerH.ListActive)
+
+			// Cart writes bind the single-shop cart to {shop} (P4 phase 3).
+			// Authed; this mount owns /api/shop/s/{shop}/* so the routes must
+			// live here rather than in the global authed group (which would be
+			// shadowed by this more-specific mount).
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.RequireCustomer(cfg.JWTSecret))
+				r.Post("/cart/items", shopCartH.AddItem)
+				r.Post("/cart/merge", shopCartH.Merge)
+			})
 		})
 	}
 

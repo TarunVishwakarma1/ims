@@ -66,7 +66,7 @@ func TestCheckoutSvc_Race_LastUnitExactlyOneWinner(t *testing.T) {
 			_, _ = pool.Exec(ctx, `DELETE FROM customer_addresses WHERE id=$1`, aID)
 		})
 
-		if _, err := cartSvc.AddOrSet(ctx, c.ID, prodID, 1); err != nil {
+		if _, err := cartSvc.AddOrSet(ctx, c.ID, prodID, 1, false); err != nil {
 			t.Fatalf("seed cart %d: %v", ii, err)
 		}
 

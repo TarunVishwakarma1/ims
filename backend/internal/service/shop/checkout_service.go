@@ -151,6 +151,17 @@ func (s *checkoutService) shippingFor(subtotal int64) int64 {
 	return s.shippingPaise
 }
 
+// cartOrg returns the shop the cart is bound to (P4 phase 3) — the order, its
+// items, coupon scope, payment and invoice are all created under THAT org. An
+// unbound cart (shouldn't happen once it holds items) falls back to the default
+// shop org so legacy single-shop carts keep working.
+func (s *checkoutService) cartOrg(cart *domain.Cart) uuid.UUID {
+	if cart.ShopOrgID != uuid.Nil {
+		return cart.ShopOrgID
+	}
+	return s.orgID
+}
+
 // Summary returns a pre-checkout price breakdown for the customer's cart.
 // If couponCode is non-empty and resolves to a valid coupon for the org +
 // subtotal, the discount is applied and surfaced in the returned summary.
@@ -172,6 +183,7 @@ func (s *checkoutService) Summary(ctx context.Context, customerID, addressID uui
 	if len(cart.Items) == 0 {
 		return nil, ErrCartEmpty
 	}
+	cartOrg := s.cartOrg(cart)
 
 	var subtotal, gst int64
 	views := make([]CartItemView, 0, len(cart.Items))
@@ -212,7 +224,7 @@ func (s *checkoutService) Summary(ctx context.Context, customerID, addressID uui
 	var discount int64
 	var applied *AppliedCoupon
 	if couponCode != "" && s.couponSvc != nil {
-		c, off, err := s.couponSvc.Validate(ctx, s.orgID, couponCode, subtotal)
+		c, off, err := s.couponSvc.Validate(ctx, cartOrg, couponCode, subtotal)
 		if err != nil {
 			return nil, err
 		}
@@ -273,6 +285,8 @@ func (s *checkoutService) Place(ctx context.Context, in PlaceOrderInput) (*Place
 	if len(cart.Items) == 0 {
 		return nil, ErrCartEmpty
 	}
+	// The order is created under the cart's bound shop (P4 phase 3).
+	cartOrg := s.cartOrg(cart)
 
 	// --- Begin transaction ---
 	tx, err := s.pool.Begin(ctx)
@@ -313,7 +327,7 @@ func (s *checkoutService) Place(ctx context.Context, in PlaceOrderInput) (*Place
 	var discount int64
 	var couponDomain *domain.Coupon
 	if in.CouponCode != "" && s.couponSvc != nil {
-		c, off, err := s.couponSvc.Validate(ctx, s.orgID, in.CouponCode, subtotal)
+		c, off, err := s.couponSvc.Validate(ctx, cartOrg, in.CouponCode, subtotal)
 		if err != nil {
 			return nil, err
 		}
@@ -382,7 +396,7 @@ func (s *checkoutService) Place(ctx context.Context, in PlaceOrderInput) (*Place
 			$9, $10, $11, $12,
 			'unpaid', $13, $14, NOW(), NOW()
 		)
-	`, orderID, s.orgID, custID, addrID, orderStatus, total, subtotal, gst, platform, shipping, discount, codRound, in.PaymentMethod, snapshot)
+	`, orderID, cartOrg, custID, addrID, orderStatus, total, subtotal, gst, platform, shipping, discount, codRound, in.PaymentMethod, snapshot)
 	if err != nil {
 		return nil, fmt.Errorf("insert order: %w", err)
 	}
@@ -417,7 +431,7 @@ func (s *checkoutService) Place(ctx context.Context, in PlaceOrderInput) (*Place
 		_, err = tx.Exec(ctx, `
 			INSERT INTO order_items (id, org_id, order_id, product_id, quantity, unit_price)
 			VALUES ($1, $2, $3, $4, $5, $6)
-		`, itemID, s.orgID, orderID, it.ProductID, it.Qty, it.UnitPricePaise)
+		`, itemID, cartOrg, orderID, it.ProductID, it.Qty, it.UnitPricePaise)
 		if err != nil {
 			return nil, fmt.Errorf("insert order_item: %w", err)
 		}
@@ -438,7 +452,7 @@ func (s *checkoutService) Place(ctx context.Context, in PlaceOrderInput) (*Place
 
 	// --- Allocate invoice number (after commit — AllocateInvoiceNumber uses pool) ---
 	fy := indianFYLabel(time.Now().UTC())
-	invNum, err := s.orderRepo.AllocateInvoiceNumber(ctx, orderID, s.orgID, fy)
+	invNum, err := s.orderRepo.AllocateInvoiceNumber(ctx, orderID, cartOrg, fy)
 	if err != nil {
 		zap.L().Error("allocate invoice number failed",
 			zap.String("order_id", orderID.String()),
@@ -457,7 +471,7 @@ func (s *checkoutService) Place(ctx context.Context, in PlaceOrderInput) (*Place
 		if s.paymentSvc == nil {
 			return nil, fmt.Errorf("payment service not configured")
 		}
-		payment, err := s.paymentSvc.CreateOrder(ctx, s.orgID, orderID, total)
+		payment, err := s.paymentSvc.CreateOrder(ctx, cartOrg, orderID, total)
 		if err != nil {
 			return nil, fmt.Errorf("razorpay create: %w", err)
 		}

@@ -21,7 +21,7 @@ func checkoutRandPhone() string {
 // adds qty=2 to cart, then places a COD order. Verifies:
 //   - res.OrderID is non-zero
 //   - res.InvoiceNumber is non-empty
-//   - res.PayablePaise == 10000 (qty*price, gst_rate defaults to 0)
+//   - res.PayablePaise == 10300 (qty*price 10000 + platform 300; gst_rate 0)
 //   - stock decremented 5 → 3
 //   - orders row has status='confirmed', order_type='b2c', payment_status='unpaid'
 //   - order_items has the right row
@@ -46,7 +46,7 @@ func TestCheckoutSvc_PlaceCOD_Success(t *testing.T) {
 
 	cartRepo := repository.NewCartRepository(pool)
 	cartSvc := shop.NewCartService(cartRepo, pool, orgID)
-	if _, err := cartSvc.AddOrSet(ctx, cust.ID, prodID, 2); err != nil {
+	if _, err := cartSvc.AddOrSet(ctx, cust.ID, prodID, 2, false); err != nil {
 		t.Fatalf("AddOrSet: %v", err)
 	}
 
@@ -67,8 +67,8 @@ func TestCheckoutSvc_PlaceCOD_Success(t *testing.T) {
 	if res.InvoiceNumber == "" {
 		t.Fatal("expected non-empty InvoiceNumber")
 	}
-	if res.PayablePaise != 10000 {
-		t.Fatalf("expected PayablePaise=10000, got %d", res.PayablePaise)
+	if res.PayablePaise != 10300 {
+		t.Fatalf("expected PayablePaise=10300, got %d", res.PayablePaise)
 	}
 
 	// stock should be 5-2=3
@@ -138,7 +138,7 @@ func TestCheckoutSvc_PlaceInsufficientStock(t *testing.T) {
 
 	cartRepo := repository.NewCartRepository(pool)
 	cartSvc := shop.NewCartService(cartRepo, pool, orgID)
-	if _, err := cartSvc.AddOrSet(ctx, cust.ID, prodID, 1); err != nil {
+	if _, err := cartSvc.AddOrSet(ctx, cust.ID, prodID, 1, false); err != nil {
 		t.Fatalf("AddOrSet: %v", err)
 	}
 
@@ -337,7 +337,7 @@ func TestCheckoutSvc_PaymentOptions_UnderMin(t *testing.T) {
 
 	cartRepo := repository.NewCartRepository(pool)
 	cartSvc := shop.NewCartService(cartRepo, pool, orgID)
-	if _, err := cartSvc.AddOrSet(ctx, cust.ID, prodID, 1); err != nil {
+	if _, err := cartSvc.AddOrSet(ctx, cust.ID, prodID, 1, false); err != nil {
 		t.Fatalf("AddOrSet: %v", err)
 	}
 
@@ -380,7 +380,7 @@ func TestCheckoutSvc_PaymentOptions_OverMax(t *testing.T) {
 
 	cartRepo := repository.NewCartRepository(pool)
 	cartSvc := shop.NewCartService(cartRepo, pool, orgID)
-	if _, err := cartSvc.AddOrSet(ctx, cust.ID, prodID, 1); err != nil {
+	if _, err := cartSvc.AddOrSet(ctx, cust.ID, prodID, 1, false); err != nil {
 		t.Fatalf("AddOrSet: %v", err)
 	}
 
@@ -423,7 +423,7 @@ func TestCheckoutSvc_PaymentOptions_InRange(t *testing.T) {
 
 	cartRepo := repository.NewCartRepository(pool)
 	cartSvc := shop.NewCartService(cartRepo, pool, orgID)
-	if _, err := cartSvc.AddOrSet(ctx, cust.ID, prodID, 1); err != nil {
+	if _, err := cartSvc.AddOrSet(ctx, cust.ID, prodID, 1, false); err != nil {
 		t.Fatalf("AddOrSet: %v", err)
 	}
 
@@ -475,7 +475,7 @@ func TestPlace_COD_UnderMin_ReturnsIneligible(t *testing.T) {
 
 	cartRepo := repository.NewCartRepository(pool)
 	cartSvc := shop.NewCartService(cartRepo, pool, orgID)
-	if _, err := cartSvc.AddOrSet(ctx, cust.ID, prodID, 1); err != nil {
+	if _, err := cartSvc.AddOrSet(ctx, cust.ID, prodID, 1, false); err != nil {
 		t.Fatalf("AddOrSet: %v", err)
 	}
 
@@ -514,7 +514,7 @@ func TestPlace_COD_OverMax_ReturnsIneligible(t *testing.T) {
 
 	cartRepo := repository.NewCartRepository(pool)
 	cartSvc := shop.NewCartService(cartRepo, pool, orgID)
-	if _, err := cartSvc.AddOrSet(ctx, cust.ID, prodID, 1); err != nil {
+	if _, err := cartSvc.AddOrSet(ctx, cust.ID, prodID, 1, false); err != nil {
 		t.Fatalf("AddOrSet: %v", err)
 	}
 
@@ -553,7 +553,7 @@ func TestPlace_COD_InRange_Places(t *testing.T) {
 
 	cartRepo := repository.NewCartRepository(pool)
 	cartSvc := shop.NewCartService(cartRepo, pool, orgID)
-	if _, err := cartSvc.AddOrSet(ctx, cust.ID, prodID, 1); err != nil {
+	if _, err := cartSvc.AddOrSet(ctx, cust.ID, prodID, 1, false); err != nil {
 		t.Fatalf("AddOrSet: %v", err)
 	}
 
@@ -600,7 +600,7 @@ func TestPlace_Razorpay_NotGatedByCODBounds(t *testing.T) {
 
 	cartRepo := repository.NewCartRepository(pool)
 	cartSvc := shop.NewCartService(cartRepo, pool, orgID)
-	if _, err := cartSvc.AddOrSet(ctx, cust.ID, prodID, 1); err != nil {
+	if _, err := cartSvc.AddOrSet(ctx, cust.ID, prodID, 1, false); err != nil {
 		t.Fatalf("AddOrSet: %v", err)
 	}
 
