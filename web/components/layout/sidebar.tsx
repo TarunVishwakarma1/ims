@@ -53,6 +53,7 @@ import {
   Webhook,
   CreditCard,
   Ticket,
+  Image as ImageIcon,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -83,9 +84,10 @@ const GROUPS: NavGroup[] = [
     label: 'Catalog',
     icon: Package,
     items: [
-      { href: '/products',   label: 'Products',   icon: Package, permission: PERMISSIONS.PRODUCTS_VIEW },
-      { href: '/categories', label: 'Categories', icon: Tags,    permission: PERMISSIONS.CATEGORIES_VIEW },
-      { href: '/inventory',  label: 'Inventory',  icon: Boxes,   permission: PERMISSIONS.INVENTORY_VIEW },
+      { href: '/products',   label: 'Products',   icon: Package,    permission: PERMISSIONS.PRODUCTS_VIEW },
+      { href: '/categories', label: 'Categories', icon: Tags,       permission: PERMISSIONS.CATEGORIES_VIEW },
+      { href: '/inventory',  label: 'Inventory',  icon: Boxes,      permission: PERMISSIONS.INVENTORY_VIEW },
+      { href: '/banners',    label: 'Banners',    icon: ImageIcon,  permission: PERMISSIONS.BANNERS_VIEW },
     ],
   },
   {

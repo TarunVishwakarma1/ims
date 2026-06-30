@@ -30,6 +30,9 @@ export const PERMISSIONS = {
 
   COUPONS_VIEW: 'coupons:view',
   COUPONS_MANAGE: 'coupons:manage',
+
+  BANNERS_VIEW: 'banners:view',
+  BANNERS_MANAGE: 'banners:manage',
 } as const
 
 export type Permission = typeof PERMISSIONS[keyof typeof PERMISSIONS]

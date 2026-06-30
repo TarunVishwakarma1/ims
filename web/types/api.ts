@@ -356,3 +356,35 @@ export interface CreatePaymentOrderResponse {
   currency: string;
   mock: boolean;
 }
+// ── Banners (home CMS) ──────────────────────────────────────────────────
+export type BannerStatus = "draft" | "published" | "archived";
+
+export interface Banner {
+  id: UUID;
+  title: string;
+  subtitle?: string;
+  image_url?: string;
+  cta_label?: string;
+  cta_link?: string;
+  event_key?: string;
+  starts_at: ISODate;
+  ends_at: ISODate;
+  status: BannerStatus;
+  sort_order: number;
+  is_hero: boolean;
+  category_slug?: string;
+}
+
+export interface BannerInput {
+  title: string;
+  subtitle?: string;
+  image_url?: string;
+  cta_label?: string;
+  cta_link?: string;
+  event_key?: string;
+  starts_at: ISODate;
+  ends_at: ISODate;
+  sort_order?: number;
+  is_hero?: boolean;
+  category_slug?: string;
+}
