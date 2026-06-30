@@ -15,11 +15,11 @@ export function SiteHeader() {
   return (
     <header className="sticky top-0 z-40 bg-bg/80 backdrop-blur-md border-b border-border">
       <div className="max-w-(--spacing-shop-page-max) mx-auto px-4 h-16 flex items-center gap-6">
-        <Link href={home} aria-label="Shop home" className="flex items-center gap-2 shrink-0">
+        <Link href={home} aria-label="Kirana home" className="flex items-center gap-2 shrink-0">
           <span className="size-8 grid place-items-center rounded-lg bg-brand-600 text-white shadow-sm">
             <ShoppingBasket className="size-5" />
           </span>
-          <span className="text-xl font-semibold tracking-tight text-fg">Shop</span>
+          <span className="text-xl font-semibold tracking-tight text-fg">Kirana</span>
         </Link>
         <HeaderSearch />
         <nav className="ml-auto flex items-center gap-1">

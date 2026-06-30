@@ -78,7 +78,7 @@ export function PlaceOrderButton({ addressID, paymentMethod, couponCode, custome
         keyID: res.razorpay_key_id,
         orderID: res.razorpay_order_id,
         amount: res.payable_paise,
-        name: "Shop",
+        name: "Kirana",
         prefill: { name: customerName, contact: customerPhone },
         onSuccess: async (rzp) => {
           try {
