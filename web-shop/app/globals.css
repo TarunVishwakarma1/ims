@@ -161,4 +161,21 @@
 @layer utilities {
   .scrollbar-hidden::-webkit-scrollbar { display: none; }
   .scrollbar-hidden { scrollbar-width: none; }
+
+  /* Seasonal hero rain: thin diagonal streaks drifting down. */
+  .season-rain {
+    background-image: repeating-linear-gradient(
+      114deg,
+      transparent 0 9px,
+      rgba(255, 255, 255, 0.10) 9px 10px
+    );
+    background-size: 64px 64px;
+    animation: season-rain-fall 0.9s linear infinite;
+  }
+  @keyframes season-rain-fall {
+    to { background-position: -64px 64px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .season-rain { animation: none; }
+  }
 }

@@ -1,4 +1,5 @@
 import { serverFetch, safeJson } from "@/lib/api";
+import { SeasonalHero } from "@/components/home/seasonal-hero";
 import { BannerHero } from "@/components/home/banner-hero";
 import { BannerCarousel } from "@/components/home/banner-carousel";
 import { CategoryRow } from "@/components/home/category-row";
@@ -28,6 +29,7 @@ export default async function HomePage() {
   const { banners, categories, feed } = await loadHomeData();
   return (
     <div className="space-y-8">
+      <SeasonalHero />
       {banners.hero && <BannerHero banner={banners.hero} />}
       {banners.carousel.length > 0 && (
         <BannerCarousel banners={banners.carousel} />
