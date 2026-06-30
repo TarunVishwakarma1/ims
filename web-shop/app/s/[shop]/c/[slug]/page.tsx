@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { serverFetch, safeJson } from "@/lib/api";
+import { shopHref } from "@/lib/shop-path";
 import { ProductGridPage } from "@/components/catalog/product-grid-page";
 import { SortDropdown } from "@/components/catalog/sort-dropdown";
 import { InStockToggle } from "@/components/catalog/in-stock-toggle";
@@ -17,23 +18,24 @@ export const dynamic = "force-dynamic";
 const SLUG_RE = /^[a-z0-9-]+$/;
 
 type PageProps = {
-  params: Promise<{ slug: string }>;
+  params: Promise<{ shop: string; slug: string }>;
   searchParams: Promise<{ sort?: string; in_stock?: string }>;
 };
 
 export default async function CategoryPage({ params, searchParams }: PageProps) {
-  const { slug } = await params;
+  const { shop, slug } = await params;
   if (!SLUG_RE.test(slug)) notFound();
   const sp = await searchParams;
+  const base = `/api/shop/s/${shop}`;
 
   const sort: ProductSort = sp.sort && isProductSort(sp.sort) ? sp.sort : "newest";
   const inStock = sp.in_stock === "true";
 
   const [categories, initial] = await Promise.all([
-    safeJson<Category[]>(serverFetch("/api/shop/categories"), []),
+    safeJson<Category[]>(serverFetch(`${base}/categories`), []),
     safeJson<ProductListResult>(
       serverFetch(
-        `/api/shop/products?category=${encodeURIComponent(slug)}&sort=${sort}` +
+        `${base}/products?category=${encodeURIComponent(slug)}&sort=${sort}` +
           (inStock ? "&in_stock=true" : "") +
           "&limit=24",
       ),
@@ -54,7 +56,7 @@ export default async function CategoryPage({ params, searchParams }: PageProps) 
   return (
     <div className="space-y-6">
       <nav className="text-sm text-text-muted">
-        <Link href="/" className="hover:underline">Home</Link>
+        <Link href={shopHref(shop)} className="hover:underline">Home</Link>
         <span className="mx-1">›</span>
         <span aria-current="page">{category.name}</span>
       </nav>

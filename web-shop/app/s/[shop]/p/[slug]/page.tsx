@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { serverFetch } from "@/lib/api";
+import { shopHref } from "@/lib/shop-path";
 import { ProductGallery } from "@/components/pdp/product-gallery";
 import { PdpBuyBox } from "@/components/pdp/pdp-buy-box";
 import { paiseToINR } from "@/lib/format";
@@ -10,13 +11,13 @@ export const dynamic = "force-dynamic";
 
 const SLUG_RE = /^[a-z0-9-]+$/;
 
-type PageProps = { params: Promise<{ slug: string }> };
+type PageProps = { params: Promise<{ shop: string; slug: string }> };
 
-function FailShell() {
+function FailShell({ shop }: { shop: string }) {
   return (
     <div className="space-y-4 text-center py-12">
       <p className="text-lg">Unable to load product.</p>
-      <Link href="/" className="text-brand-600 hover:underline">
+      <Link href={shopHref(shop)} className="text-brand-600 hover:underline">
         Back to home
       </Link>
     </div>
@@ -24,25 +25,25 @@ function FailShell() {
 }
 
 export default async function ProductPage({ params }: PageProps) {
-  const { slug } = await params;
+  const { shop, slug } = await params;
   if (!SLUG_RE.test(slug)) notFound();
 
   let res: Response | null = null;
   try {
-    res = await serverFetch(`/api/shop/products/${slug}`);
+    res = await serverFetch(`/api/shop/s/${shop}/products/${slug}`);
   } catch {
     res = null;
   }
 
-  if (!res) return <FailShell />;
+  if (!res) return <FailShell shop={shop} />;
   if (res.status === 404) notFound();
-  if (!res.ok) return <FailShell />;
+  if (!res.ok) return <FailShell shop={shop} />;
 
   let product: ProductDetail;
   try {
     product = (await res.json()) as ProductDetail;
   } catch {
-    return <FailShell />;
+    return <FailShell shop={shop} />;
   }
 
   const outOfStock = product.available_qty <= 0;
@@ -56,13 +57,16 @@ export default async function ProductPage({ params }: PageProps) {
   return (
     <div className="space-y-6">
       <nav className="text-sm text-text-muted">
-        <Link href="/" className="hover:underline">Home</Link>
+        <Link href={shopHref(shop)} className="hover:underline">Home</Link>
         {product.category_slug &&
           SLUG_RE.test(product.category_slug) &&
           product.category_name && (
             <>
               <span className="mx-1">›</span>
-              <Link href={`/c/${product.category_slug}`} className="hover:underline">
+              <Link
+                href={shopHref(shop, `/c/${product.category_slug}`)}
+                className="hover:underline"
+              >
                 {product.category_name}
               </Link>
             </>

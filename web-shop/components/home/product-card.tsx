@@ -7,11 +7,13 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { paiseToINR } from "@/lib/format";
 import { useCartStore } from "@/lib/cart-store";
+import { useShopHref } from "@/lib/use-shop-slug";
 import type { ProductCard as ProductCardType } from "@/lib/shop-types";
 
 export function ProductCard({ product }: { product: ProductCardType }) {
   const outOfStock = product.available_qty <= 0;
-  const href = `/p/${product.slug}`;
+  const shopHref = useShopHref();
+  const href = shopHref(`/p/${product.slug}`);
   const add = useCartStore((s) => s.add);
   const router = useRouter();
 

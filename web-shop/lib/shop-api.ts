@@ -19,15 +19,21 @@ import type {
   VerifyRazorpayInput,
   VerifyRazorpayResult,
 } from "@/lib/shop-types";
+import { shopApiBase } from "@/lib/shop-path";
 
 /**
- * Browser-side fetch for feed pages. Uses same-origin /api/shop/feed which
- * Next rewrites to backend per next.config.ts. Cookies forwarded automatically.
+ * Browser-side fetch for feed pages. Scoped to a shop slug when given
+ * (/api/shop/s/<slug>/feed); a null slug uses the legacy default-org feed.
+ * Next rewrites same-origin /api/shop/* to backend per next.config.ts.
  */
-export async function fetchFeedPage(cursor?: string, limit = 24): Promise<FeedPage> {
+export async function fetchFeedPage(
+  shop: string | null,
+  cursor?: string,
+  limit = 24,
+): Promise<FeedPage> {
   const params = new URLSearchParams({ limit: String(limit) });
   if (cursor) params.set("cursor", cursor);
-  const res = await fetch(`/api/shop/feed?${params.toString()}`, {
+  const res = await fetch(`${shopApiBase(shop)}/feed?${params.toString()}`, {
     credentials: "include",
   });
   if (!res.ok) throw new Error(`feed fetch failed: ${res.status}`);
@@ -51,13 +57,14 @@ function buildProductParams(q: ProductListQuery): URLSearchParams {
  * InfiniteGrid loadMore).
  */
 export async function fetchProductList(
+  shop: string | null,
   q: ProductListQuery,
   signal?: AbortSignal,
 ): Promise<ProductListResult> {
-  const res = await fetch(`/api/shop/products?${buildProductParams(q).toString()}`, {
-    credentials: "include",
-    signal,
-  });
+  const res = await fetch(
+    `${shopApiBase(shop)}/products?${buildProductParams(q).toString()}`,
+    { credentials: "include", signal },
+  );
   if (!res.ok) throw new Error(`products fetch failed: ${res.status}`);
   return res.json();
 }
@@ -68,12 +75,13 @@ export async function fetchProductList(
  * (< 2 chars) return [] without hitting the network.
  */
 export async function fetchProductSuggestions(
+  shop: string | null,
   query: string,
   signal?: AbortSignal,
 ): Promise<ProductCard[]> {
   const trimmed = query.trim();
   if (trimmed.length < 2) return [];
-  const result = await fetchProductList({ search: trimmed, limit: 5 }, signal);
+  const result = await fetchProductList(shop, { search: trimmed, limit: 5 }, signal);
   return result.items;
 }
 

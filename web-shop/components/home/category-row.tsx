@@ -1,8 +1,15 @@
 import Link from "next/link";
 import Image from "next/image";
+import { shopHref } from "@/lib/shop-path";
 import type { Category } from "@/lib/shop-types";
 
-export function CategoryRow({ categories }: { categories: Category[] }) {
+export function CategoryRow({
+  categories,
+  shopSlug,
+}: {
+  categories: Category[];
+  shopSlug?: string;
+}) {
   return (
     <section>
       <h2 className="text-xl font-semibold mb-4">Shop by category</h2>
@@ -10,7 +17,7 @@ export function CategoryRow({ categories }: { categories: Category[] }) {
         {categories.map((c) => (
           <li key={c.id} className="flex-shrink-0">
             <Link
-              href={`/c/${c.slug}`}
+              href={shopHref(shopSlug, `/c/${c.slug}`)}
               className="flex flex-col items-center gap-2 w-24 rounded-xl bg-brand-50 p-3 hover:bg-brand-100 transition-colors"
             >
               <div className="relative size-14 rounded-full overflow-hidden bg-bg">

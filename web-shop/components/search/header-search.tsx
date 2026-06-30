@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { Search } from "lucide-react";
 import Image from "next/image";
 import { fetchProductSuggestions } from "@/lib/shop-api";
+import { useShopSlug, useShopHref } from "@/lib/use-shop-slug";
 import { paiseToINR } from "@/lib/format";
 import type { ProductCard } from "@/lib/shop-types";
 
@@ -11,6 +12,8 @@ const DEBOUNCE_MS = 300;
 
 export function HeaderSearch() {
   const router = useRouter();
+  const shop = useShopSlug();
+  const shopHref = useShopHref();
   const [q, setQ] = useState("");
   const [items, setItems] = useState<ProductCard[]>([]);
   const [open, setOpen] = useState(false);
@@ -26,7 +29,7 @@ export function HeaderSearch() {
     const ctl = new AbortController();
     const t = setTimeout(async () => {
       try {
-        const result = await fetchProductSuggestions(q, ctl.signal);
+        const result = await fetchProductSuggestions(shop, q, ctl.signal);
         setItems(result);
         setHighlight(-1);
       } catch {
@@ -37,7 +40,7 @@ export function HeaderSearch() {
       clearTimeout(t);
       ctl.abort();
     };
-  }, [q]);
+  }, [q, shop]);
 
   useEffect(() => {
     function onDocDown(e: MouseEvent) {
@@ -62,13 +65,13 @@ export function HeaderSearch() {
     if (!trimmed) return;
     setOpen(false);
     setQ("");
-    router.push(`/search?q=${encodeURIComponent(trimmed)}`);
+    router.push(shopHref(`/search?q=${encodeURIComponent(trimmed)}`));
   }
 
   function pickItem(slug: string) {
     setOpen(false);
     setQ("");
-    router.push(`/p/${slug}`);
+    router.push(shopHref(`/p/${slug}`));
   }
 
   function onListKey(e: React.KeyboardEvent) {

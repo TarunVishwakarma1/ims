@@ -1,14 +1,21 @@
+"use client";
 import Link from "next/link";
 import { Package, User, ShoppingBasket } from "lucide-react";
 import { HeaderSearch } from "@/components/search/header-search";
 import { CartIconButton } from "@/components/cart/cart-icon-button";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { useShopSlug } from "@/lib/use-shop-slug";
+import { shopHref } from "@/lib/shop-path";
 
 export function SiteHeader() {
+  const shop = useShopSlug();
+  // In a storefront the logo returns to that shop's home; on global pages
+  // (orders, profile, picker) it goes to the shop directory.
+  const home = shop ? shopHref(shop) : "/shops";
   return (
     <header className="sticky top-0 z-40 bg-bg/80 backdrop-blur-md border-b border-border">
       <div className="max-w-(--spacing-shop-page-max) mx-auto px-4 h-16 flex items-center gap-6">
-        <Link href="/" aria-label="Shop home" className="flex items-center gap-2 shrink-0">
+        <Link href={home} aria-label="Shop home" className="flex items-center gap-2 shrink-0">
           <span className="size-8 grid place-items-center rounded-lg bg-brand-600 text-white shadow-sm">
             <ShoppingBasket className="size-5" />
           </span>

@@ -12,10 +12,12 @@ import type {
 export const dynamic = "force-dynamic";
 
 type PageProps = {
+  params: Promise<{ shop: string }>;
   searchParams: Promise<{ q?: string; sort?: string; in_stock?: string }>;
 };
 
-export default async function SearchPage({ searchParams }: PageProps) {
+export default async function SearchPage({ params, searchParams }: PageProps) {
+  const { shop } = await params;
   const sp = await searchParams;
   const q = (sp.q ?? "").trim();
   const sort: ProductSort = sp.sort && isProductSort(sp.sort) ? sp.sort : "newest";
@@ -32,7 +34,7 @@ export default async function SearchPage({ searchParams }: PageProps) {
 
   const initial = await safeJson<ProductListResult>(
     serverFetch(
-      `/api/shop/products?search=${encodeURIComponent(q)}&sort=${sort}` +
+      `/api/shop/s/${shop}/products?search=${encodeURIComponent(q)}&sort=${sort}` +
         (inStock ? "&in_stock=true" : "") +
         "&limit=24",
     ),

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Minus, Plus, Trash2 } from "lucide-react";
 import type { CartItem } from "@/lib/shop-types";
 import { formatPaise } from "@/lib/format";
+import { useStoredShopHref } from "@/lib/use-stored-shop";
 
 type Props = {
   item: CartItem;
@@ -14,15 +15,17 @@ type Props = {
 };
 
 export function CartLine({ item, onQtyChange, onRemove, disabled }: Props) {
+  const shopHref = useStoredShopHref();
+  const href = shopHref(`/p/${item.slug}`);
   return (
     <div className="flex gap-3 py-3 border-b border-border last:border-0">
-      <Link href={`/p/${item.slug}`} className="relative w-16 h-16 shrink-0 bg-bg-muted rounded overflow-hidden">
+      <Link href={href} className="relative w-16 h-16 shrink-0 bg-bg-muted rounded overflow-hidden">
         {item.image && (
           <Image src={item.image} alt={item.name} fill className="object-cover" sizes="64px" />
         )}
       </Link>
       <div className="flex-1 min-w-0">
-        <Link href={`/p/${item.slug}`} className="block text-sm font-medium line-clamp-2 hover:text-brand-600">
+        <Link href={href} className="block text-sm font-medium line-clamp-2 hover:text-brand-600">
           {item.name}
         </Link>
         <div className="text-sm text-text-muted mt-1">{formatPaise(item.unit_price_paise)}</div>

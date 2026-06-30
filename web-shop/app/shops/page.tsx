@@ -49,8 +49,7 @@ export default function ShopsPage() {
     } catch {
       /* ignore */
     }
-    // Per-shop storefront routing arrives in P4 phase 2; for now enter the shop.
-    router.push("/");
+    router.push(`/s/${slug}`);
   };
 
   return (

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { CloudRain, Sun, Sparkles, Snowflake, ArrowRight } from "lucide-react";
+import { shopHref } from "@/lib/shop-path";
 
 // A date-driven seasonal band — the home page's signature element. The season
 // is derived from the month so the hero stays timely without a CMS edit, and
@@ -84,7 +85,7 @@ function seasonFor(month: number): Season {
   };
 }
 
-export function SeasonalHero() {
+export function SeasonalHero({ shopSlug }: { shopSlug?: string }) {
   const s = seasonFor(new Date().getMonth() + 1);
   const { Icon } = s;
 
@@ -115,7 +116,7 @@ export function SeasonalHero() {
             {s.chips.map((c) => (
               <Link
                 key={c.slug}
-                href={`/c/${c.slug}`}
+                href={shopHref(shopSlug, `/c/${c.slug}`)}
                 className="group inline-flex items-center gap-1.5 rounded-full bg-white/95 px-4 py-2 text-sm font-medium text-neutral-900 shadow-sm transition hover:bg-white"
               >
                 {c.label}

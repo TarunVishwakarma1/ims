@@ -7,6 +7,7 @@ import { Printer, Package } from "lucide-react";
 import { fetchOrderDetail, cancelOrder } from "@/lib/shop-api";
 import type { ChargeLine, OrderDetail, TimelineEvent } from "@/lib/shop-types";
 import { formatPaise } from "@/lib/format";
+import { useStoredShopHref } from "@/lib/use-stored-shop";
 import { toast } from "sonner";
 
 type CancelState = "idle" | "confirming" | "cancelling";
@@ -68,6 +69,7 @@ function TimelineRow({ event, last }: { event: TimelineEvent; last: boolean }) {
 export function OrderDetailShell({ id, placed }: { id: string; placed: boolean }) {
   const [data, setData] = useState<OrderDetail | null>(null);
   const [cancelState, setCancelState] = useState<CancelState>("idle");
+  const shopHref = useStoredShopHref();
 
   const load = async () => {
     try {
@@ -148,7 +150,7 @@ export function OrderDetailShell({ id, placed }: { id: string; placed: boolean }
             return (
               <li key={it.product_id} className="flex items-center gap-3 p-3">
                 <Link
-                  href={`/p/${it.slug}`}
+                  href={shopHref(`/p/${it.slug}`)}
                   className="relative size-14 shrink-0 rounded overflow-hidden bg-brand-50 print:size-12"
                 >
                   {it.image ? (
@@ -158,7 +160,7 @@ export function OrderDetailShell({ id, placed }: { id: string; placed: boolean }
                   )}
                 </Link>
                 <div className="flex-1 min-w-0">
-                  <Link href={`/p/${it.slug}`} className="font-medium text-sm line-clamp-2 hover:text-brand-600">
+                  <Link href={shopHref(`/p/${it.slug}`)} className="font-medium text-sm line-clamp-2 hover:text-brand-600">
                     {it.name}
                   </Link>
                   <p className="text-xs text-text-muted">
