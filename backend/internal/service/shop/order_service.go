@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -93,18 +94,56 @@ type CancelResult struct {
 	EstimatedDays int    `json:"estimated_days,omitempty"`
 }
 
+// AdminOrderCard is a row in the admin shop-order list.
+type AdminOrderCard struct {
+	ID            uuid.UUID `json:"id"`
+	InvoiceNumber string    `json:"invoice_number"`
+	CustomerName  string    `json:"customer_name"`
+	CustomerPhone string    `json:"customer_phone"`
+	Status        string    `json:"status"`
+	PaymentStatus string    `json:"payment_status"`
+	PaymentMethod string    `json:"payment_method,omitempty"`
+	TotalAmount   int64     `json:"total_paise"`
+	ItemCount     int       `json:"item_count"`
+	CreatedAt     time.Time `json:"created_at"`
+}
+
 type ShopOrderService interface {
 	List(ctx context.Context, customerID uuid.UUID, q OrderListQuery) (*OrderListResult, error)
 	Get(ctx context.Context, customerID, orderID uuid.UUID) (*OrderDetail, error)
 	Cancel(ctx context.Context, customerID, orderID uuid.UUID) (*CancelResult, error)
+
+	// Admin (org-scoped, not customer-scoped).
+	AdminList(ctx context.Context, status string, limit, offset int) ([]AdminOrderCard, error)
+	// AdvanceStatus moves a b2c order to nextStatus (state machine enforced).
+	// Returns the owning customer id so the caller can notify them.
+	AdvanceStatus(ctx context.Context, orderID uuid.UUID, nextStatus string) (uuid.UUID, error)
 }
 
 var (
-	ErrOrderNotFound    = errors.New("order not found")
-	ErrCancelNotAllowed = errors.New("order status does not allow cancel")
-	ErrRefundFailed     = errors.New("refund request failed")
-	ErrInvalidCursor    = errors.New("invalid cursor")
+	ErrOrderNotFound     = errors.New("order not found")
+	ErrCancelNotAllowed  = errors.New("order status does not allow cancel")
+	ErrRefundFailed      = errors.New("refund request failed")
+	ErrInvalidCursor     = errors.New("invalid cursor")
+	ErrInvalidTransition = errors.New("status transition not allowed")
 )
+
+// shopStatusTransitions is the b2c order state machine for admin actions.
+// (Customer-initiated cancel is handled separately by Cancel.)
+var shopStatusTransitions = map[string][]string{
+	"pending":   {"confirmed", "cancelled"},
+	"confirmed": {"shipped", "cancelled"},
+	"shipped":   {"delivered"},
+}
+
+func canAdvance(from, to string) bool {
+	for _, s := range shopStatusTransitions[from] {
+		if s == to {
+			return true
+		}
+	}
+	return false
+}
 
 // paymentRefunder is the subset of service.PaymentService we need.
 // Defined here to avoid importing the parent service package and creating
@@ -412,4 +451,110 @@ func (s *shopOrderService) Cancel(ctx context.Context, customerID, orderID uuid.
 	}
 
 	return &CancelResult{Status: "cancelled", RefundQueued: false}, nil
+}
+
+// AdminList returns b2c orders for the shop org, newest first, optionally
+// filtered by status. Org-scoped — not tied to any single customer.
+func (s *shopOrderService) AdminList(ctx context.Context, status string, limit, offset int) ([]AdminOrderCard, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 30
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	args := []any{s.shopOrgID}
+	q := `
+		SELECT o.id, COALESCE(o.invoice_number,''), COALESCE(c.name,''), COALESCE(c.phone,''),
+		       o.status, o.payment_status, COALESCE(o.payment_method,''),
+		       o.total_amount,
+		       (SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = o.id),
+		       o.created_at
+		  FROM orders o
+		  LEFT JOIN customers c ON c.id = o.customer_id
+		 WHERE o.org_id = $1 AND o.order_type = 'b2c'`
+	if status != "" {
+		args = append(args, status)
+		q += ` AND o.status = $2`
+	}
+	args = append(args, limit, offset)
+	q += ` ORDER BY o.created_at DESC LIMIT $` + itoa(len(args)-1) + ` OFFSET $` + itoa(len(args))
+
+	rows, err := s.pool.Query(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []AdminOrderCard{}
+	for rows.Next() {
+		var c AdminOrderCard
+		if err := rows.Scan(
+			&c.ID, &c.InvoiceNumber, &c.CustomerName, &c.CustomerPhone,
+			&c.Status, &c.PaymentStatus, &c.PaymentMethod,
+			&c.TotalAmount, &c.ItemCount, &c.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+// AdvanceStatus applies a b2c state-machine transition inside a tx, stamps the
+// matching timestamp column, appends a timeline event, and returns the owning
+// customer id for notification.
+func (s *shopOrderService) AdvanceStatus(ctx context.Context, orderID uuid.UUID, nextStatus string) (uuid.UUID, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	var current string
+	var customerID uuid.UUID
+	err = tx.QueryRow(ctx, `
+		SELECT status, customer_id FROM orders
+		 WHERE id = $1 AND org_id = $2 AND order_type = 'b2c'
+		 FOR UPDATE`, orderID, s.shopOrgID).Scan(&current, &customerID)
+	if err != nil {
+		return uuid.Nil, ErrOrderNotFound
+	}
+	if !canAdvance(current, nextStatus) {
+		return uuid.Nil, ErrInvalidTransition
+	}
+
+	// Stamp the lifecycle timestamp matching the new status (best-effort columns).
+	tsCol := ""
+	switch nextStatus {
+	case "shipped":
+		tsCol = "shipped_at"
+	case "delivered":
+		tsCol = "delivered_at"
+	case "cancelled":
+		tsCol = "cancelled_at"
+	}
+	set := "status = $1, updated_at = NOW()"
+	if tsCol != "" {
+		set += ", " + tsCol + " = NOW()"
+	}
+	if _, err := tx.Exec(ctx,
+		`UPDATE orders SET `+set+` WHERE id = $2 AND org_id = $3`,
+		nextStatus, orderID, s.shopOrgID); err != nil {
+		return uuid.Nil, err
+	}
+
+	if _, err := tx.Exec(ctx,
+		`INSERT INTO order_events (order_id, status, note) VALUES ($1, $2, '')`,
+		orderID, nextStatus); err != nil {
+		return uuid.Nil, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return uuid.Nil, err
+	}
+	return customerID, nil
+}
+
+// itoa avoids importing strconv just for parameter indexing.
+func itoa(n int) string {
+	return fmt.Sprintf("%d", n)
 }

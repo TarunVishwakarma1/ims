@@ -49,6 +49,7 @@ func NewRouter(
 	shopBannerH *shophandler.BannerHandler,
 	shopOrderH *shophandler.OrderHandler,
 	shopPaymentH *shophandler.PaymentHandler,
+	adminShopOrderH *shophandler.AdminOrderHandler,
 	uploadDir string,
 ) http.Handler {
 	r := chi.NewRouter()
@@ -251,6 +252,10 @@ func NewRouter(
 			r.With(middleware.RequirePermission(rbac.BannersManage)).Post("/api/admin/banners/{id}/publish", adminBannerH.Publish)
 			r.With(middleware.RequirePermission(rbac.BannersManage)).Post("/api/admin/banners/{id}/archive", adminBannerH.Archive)
 			r.With(middleware.RequirePermission(rbac.BannersManage)).Delete("/api/admin/banners/{id}", adminBannerH.Delete)
+
+			// Admin B2C order management (list + advance status).
+			r.With(middleware.RequirePermission(rbac.OrdersView)).Get("/api/admin/shop/orders", adminShopOrderH.List)
+			r.With(middleware.RequirePermission(rbac.OrdersManage)).Put("/api/admin/shop/orders/{id}/status", adminShopOrderH.UpdateStatus)
 		}
 	})
 

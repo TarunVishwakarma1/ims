@@ -33,6 +33,12 @@ func (f *fakeShopOrders) Get(_ context.Context, _, _ uuid.UUID) (*srv.OrderDetai
 func (f *fakeShopOrders) Cancel(_ context.Context, _, _ uuid.UUID) (*srv.CancelResult, error) {
 	return f.cancel, f.cancelErr
 }
+func (f *fakeShopOrders) AdminList(_ context.Context, _ string, _, _ int) ([]srv.AdminOrderCard, error) {
+	return nil, nil
+}
+func (f *fakeShopOrders) AdvanceStatus(_ context.Context, _ uuid.UUID, _ string) (uuid.UUID, error) {
+	return uuid.Nil, nil
+}
 
 func withCustomerCtx(req *http.Request, customerID uuid.UUID) *http.Request {
 	ctx := context.WithValue(req.Context(), middleware.ContextKeyCustomerID, customerID)

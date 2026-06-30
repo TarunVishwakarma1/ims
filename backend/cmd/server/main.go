@@ -206,8 +206,9 @@ func main() {
 		shopCheckH   *shophandler.CheckoutHandler
 		shopCatalogH *shophandler.CatalogHandler
 		shopBannerH  *shophandler.BannerHandler
-		shopOrderH   *shophandler.OrderHandler
-		shopPaymentH *shophandler.PaymentHandler
+		shopOrderH      *shophandler.OrderHandler
+		adminShopOrderH *shophandler.AdminOrderHandler
+		shopPaymentH    *shophandler.PaymentHandler
 		adminBannerH *handler.AdminBannerHandler
 	)
 	if cfg.ShopEnabled {
@@ -275,6 +276,7 @@ func main() {
 
 		orderSvcShop := shopsvc.NewShopOrderService(pool, orderRepo, paymentService, shopOrgID)
 		shopOrderH = shophandler.NewOrderHandler(orderSvcShop, shopNotifier)
+		adminShopOrderH = shophandler.NewAdminOrderHandler(orderSvcShop, shopNotifier)
 
 		shopPaymentSvc := shopsvc.NewShopPaymentService(
 			pool, shopOrgID,
@@ -329,7 +331,7 @@ func main() {
 	webhookH := handler.NewWebhookHandler(paymentService)
 	eventsH := handler.NewEventsHandler(eventBus)
 
-	router := NewRouter(authH, userH, categoryH, productH, inventoryH, orderH, roleH, locationH, marketH, eventsH, paymentH, webhookH, partnerH, returnH, notificationH, auditH, totpH, couponH, cfg, pool, cacheClient, cfg.ShopEnabled, shopAuthH, shopCustH, shopCartH, shopCheckH, shopCatalogH, adminBannerH, shopBannerH, shopOrderH, shopPaymentH, cfg.UploadDir)
+	router := NewRouter(authH, userH, categoryH, productH, inventoryH, orderH, roleH, locationH, marketH, eventsH, paymentH, webhookH, partnerH, returnH, notificationH, auditH, totpH, couponH, cfg, pool, cacheClient, cfg.ShopEnabled, shopAuthH, shopCustH, shopCartH, shopCheckH, shopCatalogH, adminBannerH, shopBannerH, shopOrderH, shopPaymentH, adminShopOrderH, cfg.UploadDir)
 
 	server := &http.Server{
 		Addr:         ":" + cfg.Port,
