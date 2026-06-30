@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -52,6 +53,11 @@ func (h *CustomerHandler) UpdateMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.svc.Update(r.Context(), cid, req.Name, req.Email); err != nil {
+		// Email column is UNIQUE — surface a clean conflict instead of a 500.
+		if strings.Contains(err.Error(), "customers_email_key") {
+			writeErr(w, http.StatusConflict, "email_taken")
+			return
+		}
 		writeErr(w, http.StatusInternalServerError, "update_failed")
 		return
 	}

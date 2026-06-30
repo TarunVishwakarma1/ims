@@ -50,8 +50,9 @@ export function ProfileShell() {
       toast.success("Profile updated");
       setEditing(false);
       await load();
-    } catch {
-      toast.error("Could not update profile");
+    } catch (e) {
+      const code = (e as { code?: string }).code;
+      toast.error(code === "email_taken" ? "That email is already in use" : "Could not update profile");
     } finally {
       setSaving(false);
     }
