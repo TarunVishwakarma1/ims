@@ -66,6 +66,8 @@ services:
       dockerfile: Dockerfile
       args:
         BACKEND_URL: "http://backend:8080"
+        # Dev seed uses picsum.photos placeholders; allowlist for next/image.
+        SHOP_IMAGE_HOSTS: "picsum.photos"
     ports:
       - 3001:3001
     environment:

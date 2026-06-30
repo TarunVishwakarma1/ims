@@ -12,6 +12,11 @@ COPY . .
 # Docker service URL via build args; host dev falls back to localhost:8080.
 ARG BACKEND_URL=http://localhost:8080
 ENV BACKEND_URL=$BACKEND_URL
+# next/image remote host allowlist is baked into the standalone server at
+# build time, so SHOP_IMAGE_HOSTS must be present during `bun run build`
+# (.env is excluded by .dockerignore). Compose passes it as a build arg.
+ARG SHOP_IMAGE_HOSTS=""
+ENV SHOP_IMAGE_HOSTS=$SHOP_IMAGE_HOSTS
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN bun run build
 
