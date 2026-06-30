@@ -14,7 +14,7 @@ type Season = {
   gradient: string;
   glow: string;
   Icon: typeof CloudRain;
-  chips: { label: string; q: string }[];
+  chips: { label: string; slug: string }[];
 };
 
 function seasonFor(month: number): Season {
@@ -30,9 +30,9 @@ function seasonFor(month: number): Season {
       glow: "oklch(0.80 0.13 150)",
       Icon: CloudRain,
       chips: [
-        { label: "Chai & masala", q: "tea" },
-        { label: "Pakora kit", q: "besan" },
-        { label: "Hot soups", q: "soup" },
+        { label: "Chai & coffee", slug: "beverages" },
+        { label: "Hot snacks", slug: "snacks" },
+        { label: "Cooking staples", slug: "staples" },
       ],
     };
   }
@@ -46,9 +46,9 @@ function seasonFor(month: number): Season {
       glow: "oklch(0.82 0.14 200)",
       Icon: Sun,
       chips: [
-        { label: "Cold drinks", q: "juice" },
-        { label: "Ice cream", q: "ice cream" },
-        { label: "Fresh fruit", q: "mango" },
+        { label: "Cool drinks", slug: "beverages" },
+        { label: "Ice cream & dairy", slug: "dairy" },
+        { label: "Light snacks", slug: "snacks" },
       ],
     };
   }
@@ -62,9 +62,9 @@ function seasonFor(month: number): Season {
       glow: "oklch(0.82 0.16 75)",
       Icon: Sparkles,
       chips: [
-        { label: "Sweets", q: "sweet" },
-        { label: "Dry fruits", q: "almond" },
-        { label: "Ghee & oils", q: "ghee" },
+        { label: "Sweets & snacks", slug: "snacks" },
+        { label: "Ghee & dairy", slug: "dairy" },
+        { label: "Grains & dry fruit", slug: "staples" },
       ],
     };
   }
@@ -77,9 +77,9 @@ function seasonFor(month: number): Season {
     glow: "oklch(0.80 0.12 250)",
     Icon: Snowflake,
     chips: [
-      { label: "Hot soups", q: "soup" },
-      { label: "Dry fruits", q: "almond" },
-      { label: "Warming spices", q: "masala" },
+      { label: "Hot drinks", slug: "beverages" },
+      { label: "Pantry staples", slug: "staples" },
+      { label: "Namkeen", slug: "snacks" },
     ],
   };
 }
@@ -114,8 +114,8 @@ export function SeasonalHero() {
           <div className="flex flex-wrap gap-2 pt-1">
             {s.chips.map((c) => (
               <Link
-                key={c.q}
-                href={`/search?q=${encodeURIComponent(c.q)}`}
+                key={c.slug}
+                href={`/c/${c.slug}`}
                 className="group inline-flex items-center gap-1.5 rounded-full bg-white/95 px-4 py-2 text-sm font-medium text-neutral-900 shadow-sm transition hover:bg-white"
               >
                 {c.label}
