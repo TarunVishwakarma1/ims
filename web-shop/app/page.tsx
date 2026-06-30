@@ -1,7 +1,5 @@
 import { serverFetch, safeJson } from "@/lib/api";
 import { SeasonalHero } from "@/components/home/seasonal-hero";
-import { FestiveBanner } from "@/components/home/festive-banner";
-import { activeFestival } from "@/lib/festivals";
 import { BannerHero } from "@/components/home/banner-hero";
 import { BannerCarousel } from "@/components/home/banner-carousel";
 import { CategoryRow } from "@/components/home/category-row";
@@ -27,22 +25,13 @@ async function loadHomeData() {
   return { banners, categories, feed };
 }
 
-export default async function HomePage({
-  searchParams,
-}: {
-  searchParams: Promise<{ festival?: string }>;
-}) {
-  const [{ banners, categories, feed }, sp] = await Promise.all([
-    loadHomeData(),
-    searchParams,
-  ]);
-  // A live festival takes over the hero; otherwise the seasonal band shows.
-  // ?festival=<id> force-previews a specific festival banner.
-  const festival = activeFestival(new Date(), sp.festival);
+export default async function HomePage() {
+  const { banners, categories, feed } = await loadHomeData();
   return (
     <div className="space-y-8">
-      {festival ? <FestiveBanner preview={sp.festival} /> : <SeasonalHero />}
-      {banners.hero && <BannerHero banner={banners.hero} />}
+      {/* Admin-scheduled banner (festive/promo) owns the hero slot during its
+          window; otherwise the code-driven seasonal band is the default. */}
+      {banners.hero ? <BannerHero banner={banners.hero} /> : <SeasonalHero />}
       {banners.carousel.length > 0 && (
         <BannerCarousel banners={banners.carousel} />
       )}
