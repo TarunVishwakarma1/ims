@@ -2,9 +2,14 @@ package shop
 
 import (
 	"context"
+	"errors"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// ErrShopNotFound is returned when a slug doesn't map to a live shop.
+var ErrShopNotFound = errors.New("shop not found")
 
 // ShopSummary is a directory entry — one live consumer shop.
 type ShopSummary struct {
@@ -21,6 +26,8 @@ type ShopSummary struct {
 // that deliver to a given pincode.
 type ShopDirectoryService interface {
 	List(ctx context.Context, pincode string) ([]ShopSummary, error)
+	// OrgBySlug resolves a live shop's slug to its owning org id.
+	OrgBySlug(ctx context.Context, slug string) (uuid.UUID, error)
 }
 
 type shopDirectoryService struct {
@@ -58,4 +65,15 @@ func (s *shopDirectoryService) List(ctx context.Context, pincode string) ([]Shop
 		out = append(out, sm)
 	}
 	return out, rows.Err()
+}
+
+func (s *shopDirectoryService) OrgBySlug(ctx context.Context, slug string) (uuid.UUID, error) {
+	var id uuid.UUID
+	err := s.pool.QueryRow(ctx,
+		`SELECT org_id FROM shop_profiles WHERE slug = $1 AND is_live = TRUE`, slug,
+	).Scan(&id)
+	if err != nil {
+		return uuid.Nil, ErrShopNotFound
+	}
+	return id, nil
 }

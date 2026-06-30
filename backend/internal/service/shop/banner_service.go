@@ -78,13 +78,23 @@ func NewBannerService(repo repository.BannerRepository, c cache.Cache, orgID uui
 	return &bannerService{repo, c, orgID}
 }
 
+// org returns the per-request shop org (slug-resolved) or the default. Used by
+// the customer-facing ListActive; admin CRUD stays scoped to the default org.
+func (s *bannerService) org(ctx context.Context) uuid.UUID {
+	if id, ok := shopOrgFromContext(ctx); ok {
+		return id
+	}
+	return s.orgID
+}
+
 func (s *bannerService) ListActive(ctx context.Context, categorySlug string) (*ActiveBanners, error) {
-	key := bannerActiveKey(s.orgID, categorySlug)
+	org := s.org(ctx)
+	key := bannerActiveKey(org, categorySlug)
 	var cached ActiveBanners
 	if err := s.cache.Get(ctx, key, &cached); err == nil {
 		return &cached, nil
 	}
-	rows, err := s.repo.ListActive(ctx, s.orgID, categorySlug, time.Now().UTC())
+	rows, err := s.repo.ListActive(ctx, org, categorySlug, time.Now().UTC())
 	if err != nil {
 		return nil, err
 	}

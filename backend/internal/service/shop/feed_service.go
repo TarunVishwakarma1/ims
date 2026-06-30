@@ -72,6 +72,13 @@ func NewFeedService(pool *pgxpool.Pool, c cache.Cache, orgID uuid.UUID) FeedServ
 	return &feedService{pool, c, orgID}
 }
 
+func (s *feedService) org(ctx context.Context) uuid.UUID {
+	if id, ok := shopOrgFromContext(ctx); ok {
+		return id
+	}
+	return s.orgID
+}
+
 func (s *feedService) Page(ctx context.Context, cursor, seedCategory string, limit int) (*FeedPage, error) {
 	if limit <= 0 {
 		limit = 24
@@ -201,7 +208,7 @@ func (s *feedService) tierFromCategory(ctx context.Context, slug string, skip, n
 		  LEFT JOIN categories c ON c.id = p.category_id
 		 WHERE p.org_id=$1 AND p.shop_visible=TRUE AND c.slug=$2
 		 ORDER BY p.created_at DESC, p.id
-		 LIMIT $3 OFFSET $4`, s.orgID, slug, n+1, skip)
+		 LIMIT $3 OFFSET $4`, s.org(ctx), slug, n+1, skip)
 	return readProductCards(rows, err, n)
 }
 
@@ -222,13 +229,13 @@ func (s *feedService) tierRelated(ctx context.Context, slug string, skip, n int)
 		 WHERE p.org_id=$1 AND p.shop_visible=TRUE
 		   AND c.shop_visible=TRUE AND c.slug <> $2
 		 ORDER BY c.sort_order, p.created_at DESC, p.id
-		 LIMIT $3 OFFSET $4`, s.orgID, slug, n+1, skip)
+		 LIMIT $3 OFFSET $4`, s.org(ctx), slug, n+1, skip)
 	return readProductCards(rows, err, n)
 }
 
 func (s *feedService) tierPopular(ctx context.Context, skip, n int) ([]ProductCard, bool, error) {
 	var popMap map[uuid.UUID]int
-	_ = s.cache.Get(ctx, "shop:popular:"+s.orgID.String(), &popMap)
+	_ = s.cache.Get(ctx, "shop:popular:"+s.org(ctx).String(), &popMap)
 	// Fallback: plain newest if no popularity yet.
 	if len(popMap) == 0 {
 		rows, err := s.pool.Query(ctx, `
@@ -242,11 +249,11 @@ func (s *feedService) tierPopular(ctx context.Context, skip, n int) ([]ProductCa
 			  LEFT JOIN categories c ON c.id = p.category_id
 			 WHERE p.org_id=$1 AND p.shop_visible=TRUE
 			 ORDER BY p.created_at DESC, p.id
-			 LIMIT $2 OFFSET $3`, s.orgID, n+1, skip)
+			 LIMIT $2 OFFSET $3`, s.org(ctx), n+1, skip)
 		return readProductCards(rows, err, n)
 	}
 	// With popMap: VALUES join.
-	args := []any{s.orgID}
+	args := []any{s.org(ctx)}
 	var b strings.Builder
 	b.WriteString(`WITH pop(pid,score) AS (VALUES `)
 	first := true
@@ -289,7 +296,7 @@ func (s *feedService) tierRandom(ctx context.Context, seed string, skip, n int) 
 		  LEFT JOIN categories c ON c.id = p.category_id
 		 WHERE p.org_id=$1 AND p.shop_visible=TRUE
 		 ORDER BY md5(p.id::text || $2)
-		 LIMIT $3 OFFSET $4`, s.orgID, seed, n+1, skip)
+		 LIMIT $3 OFFSET $4`, s.org(ctx), seed, n+1, skip)
 	return readProductCards(rows, err, n)
 }
 

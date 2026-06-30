@@ -96,8 +96,17 @@ func NewCatalogService(pool *pgxpool.Pool, c cache.Cache, orgID uuid.UUID) Catal
 	return &catalogService{pool, c, orgID}
 }
 
+// org returns the shop org for this request: the slug-resolved shop org when a
+// per-shop route set it in context, otherwise the configured default org.
+func (s *catalogService) org(ctx context.Context) uuid.UUID {
+	if id, ok := shopOrgFromContext(ctx); ok {
+		return id
+	}
+	return s.orgID
+}
+
 func (s *catalogService) ListCategories(ctx context.Context) ([]CategoryView, error) {
-	key := fmt.Sprintf(keyCategories, s.orgID)
+	key := fmt.Sprintf(keyCategories, s.org(ctx))
 	var cached []CategoryView
 	if err := s.cache.Get(ctx, key, &cached); err == nil {
 		return cached, nil
@@ -116,7 +125,7 @@ func (s *catalogService) listCategoriesFromDB(ctx context.Context) ([]CategoryVi
 		  FROM categories
 		 WHERE org_id=$1 AND shop_visible=TRUE AND slug IS NOT NULL
 		 ORDER BY sort_order, name
-	`, s.orgID)
+	`, s.org(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -141,7 +150,7 @@ func (s *catalogService) ListProducts(ctx context.Context, q ProductListQuery) (
 		return nil, errors.New("invalid price range")
 	}
 
-	key := fmt.Sprintf(keyProductList, s.orgID, plistHash(q))
+	key := fmt.Sprintf(keyProductList, s.org(ctx), plistHash(q))
 	var cached ProductListResult
 	if err := s.cache.Get(ctx, key, &cached); err == nil {
 		return &cached, nil
@@ -162,12 +171,13 @@ func (s *catalogService) listProductsFromDB(ctx context.Context, q ProductListQu
 		return s.searchProducts(ctx, q, term)
 	}
 
-	whereSQL, args := s.buildWhere(q)
+	orgID := s.org(ctx)
+	whereSQL, args := s.buildWhere(orgID, q)
 	// Capture WHERE-only args for the count query (before ORDER BY VALUES args are appended).
 	whereArgCount := len(args)
 	var popMap map[uuid.UUID]int
 	if q.Sort == "popular" {
-		_ = s.cache.Get(ctx, "shop:popular:"+s.orgID.String(), &popMap)
+		_ = s.cache.Get(ctx, "shop:popular:"+orgID.String(), &popMap)
 	}
 	orderSQL := s.buildOrderByWithPop(q, popMap, &args)
 
@@ -258,8 +268,8 @@ func validateSort(s string) error {
 	return errors.New("invalid_sort")
 }
 
-func (s *catalogService) buildWhere(q ProductListQuery) (string, []any) {
-	args := []any{s.orgID}
+func (s *catalogService) buildWhere(orgID uuid.UUID, q ProductListQuery) (string, []any) {
+	args := []any{orgID}
 	clauses := []string{`p.org_id = $1`, `p.shop_visible = TRUE`}
 	if q.CategorySlug != "" {
 		args = append(args, q.CategorySlug)
@@ -354,7 +364,7 @@ func (s *catalogService) searchProducts(ctx context.Context, q ProductListQuery,
 	// (>= 0.4), or the product name starts with / contains the raw term as a
 	// substring (catches short queries like "parle" that miss FTS stemming
 	// and have low trgm scores on long product names).
-	args := []any{s.orgID, term}
+	args := []any{s.org(ctx), term}
 	clauses := []string{`p.org_id = $1`, `p.shop_visible = TRUE`,
 		`(p.search_vector @@ plainto_tsquery('english', $2)
 		  OR word_similarity($2, p.name) > 0.5
@@ -427,7 +437,7 @@ func (s *catalogService) searchProducts(ctx context.Context, q ProductListQuery,
 }
 
 func (s *catalogService) GetProductBySlug(ctx context.Context, slug string) (*ProductDetail, error) {
-	key := fmt.Sprintf(keyProductDetail, s.orgID, slug)
+	key := fmt.Sprintf(keyProductDetail, s.org(ctx), slug)
 	var cached ProductDetail
 	if err := s.cache.Get(ctx, key, &cached); err == nil {
 		return &cached, nil
@@ -456,7 +466,7 @@ func (s *catalogService) getProductFromDB(ctx context.Context, slug string) (*Pr
 		  LEFT JOIN inventory i ON i.product_id = p.id
 		  LEFT JOIN categories c ON c.id = p.category_id
 		 WHERE p.org_id=$1 AND p.shop_slug=$2 AND p.shop_visible=TRUE
-	`, s.orgID, slug).Scan(
+	`, s.org(ctx), slug).Scan(
 		&d.ID, &d.Slug, &d.Name, &d.PricePaise, &d.ImageURL, &d.AvailableQty, &d.CategorySlug,
 		&d.Description, &d.ImageURLs, &d.GSTRate, &d.CategoryName,
 	)

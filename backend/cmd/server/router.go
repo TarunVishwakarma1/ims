@@ -51,6 +51,7 @@ func NewRouter(
 	shopPaymentH *shophandler.PaymentHandler,
 	adminShopOrderH *shophandler.AdminOrderHandler,
 	shopDirectoryH *shophandler.DirectoryHandler,
+	shopResolve middleware.ShopResolver,
 	uploadDir string,
 ) http.Handler {
 	r := chi.NewRouter()
@@ -300,6 +301,17 @@ func NewRouter(
 				r.Get("/orders/{id}", shopOrderH.Get)
 				r.Post("/orders/{id}/cancel", shopOrderH.Cancel)
 			})
+		})
+
+		// Per-shop storefront (P4): {shop} slug resolves to the seller org,
+		// scoping catalog/feed/banners to that shop. Public, read-only.
+		r.Route("/api/shop/s/{shop}", func(r chi.Router) {
+			r.Use(middleware.ResolveShop(shopResolve))
+			r.Get("/categories", shopCatalogH.ListCategories)
+			r.Get("/products", shopCatalogH.ListProducts)
+			r.Get("/products/{slug}", shopCatalogH.GetProductBySlug)
+			r.Get("/feed", shopCatalogH.Feed)
+			r.Get("/banners/active", shopBannerH.ListActive)
 		})
 	}
 
