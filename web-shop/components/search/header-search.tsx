@@ -97,7 +97,7 @@ export function HeaderSearch() {
         }}
       >
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted" aria-hidden />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-text-muted" aria-hidden />
           <input
             ref={inputRef}
             type="search"
@@ -121,7 +121,7 @@ export function HeaderSearch() {
       {showDropdown && (
         <div className="absolute left-0 right-0 top-12 z-50 bg-bg border border-border rounded-xl shadow-lg overflow-hidden">
           {items.length === 0 ? (
-            <p className="p-4 text-sm text-muted">No matches.</p>
+            <p className="p-4 text-sm text-text-muted">No matches.</p>
           ) : (
             <ul id="header-search-list" role="listbox">
               {items.map((p, i) => (

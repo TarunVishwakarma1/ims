@@ -114,10 +114,10 @@ export function InfiniteGrid<T>({
       )}
       {!done && !error && <div ref={sentinelRef} className="h-px" aria-hidden />}
       {done && items.length > 0 && (
-        <p className="text-center text-sm text-muted mt-8">{doneMessage}</p>
+        <p className="text-center text-sm text-text-muted mt-8">{doneMessage}</p>
       )}
       {items.length === 0 && !loading && !error && (
-        <p className="text-center text-sm text-muted mt-8">{emptyMessage}</p>
+        <p className="text-center text-sm text-text-muted mt-8">{emptyMessage}</p>
       )}
     </div>
   );

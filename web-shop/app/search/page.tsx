@@ -25,7 +25,7 @@ export default async function SearchPage({ searchParams }: PageProps) {
     return (
       <div className="space-y-3">
         <h1 className="text-2xl font-semibold">Search</h1>
-        <p className="text-muted">Type a product name in the search bar above.</p>
+        <p className="text-text-muted">Type a product name in the search bar above.</p>
       </div>
     );
   }

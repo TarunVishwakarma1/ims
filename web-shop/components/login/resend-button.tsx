@@ -16,7 +16,7 @@ export function ResendButton({ onResend, cooldownSec = 30 }: Props) {
   }, [remaining]);
 
   if (remaining > 0) {
-    return <p className="text-sm text-muted">Resend code in {remaining}s</p>;
+    return <p className="text-sm text-text-muted">Resend code in {remaining}s</p>;
   }
 
   return (

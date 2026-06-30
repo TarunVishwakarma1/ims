@@ -27,7 +27,7 @@ export function SortDropdown({ value }: { value: ProductSort }) {
 
   return (
     <label className="flex items-center gap-2 text-sm">
-      <span className="text-muted">Sort:</span>
+      <span className="text-text-muted">Sort:</span>
       <select
         value={value}
         onChange={onChange}

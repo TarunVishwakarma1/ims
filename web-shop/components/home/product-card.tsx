@@ -81,7 +81,7 @@ export function ProductCard({ product }: { product: ProductCardType }) {
         <p className="text-base font-semibold text-brand-700">
           {paiseToINR(product.price_paise)}
         </p>
-        {outOfStock && <p className="text-xs text-muted">Out of stock</p>}
+        {outOfStock && <p className="text-xs text-text-muted">Out of stock</p>}
       </Link>
     </article>
   );

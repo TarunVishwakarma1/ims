@@ -55,7 +55,7 @@ export default async function ProductPage({ params }: PageProps) {
 
   return (
     <div className="space-y-6">
-      <nav className="text-sm text-muted">
+      <nav className="text-sm text-text-muted">
         <Link href="/" className="hover:underline">Home</Link>
         {product.category_slug &&
           SLUG_RE.test(product.category_slug) &&
@@ -104,7 +104,7 @@ export default async function ProductPage({ params }: PageProps) {
             outOfStock={outOfStock}
           />
 
-          <p className="text-xs text-muted">
+          <p className="text-xs text-text-muted">
             Inclusive of GST ({product.gst_rate}%)
           </p>
 

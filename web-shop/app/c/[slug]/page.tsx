@@ -53,7 +53,7 @@ export default async function CategoryPage({ params, searchParams }: PageProps) 
 
   return (
     <div className="space-y-6">
-      <nav className="text-sm text-muted">
+      <nav className="text-sm text-text-muted">
         <Link href="/" className="hover:underline">Home</Link>
         <span className="mx-1">›</span>
         <span aria-current="page">{category.name}</span>

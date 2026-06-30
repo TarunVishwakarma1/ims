@@ -22,7 +22,7 @@ export function QtyStepper({ value, onChange, max, min = 1, disabled }: Props) {
         aria-label="Decrease quantity"
         className={cn(
           "size-10 grid place-items-center",
-          atMin ? "text-muted cursor-not-allowed" : "hover:bg-brand-50",
+          atMin ? "text-text-muted cursor-not-allowed" : "hover:bg-brand-50",
         )}
       >
         <Minus className="size-4" aria-hidden />
@@ -37,7 +37,7 @@ export function QtyStepper({ value, onChange, max, min = 1, disabled }: Props) {
         aria-label="Increase quantity"
         className={cn(
           "size-10 grid place-items-center",
-          atMax ? "text-muted cursor-not-allowed" : "hover:bg-brand-50",
+          atMax ? "text-text-muted cursor-not-allowed" : "hover:bg-brand-50",
         )}
       >
         <Plus className="size-4" aria-hidden />
