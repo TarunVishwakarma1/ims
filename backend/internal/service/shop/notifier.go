@@ -26,18 +26,21 @@ type ShopNotifier struct {
 	notif     repository.NotificationRepository
 	customers repository.CustomerRepository
 	orders    repository.OrderRepository
+	pool      *pgxpool.Pool
 	webAppURL string
 }
 
 // NewShopNotifier wires the repositories the notifier needs. Any nil dependency
 // disables notifications (methods become no-ops via the nil receiver guard).
+// pool is used to look up the selling org's staff for new-order alerts.
 func NewShopNotifier(
 	notif repository.NotificationRepository,
 	customers repository.CustomerRepository,
 	orders repository.OrderRepository,
+	pool *pgxpool.Pool,
 	webAppURL string,
 ) *ShopNotifier {
-	return &ShopNotifier{notif: notif, customers: customers, orders: orders, webAppURL: webAppURL}
+	return &ShopNotifier{notif: notif, customers: customers, orders: orders, pool: pool, webAppURL: webAppURL}
 }
 
 // rupees formats a paise amount as an Indian-rupee string, e.g. 12345 → "₹123.45".
@@ -118,6 +121,7 @@ func (n *ShopNotifier) PaymentReceivedForOrder(ctx context.Context, orgID, order
 	if n == nil {
 		return
 	}
+	n.NotifySellerNewOrder(ctx, orderID)
 	if cid, ok := n.customerForOrder(ctx, orgID, orderID); ok {
 		n.PaymentReceived(ctx, cid, orderID)
 	}
@@ -167,11 +171,57 @@ func (n *ShopNotifier) RefundProcessedForOrder(ctx context.Context, orgID, order
 	n.enqueue(ctx, to, fmt.Sprintf("Refund processed — %s", inv), b.String())
 }
 
-// OrderConfirmed emails the customer that their order was placed.
+// NotifySellerNewOrder emails the selling org's active admins/managers that a
+// new order arrived. Looks up the order's org + total from the pool; no-ops
+// without a pool or when the org has no staff email. Enqueue failures are
+// logged, never surfaced — a missing seller email must not fail an order.
+func (n *ShopNotifier) NotifySellerNewOrder(ctx context.Context, orderID uuid.UUID) {
+	if n == nil || n.pool == nil {
+		return
+	}
+	var orgID uuid.UUID
+	var invoice string
+	var total int64
+	if err := n.pool.QueryRow(ctx,
+		`SELECT org_id, COALESCE(invoice_number,''), total_amount FROM orders WHERE id=$1`, orderID,
+	).Scan(&orgID, &invoice, &total); err != nil {
+		return
+	}
+	if invoice == "" {
+		invoice = orderID.String()[:8]
+	}
+
+	rows, err := n.pool.Query(ctx,
+		`SELECT email FROM users WHERE org_id=$1 AND is_active = TRUE AND role IN ('admin','manager')`, orgID)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+	var emails []string
+	for rows.Next() {
+		var e string
+		if err := rows.Scan(&e); err == nil && strings.TrimSpace(e) != "" {
+			emails = append(emails, strings.TrimSpace(e))
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return
+	}
+
+	body := fmt.Sprintf("You have a new order.\n\nInvoice: %s\nTotal: %s\n\nManage it from your dashboard.\n", invoice, rupees(total))
+	subject := fmt.Sprintf("New order — %s", invoice)
+	for _, to := range emails {
+		n.enqueue(ctx, to, subject, body)
+	}
+}
+
+// OrderConfirmed emails the customer that their order was placed, and alerts
+// the seller to the new order.
 func (n *ShopNotifier) OrderConfirmed(ctx context.Context, customerID, orderID uuid.UUID) {
 	if n == nil {
 		return
 	}
+	n.NotifySellerNewOrder(ctx, orderID)
 	to := n.recipientEmail(ctx, customerID)
 	if to == "" {
 		return

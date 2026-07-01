@@ -244,7 +244,7 @@ func main() {
 		checkSvc := shopsvc.NewCheckoutService(pool, shopOrgID, cartRepo, addrRepo, paymentService, orderRepo, couponService, cfg.RazorpayKeyID, cfg.ShopCODMinPaise, cfg.ShopCODMaxPaise, cfg.ShopPlatformPaise, cfg.ShopShippingPaise, cfg.ShopFreeShipThreshPaise)
 
 		// Customer-facing order emails (queued for the notification worker).
-		shopNotifier := shopsvc.NewShopNotifier(notificationRepo, customerRepo, orderRepo, cfg.WebAppURL)
+		shopNotifier := shopsvc.NewShopNotifier(notificationRepo, customerRepo, orderRepo, pool, cfg.WebAppURL)
 		// Razorpay webhook → bus → customer payment/refund emails.
 		shopsvc.StartPaymentEventListenersForLiveShops(ctx, eventBus, pool, shopOrgID, shopNotifier)
 
