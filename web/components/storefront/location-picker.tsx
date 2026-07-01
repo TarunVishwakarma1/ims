@@ -2,17 +2,9 @@
 
 import { useEffect, useMemo, useRef } from 'react'
 import { MapContainer, TileLayer, Marker, useMap } from 'react-leaflet'
-import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { reverseGeocode, type GeocodeResult } from '@/lib/geocode'
-
-// Leaflet's default marker icons break under bundlers; point them at the CDN.
-const icon = L.icon({
-  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-  iconSize: [25, 41], iconAnchor: [12, 41],
-})
+import { leafletDefaultIcon } from '@/lib/leaflet-icon'
 
 // Default centre: Pune. Used when the shop has no saved location yet.
 const DEFAULT: [number, number] = [18.5204, 73.8567]
@@ -70,7 +62,7 @@ export function LocationPicker({ lat, lng, onChange }: Props) {
           <Recenter lat={center[0]} lng={center[1]} />
           <Marker
             position={center}
-            icon={icon}
+            icon={leafletDefaultIcon}
             draggable
             eventHandlers={{
               dragend: (e) => {
