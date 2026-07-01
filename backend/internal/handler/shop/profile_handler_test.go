@@ -47,6 +47,10 @@ func TestProfileHandler_GetMine_404(t *testing.T) {
 	if rr.Code != http.StatusNotFound {
 		t.Fatalf("want 404, got %d", rr.Code)
 	}
+	// Error responses must be JSON, not text/plain (regression: was http.Error).
+	if ct := rr.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+		t.Fatalf("want application/json error body, got %q", ct)
+	}
 }
 
 func TestProfileHandler_Upsert_Conflict(t *testing.T) {

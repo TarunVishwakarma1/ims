@@ -32,16 +32,16 @@ type profileRequest struct {
 func (h *ProfileHandler) GetMine(w http.ResponseWriter, r *http.Request) {
 	orgID, ok := middleware.GetOrgIDFromContext(r.Context())
 	if !ok {
-		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		writeErr(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	p, err := h.svc.GetMine(r.Context(), orgID)
 	if errors.Is(err, domain.ErrNotFound) {
-		http.Error(w, `{"error":"no_profile"}`, http.StatusNotFound)
+		writeErr(w, http.StatusNotFound, "no_profile")
 		return
 	}
 	if err != nil {
-		http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
+		writeErr(w, http.StatusInternalServerError, "internal")
 		return
 	}
 	writeJSON(w, http.StatusOK, p)
@@ -50,12 +50,12 @@ func (h *ProfileHandler) GetMine(w http.ResponseWriter, r *http.Request) {
 func (h *ProfileHandler) Upsert(w http.ResponseWriter, r *http.Request) {
 	orgID, ok := middleware.GetOrgIDFromContext(r.Context())
 	if !ok {
-		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		writeErr(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	var req profileRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, `{"error":"bad_request"}`, http.StatusBadRequest)
+		writeErr(w, http.StatusBadRequest, "bad_request")
 		return
 	}
 	p, err := h.svc.Upsert(r.Context(), orgID, shopsvc.UpsertProfileInput{
@@ -70,7 +70,7 @@ func (h *ProfileHandler) Upsert(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, shopsvc.ErrInvalidProfileSlug), errors.Is(err, shopsvc.ErrGoLiveIncomplete):
 			writeErr(w, http.StatusUnprocessableEntity, err.Error())
 		default:
-			http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
+			writeErr(w, http.StatusInternalServerError, "internal")
 		}
 		return
 	}
