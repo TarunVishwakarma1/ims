@@ -577,6 +577,49 @@ func TestPlace_COD_InRange_Places(t *testing.T) {
 	}
 }
 
+// TestPlace_ShopClosed verifies Place is rejected when the shop is outside its
+// business hours. Uses a fresh org whose live profile opens for a 1-minute
+// window an hour from now (IST) — guaranteed closed at test time.
+func TestPlace_ShopClosed(t *testing.T) {
+	pool := testdb.MustOpen(t)
+	ctx := context.Background()
+	prodID, orgID := seedProductInNewOrg(t, pool, "ClosedShopProd", 50000, 10)
+
+	loc, _ := time.LoadLocation("Asia/Kolkata")
+	now := time.Now().In(loc)
+	opens := now.Add(time.Hour).Format("15:04")
+	closes := now.Add(time.Hour + time.Minute).Format("15:04")
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO shop_profiles (org_id, slug, display_name, opens_at, closes_at, is_live)
+		VALUES ($1, $2, 'Closed Shop', $3::time, $4::time, TRUE)
+		ON CONFLICT (org_id) DO UPDATE SET opens_at=$3::time, closes_at=$4::time`,
+		orgID, fmt.Sprintf("closed-%d", now.UnixNano()), opens, closes); err != nil {
+		t.Fatalf("seed profile: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), `DELETE FROM shop_profiles WHERE org_id=$1`, orgID) })
+
+	custRepo := repository.NewCustomerRepository(pool)
+	phone := checkoutRandPhone()
+	cust, err := custRepo.UpsertByPhone(ctx, phone)
+	if err != nil {
+		t.Fatalf("upsert customer: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(ctx, `DELETE FROM customers WHERE phone=$1`, phone) })
+	addrID := testdb.SeedAddress(t, pool, cust.ID)
+
+	cartRepo := repository.NewCartRepository(pool)
+	cartSvc := shop.NewCartService(cartRepo, pool, orgID)
+	if _, err := cartSvc.AddOrSet(ctx, cust.ID, prodID, 1, false); err != nil {
+		t.Fatalf("AddOrSet: %v", err)
+	}
+
+	svc := shop.NewCheckoutService(pool, orgID, cartRepo, repository.NewCustomerAddressRepository(pool), nil, testdb.OrderRepo(pool), nil, "", 10000, 500000, 300, 0, 0)
+	_, err = svc.Place(ctx, shop.PlaceOrderInput{CustomerID: cust.ID, AddressID: addrID, PaymentMethod: "cod"})
+	if err != shop.ErrShopClosed {
+		t.Fatalf("want ErrShopClosed, got %v", err)
+	}
+}
+
 // TestPlace_Razorpay_NotGatedByCODBounds verifies that Place succeeds when
 // payment method is razorpay, even if the cart total exceeds COD max bounds.
 // This confirms the COD gate does not apply to non-COD payment methods.

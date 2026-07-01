@@ -111,6 +111,8 @@ export function PlaceOrderButton({ addressID, paymentMethod, couponCode, custome
         }
       } else if (code === "cod_ineligible") {
         toast.error("COD not available for this order total");
+      } else if (code === "shop_closed") {
+        toast.error("This shop is closed right now — please try during its open hours");
       } else if (code === "address_required") {
         toast.error("Address not valid — please re-pick");
         onAddressInvalid?.();
