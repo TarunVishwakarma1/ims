@@ -28,6 +28,7 @@ var (
 	ErrInsufficientStock    = errors.New("insufficient stock")
 	ErrInvalidPaymentMethod = errors.New("invalid payment method")
 	ErrCODIneligible        = errors.New("cod ineligible")
+	ErrShopClosed           = errors.New("shop closed")
 )
 
 // CheckoutService handles order placement (Summary + Place) for the B2C shop.
@@ -155,6 +156,20 @@ func (s *checkoutService) shippingFor(subtotal int64) int64 {
 // items, coupon scope, payment and invoice are all created under THAT org. An
 // unbound cart (shouldn't happen once it holds items) falls back to the default
 // shop org so legacy single-shop carts keep working.
+// shopClosed reports whether the shop is currently outside its business hours.
+// Fails open: any lookup error (no profile, DB hiccup) returns false so a
+// transient issue never blocks an order.
+func (s *checkoutService) shopClosed(ctx context.Context, orgID uuid.UUID) bool {
+	var opens, closes *string
+	if err := s.pool.QueryRow(ctx,
+		`SELECT to_char(opens_at, 'HH24:MI'), to_char(closes_at, 'HH24:MI')
+		   FROM shop_profiles WHERE org_id = $1`, orgID,
+	).Scan(&opens, &closes); err != nil {
+		return false
+	}
+	return !ShopOpen(opens, closes, time.Now())
+}
+
 func (s *checkoutService) cartOrg(cart *domain.Cart) uuid.UUID {
 	if cart.ShopOrgID != uuid.Nil {
 		return cart.ShopOrgID
@@ -287,6 +302,11 @@ func (s *checkoutService) Place(ctx context.Context, in PlaceOrderInput) (*Place
 	}
 	// The order is created under the cart's bound shop (P4 phase 3).
 	cartOrg := s.cartOrg(cart)
+
+	// --- Reject orders while the shop is outside its business hours ---
+	if s.shopClosed(ctx, cartOrg) {
+		return nil, ErrShopClosed
+	}
 
 	// --- Begin transaction ---
 	tx, err := s.pool.Begin(ctx)

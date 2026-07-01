@@ -102,6 +102,8 @@ func (h *CheckoutHandler) Place(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusBadRequest, "invalid_payment_method")
 		case errors.Is(err, srv.ErrCODIneligible):
 			writeErr(w, http.StatusBadRequest, "cod_ineligible")
+		case errors.Is(err, srv.ErrShopClosed):
+			writeErr(w, http.StatusConflict, "shop_closed")
 		default:
 			if req.CouponCode != "" {
 				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "coupon_invalid", "message": err.Error()})
