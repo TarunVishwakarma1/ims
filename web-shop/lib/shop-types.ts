@@ -117,6 +117,8 @@ export type ShopSummary = {
   pincodes: string[];
   // Present only for location-based ("near me") results, in kilometres.
   distance_km?: number;
+  // Open/closed per the shop's business hours (true when no hours are set).
+  is_open?: boolean;
 };
 
 export type AppliedCoupon = {

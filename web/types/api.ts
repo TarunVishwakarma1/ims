@@ -419,6 +419,8 @@ export interface ShopProfile {
   lat: number | null;
   lng: number | null;
   delivery_radius_km: number | null;
+  opens_at: string | null;
+  closes_at: string | null;
   is_live: boolean;
   created_at: string;
   updated_at: string;
@@ -458,5 +460,7 @@ export interface ShopProfileInput {
   lat: number | null;
   lng: number | null;
   delivery_radius_km: number | null;
+  opens_at: string | null;
+  closes_at: string | null;
   is_live: boolean;
 }

@@ -27,7 +27,8 @@ const LocationPicker = dynamic(
 
 const EMPTY: ShopProfileInput = {
   slug: '', display_name: '', tagline: '', logo_url: '', area: '', city: '',
-  pincodes: [], lat: null, lng: null, delivery_radius_km: null, is_live: false,
+  pincodes: [], lat: null, lng: null, delivery_radius_km: null,
+  opens_at: null, closes_at: null, is_live: false,
 }
 
 function profileToInput(p: ShopProfile): ShopProfileInput {
@@ -35,7 +36,8 @@ function profileToInput(p: ShopProfile): ShopProfileInput {
     slug: p.slug, display_name: p.display_name, tagline: p.tagline,
     logo_url: p.logo_url, area: p.area, city: p.city,
     pincodes: p.pincodes, lat: p.lat, lng: p.lng,
-    delivery_radius_km: p.delivery_radius_km, is_live: p.is_live,
+    delivery_radius_km: p.delivery_radius_km,
+    opens_at: p.opens_at, closes_at: p.closes_at, is_live: p.is_live,
   }
 }
 
@@ -185,6 +187,19 @@ function StorefrontForm({ initial, isNew }: { initial: ShopProfileInput; isNew: 
               } />
             <p className="mt-1 text-xs text-muted-foreground">
               Optional — customers within this distance of your pin can find you by location. Leave blank to match by pincode only.
+            </p>
+          </div>
+          <div>
+            <Label>Business hours (IST)</Label>
+            <div className="flex items-center gap-2">
+              <Input type="time" value={form.opens_at ?? ''}
+                onChange={(e) => set('opens_at', e.target.value || null)} />
+              <span className="text-sm text-muted-foreground">to</span>
+              <Input type="time" value={form.closes_at ?? ''}
+                onChange={(e) => set('closes_at', e.target.value || null)} />
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Leave blank for always open. Set both to show an open/closed badge; a closing time before the opening time means you close after midnight.
             </p>
           </div>
           <div>

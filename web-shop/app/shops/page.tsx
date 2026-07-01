@@ -146,7 +146,14 @@ export default function ShopsPage() {
                     )}
                   </span>
                   <div className="min-w-0">
-                    <h2 className="font-semibold truncate group-hover:text-brand-700 transition-colors">{s.name}</h2>
+                    <h2 className="font-semibold truncate group-hover:text-brand-700 transition-colors">
+                      {s.name}
+                      {s.is_open === false && (
+                        <span className="ml-2 align-middle rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-medium text-red-700">
+                          Closed
+                        </span>
+                      )}
+                    </h2>
                     {(s.area || s.city) && (
                       <p className="text-xs text-text-muted truncate">{[s.area, s.city].filter(Boolean).join(", ")}</p>
                     )}
