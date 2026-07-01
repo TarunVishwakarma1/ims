@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Plus, Edit, Trash2, Loader2 } from 'lucide-react'
+import { Plus, Edit, Trash2, Loader2, Store } from 'lucide-react'
 import { TableSkeleton } from '@/components/ui/table-skeleton'
 
 import { productsApi } from '@/lib/api/products'
@@ -41,6 +41,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { ProductStorefrontDialog } from '@/components/products/product-storefront-dialog'
 
 // Form schema expects price in Rupees
 const productSchema = z.object({
@@ -61,6 +62,8 @@ export default function ProductsPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
+  const [storefrontProduct, setStorefrontProduct] = useState<Product | null>(null)
+  const [isStorefrontOpen, setIsStorefrontOpen] = useState(false)
 
   // Fetch Data
   const { data: rawProducts, isLoading: isLoadingProducts } = useQuery({
@@ -210,6 +213,12 @@ export default function ProductsPage() {
                             setIsDialogOpen(true)
                           }}>
                             <Edit className="w-4 h-4 text-blue-600" />
+                          </Button>
+                          <Button variant="ghost" size="icon" title="Storefront" onClick={() => {
+                            setStorefrontProduct(product)
+                            setIsStorefrontOpen(true)
+                          }}>
+                            <Store className="w-4 h-4 text-emerald-600" />
                           </Button>
                           <Button variant="ghost" size="icon" onClick={() => {
                             setSelectedProduct(product)
@@ -362,6 +371,12 @@ export default function ProductsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ProductStorefrontDialog
+        product={storefrontProduct}
+        open={isStorefrontOpen}
+        onOpenChange={setIsStorefrontOpen}
+      />
     </div>
   )
 }

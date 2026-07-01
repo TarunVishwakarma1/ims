@@ -424,6 +424,15 @@ export interface ShopProfile {
   updated_at: string;
 }
 
+export interface ProductStorefront {
+  product_id: UUID;
+  shop_visible: boolean;
+  shop_slug: string;
+  shop_price_paise: number | null;
+  shop_description: string;
+  shop_image_urls: string[];
+}
+
 export interface SalesDay {
   date: string;
   orders: number;
