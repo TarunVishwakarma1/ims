@@ -9,6 +9,8 @@ import { HTTPError } from 'ky'
 
 import { storefrontApi } from '@/lib/api/storefront'
 import { canGoLive } from '@/lib/storefront-validation'
+import { hasPermission, PERMISSIONS } from '@/lib/rbac'
+import { useAuthStore } from '@/lib/stores/auth-store'
 import type { ShopProfile, ShopProfileInput } from '@/types/api'
 
 import { Button } from '@/components/ui/button'
@@ -167,7 +169,7 @@ function StorefrontForm({ initial, isNew }: { initial: ShopProfileInput; isNew: 
           <input type="checkbox" checked={form.is_live} disabled={!liveEligible && !form.is_live}
             onChange={(e) => set('is_live', e.target.checked)} />
           Live in Kirana directory
-          {!liveEligible && (
+          {!liveEligible && !form.is_live && (
             <span className="text-xs text-muted-foreground">
               (need name, map location, and ≥1 pincode)
             </span>
@@ -183,10 +185,24 @@ function StorefrontForm({ initial, isNew }: { initial: ShopProfileInput; isNew: 
 
 // ─── Page shell — handles loading and passes resolved data to form ───────────
 export default function StorefrontPage() {
+  const { user } = useAuthStore()
+  const canView = hasPermission(user?.role, PERMISSIONS.STOREFRONT_VIEW)
+
   const { data, isLoading } = useQuery({
     queryKey: ['storefront'],
     queryFn: storefrontApi.get,
+    enabled: canView,
   })
+
+  if (!canView) {
+    return (
+      <div className="mx-auto max-w-3xl p-6">
+        <p className="text-sm text-muted-foreground">
+          You don&apos;t have permission to manage the storefront.
+        </p>
+      </div>
+    )
+  }
 
   if (isLoading) {
     return <div className="p-8"><Loader2 className="animate-spin" /></div>

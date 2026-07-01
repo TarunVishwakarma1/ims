@@ -7,10 +7,14 @@ import { categoriesApi } from '@/lib/api/categories'
 import { ordersApi } from '@/lib/api/orders'
 import { inventoryApi } from '@/lib/api/inventory'
 import { storefrontApi } from '@/lib/api/storefront'
+import { hasPermission, PERMISSIONS } from '@/lib/rbac'
+import { useAuthStore } from '@/lib/stores/auth-store'
 import { Package, Tags, ShoppingCart, AlertTriangle } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
 export default function DashboardPage() {
+  const { user } = useAuthStore()
+  const canViewStorefront = hasPermission(user?.role, PERMISSIONS.STOREFRONT_VIEW)
   const { data: products } = useQuery({ queryKey: ['products'], queryFn: productsApi.list })
   const { data: categories } = useQuery({ queryKey: ['categories'], queryFn: categoriesApi.list })
   const { data: ordersResult } = useQuery({
@@ -18,7 +22,11 @@ export default function DashboardPage() {
     queryFn: () => ordersApi.list({ per_page: 1, page: 1 }),
   })
   const { data: inventory } = useQuery({ queryKey: ['inventory'], queryFn: inventoryApi.list })
-  const { data: storefront } = useQuery({ queryKey: ['storefront'], queryFn: storefrontApi.get })
+  const { data: storefront } = useQuery({
+    queryKey: ['storefront'],
+    queryFn: storefrontApi.get,
+    enabled: canViewStorefront,
+  })
 
   const stats = [
     { title: 'Products', value: (products ?? []).length, icon: Package },
