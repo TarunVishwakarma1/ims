@@ -27,14 +27,15 @@ const LocationPicker = dynamic(
 
 const EMPTY: ShopProfileInput = {
   slug: '', display_name: '', tagline: '', logo_url: '', area: '', city: '',
-  pincodes: [], lat: null, lng: null, is_live: false,
+  pincodes: [], lat: null, lng: null, delivery_radius_km: null, is_live: false,
 }
 
 function profileToInput(p: ShopProfile): ShopProfileInput {
   return {
     slug: p.slug, display_name: p.display_name, tagline: p.tagline,
     logo_url: p.logo_url, area: p.area, city: p.city,
-    pincodes: p.pincodes, lat: p.lat, lng: p.lng, is_live: p.is_live,
+    pincodes: p.pincodes, lat: p.lat, lng: p.lng,
+    delivery_radius_km: p.delivery_radius_km, is_live: p.is_live,
   }
 }
 
@@ -174,6 +175,17 @@ function StorefrontForm({ initial, isNew }: { initial: ShopProfileInput; isNew: 
               <Label>City</Label>
               <Input value={form.city} onChange={(e) => set('city', e.target.value)} />
             </div>
+          </div>
+          <div>
+            <Label>Delivery radius (km)</Label>
+            <Input type="number" min="0" max="100" step="0.5"
+              value={form.delivery_radius_km ?? ''}
+              onChange={(e) =>
+                set('delivery_radius_km', e.target.value === '' ? null : Number(e.target.value))
+              } />
+            <p className="mt-1 text-xs text-muted-foreground">
+              Optional — customers within this distance of your pin can find you by location. Leave blank to match by pincode only.
+            </p>
           </div>
           <div>
             <Label>Serviceable pincodes</Label>

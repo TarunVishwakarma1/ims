@@ -418,6 +418,7 @@ export interface ShopProfile {
   pincodes: string[];
   lat: number | null;
   lng: number | null;
+  delivery_radius_km: number | null;
   is_live: boolean;
   created_at: string;
   updated_at: string;
@@ -433,5 +434,6 @@ export interface ShopProfileInput {
   pincodes: string[];
   lat: number | null;
   lng: number | null;
+  delivery_radius_km: number | null;
   is_live: boolean;
 }
