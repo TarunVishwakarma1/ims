@@ -55,6 +55,7 @@ func NewRouter(
 	uploadDir string,
 	profileH *shophandler.ProfileHandler,
 	analyticsH *shophandler.AnalyticsHandler,
+	productStorefrontH *shophandler.ProductStorefrontHandler,
 ) http.Handler {
 	r := chi.NewRouter()
 
@@ -180,6 +181,8 @@ func NewRouter(
 		r.Get("/api/products/{id}", productH.GetProduct)
 		r.With(middleware.RequirePermission(rbac.ProductsManage)).Put("/api/products/{id}", productH.UpdateProduct)
 		r.With(middleware.RequirePermission(rbac.ProductsManage)).Delete("/api/products/{id}", productH.DeleteProduct)
+		r.With(middleware.RequirePermission(rbac.ProductsManage)).Get("/api/products/{id}/storefront", productStorefrontH.Get)
+		r.With(middleware.RequirePermission(rbac.ProductsManage)).Put("/api/products/{id}/storefront", productStorefrontH.Set)
 		r.Get("/api/categories/{category_id}/products", productH.ListByCategory)
 
 		// Inventory

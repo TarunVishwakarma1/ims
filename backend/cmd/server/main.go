@@ -343,7 +343,11 @@ func main() {
 	webhookH := handler.NewWebhookHandler(paymentService)
 	eventsH := handler.NewEventsHandler(eventBus)
 
-	router := NewRouter(authH, userH, categoryH, productH, inventoryH, orderH, roleH, locationH, marketH, eventsH, paymentH, webhookH, partnerH, returnH, notificationH, auditH, totpH, couponH, cfg, pool, cacheClient, cfg.ShopEnabled, shopAuthH, shopCustH, shopCartH, shopCheckH, shopCatalogH, adminBannerH, shopBannerH, shopOrderH, shopPaymentH, adminShopOrderH, shopDirectoryH, shopResolve, cfg.UploadDir, shopProfileH, shopAnalyticsH)
+	// Always built (product routes aren't shop-gated) — lets sellers manage
+	// each product's storefront overlay regardless of SHOP_ENABLED.
+	productStorefrontH := shophandler.NewProductStorefrontHandler(shopsvc.NewProductStorefrontService(pool))
+
+	router := NewRouter(authH, userH, categoryH, productH, inventoryH, orderH, roleH, locationH, marketH, eventsH, paymentH, webhookH, partnerH, returnH, notificationH, auditH, totpH, couponH, cfg, pool, cacheClient, cfg.ShopEnabled, shopAuthH, shopCustH, shopCartH, shopCheckH, shopCatalogH, adminBannerH, shopBannerH, shopOrderH, shopPaymentH, adminShopOrderH, shopDirectoryH, shopResolve, cfg.UploadDir, shopProfileH, shopAnalyticsH, productStorefrontH)
 
 	server := &http.Server{
 		Addr:         ":" + cfg.Port,
