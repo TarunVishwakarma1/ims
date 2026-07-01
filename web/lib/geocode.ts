@@ -18,16 +18,15 @@ export function mapNominatim(json: NominatimResponse): GeocodeResult {
   return { area, city, pincode }
 }
 
-// Reverse-geocode a coordinate via OSM Nominatim. Caller debounces (≥1s per
-// Nominatim usage policy). Returns empty fields on any failure.
+// Reverse-geocode a coordinate. Goes through our /api/geocode/reverse proxy
+// (which sets the Nominatim-required User-Agent server-side — the browser can't)
+// and returns the already-mapped fields. Caller debounces (≥1s per Nominatim
+// usage policy). Returns empty fields on any failure.
 export async function reverseGeocode(lat: number, lng: number): Promise<GeocodeResult> {
   try {
-    const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=16&addressdetails=1`
-    const res = await fetch(url, {
-      headers: { 'Accept-Language': 'en', Referer: 'https://kirana.local' },
-    })
+    const res = await fetch(`/api/geocode/reverse?lat=${lat}&lng=${lng}`)
     if (!res.ok) return { area: '', city: '', pincode: '' }
-    return mapNominatim(await res.json())
+    return (await res.json()) as GeocodeResult
   } catch {
     return { area: '', city: '', pincode: '' }
   }
