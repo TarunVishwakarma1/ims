@@ -369,6 +369,9 @@ func StartPaymentEventListenersForLiveShops(ctx context.Context, bus events.Bus,
 		}
 		start(id)
 	}
+	if err := rows.Err(); err != nil {
+		zap.L().Error("payment listeners: iterating live shops failed", zap.Error(err))
+	}
 }
 
 // handlePaymentEvent routes a single bus event to the matching email.
