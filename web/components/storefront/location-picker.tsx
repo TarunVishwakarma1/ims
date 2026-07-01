@@ -36,6 +36,12 @@ export function LocationPicker({ lat, lng, onChange }: Props) {
   )
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  useEffect(() => {
+    return () => {
+      if (timer.current) clearTimeout(timer.current)
+    }
+  }, [])
+
   // Debounced reverse-geocode after the pin settles.
   function settle(newLat: number, newLng: number) {
     onChange(newLat, newLng)
@@ -46,7 +52,7 @@ export function LocationPicker({ lat, lng, onChange }: Props) {
     }, 1100)
   }
 
-  function useMyLocation() {
+  function handleMyLocation() {
     if (!navigator.geolocation) return
     navigator.geolocation.getCurrentPosition((pos) =>
       settle(pos.coords.latitude, pos.coords.longitude),
@@ -77,7 +83,7 @@ export function LocationPicker({ lat, lng, onChange }: Props) {
       </div>
       <button
         type="button"
-        onClick={useMyLocation}
+        onClick={handleMyLocation}
         className="text-sm text-primary hover:underline"
       >
         Use my current location
