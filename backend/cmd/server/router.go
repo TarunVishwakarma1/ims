@@ -53,6 +53,7 @@ func NewRouter(
 	shopDirectoryH *shophandler.DirectoryHandler,
 	shopResolve middleware.ShopResolver,
 	uploadDir string,
+	profileH *shophandler.ProfileHandler,
 ) http.Handler {
 	r := chi.NewRouter()
 
@@ -258,6 +259,10 @@ func NewRouter(
 			// Admin B2C order management (list + advance status).
 			r.With(middleware.RequirePermission(rbac.OrdersView)).Get("/api/admin/shop/orders", adminShopOrderH.List)
 			r.With(middleware.RequirePermission(rbac.OrdersManage)).Put("/api/admin/shop/orders/{id}/status", adminShopOrderH.UpdateStatus)
+
+			// Admin storefront profile (GET = view, PUT = upsert).
+			r.With(middleware.RequirePermission(rbac.StorefrontView)).Get("/api/admin/storefront", profileH.GetMine)
+			r.With(middleware.RequirePermission(rbac.StorefrontManage)).Put("/api/admin/storefront", profileH.Upsert)
 		}
 	})
 

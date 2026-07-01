@@ -212,6 +212,7 @@ func main() {
 		shopResolve     func(context.Context, string) (uuid.UUID, error)
 		shopPaymentH    *shophandler.PaymentHandler
 		adminBannerH *handler.AdminBannerHandler
+		shopProfileH *shophandler.ProfileHandler
 	)
 	if cfg.ShopEnabled {
 		shopOrgID, err := resolveShopOrg(context.Background(), pool, cfg.ShopOrgID, cfg.ShopOrgSlug, cfg.ShopOrgName)
@@ -292,6 +293,9 @@ func main() {
 		)
 		shopPaymentH = shophandler.NewPaymentHandler(shopPaymentSvc, shopNotifier)
 
+		shopProfileSvc := shopsvc.NewShopProfileService(repository.NewShopProfileRepository(pool))
+		shopProfileH = shophandler.NewProfileHandler(shopProfileSvc)
+
 		if cfg.BannerSeedEnabled {
 			go func() {
 				stop := jobs.StartBannerSeed(ctx, pool, cacheClient, shopOrgID,
@@ -336,7 +340,7 @@ func main() {
 	webhookH := handler.NewWebhookHandler(paymentService)
 	eventsH := handler.NewEventsHandler(eventBus)
 
-	router := NewRouter(authH, userH, categoryH, productH, inventoryH, orderH, roleH, locationH, marketH, eventsH, paymentH, webhookH, partnerH, returnH, notificationH, auditH, totpH, couponH, cfg, pool, cacheClient, cfg.ShopEnabled, shopAuthH, shopCustH, shopCartH, shopCheckH, shopCatalogH, adminBannerH, shopBannerH, shopOrderH, shopPaymentH, adminShopOrderH, shopDirectoryH, shopResolve, cfg.UploadDir)
+	router := NewRouter(authH, userH, categoryH, productH, inventoryH, orderH, roleH, locationH, marketH, eventsH, paymentH, webhookH, partnerH, returnH, notificationH, auditH, totpH, couponH, cfg, pool, cacheClient, cfg.ShopEnabled, shopAuthH, shopCustH, shopCartH, shopCheckH, shopCatalogH, adminBannerH, shopBannerH, shopOrderH, shopPaymentH, adminShopOrderH, shopDirectoryH, shopResolve, cfg.UploadDir, shopProfileH)
 
 	server := &http.Server{
 		Addr:         ":" + cfg.Port,
