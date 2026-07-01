@@ -245,7 +245,7 @@ func main() {
 		// Customer-facing order emails (queued for the notification worker).
 		shopNotifier := shopsvc.NewShopNotifier(notificationRepo, customerRepo, orderRepo, cfg.WebAppURL)
 		// Razorpay webhook → bus → customer payment/refund emails.
-		shopsvc.StartPaymentEventListener(ctx, eventBus, shopOrgID, shopNotifier)
+		shopsvc.StartPaymentEventListenersForLiveShops(ctx, eventBus, pool, shopOrgID, shopNotifier)
 
 		shopAuthH = shophandler.NewAuthHandler(otpSvc)
 		shopCustH = shophandler.NewCustomerHandler(custSvc)

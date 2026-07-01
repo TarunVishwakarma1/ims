@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
 
 	"github.com/TarunVishwakarma1/ims/backend/internal/domain"
@@ -334,6 +335,40 @@ func StartPaymentEventListener(ctx context.Context, bus events.Bus, orgID uuid.U
 			}
 		}
 	}()
+}
+
+// StartPaymentEventListenersForLiveShops starts one payment-event listener per
+// live shop org (plus the default org), so payment/refund webhooks reach every
+// shop's customer-email path. Newly-live shops are picked up on next restart.
+func StartPaymentEventListenersForLiveShops(ctx context.Context, bus events.Bus, pool *pgxpool.Pool, defaultOrgID uuid.UUID, n *ShopNotifier) {
+	if bus == nil || n == nil || pool == nil {
+		return
+	}
+	seen := map[uuid.UUID]bool{}
+	start := func(id uuid.UUID) {
+		if id == uuid.Nil || seen[id] {
+			return
+		}
+		seen[id] = true
+		StartPaymentEventListener(ctx, bus, id, n)
+	}
+
+	start(defaultOrgID)
+
+	rows, err := pool.Query(ctx, `SELECT org_id FROM shop_profiles WHERE is_live = TRUE`)
+	if err != nil {
+		zap.L().Error("payment listeners: query live shops failed", zap.Error(err))
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			zap.L().Error("payment listeners: scan org failed", zap.Error(err))
+			continue
+		}
+		start(id)
+	}
 }
 
 // handlePaymentEvent routes a single bus event to the matching email.
