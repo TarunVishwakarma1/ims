@@ -405,3 +405,33 @@ export interface AdminShopOrder {
   item_count: number;
   created_at: ISODate;
 }
+
+// ── Admin: Storefront ───────────────────────────────────────────────────
+export interface ShopProfile {
+  org_id: UUID;
+  slug: string;
+  display_name: string;
+  tagline: string;
+  logo_url: string;
+  area: string;
+  city: string;
+  pincodes: string[];
+  lat: number | null;
+  lng: number | null;
+  is_live: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ShopProfileInput {
+  slug: string;
+  display_name: string;
+  tagline: string;
+  logo_url: string;
+  area: string;
+  city: string;
+  pincodes: string[];
+  lat: number | null;
+  lng: number | null;
+  is_live: boolean;
+}
