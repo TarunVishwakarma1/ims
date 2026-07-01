@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, type ChangeEvent } from 'react'
 import dynamic from 'next/dynamic'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Store, Loader2, X } from 'lucide-react'
@@ -9,6 +9,7 @@ import { HTTPError } from 'ky'
 
 import { storefrontApi } from '@/lib/api/storefront'
 import { canGoLive } from '@/lib/storefront-validation'
+import { imageSrc } from '@/lib/image-src'
 import { hasPermission, PERMISSIONS } from '@/lib/rbac'
 import { useAuthStore } from '@/lib/stores/auth-store'
 import type { ShopProfile, ShopProfileInput } from '@/types/api'
@@ -46,6 +47,23 @@ function StorefrontForm({ initial, isNew }: { initial: ShopProfileInput; isNew: 
   const qc = useQueryClient()
   const [form, setForm] = useState<ShopProfileInput>(initial)
   const [pincodeDraft, setPincodeDraft] = useState('')
+  const [uploading, setUploading] = useState(false)
+
+  async function onLogoFile(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = '' // let the same file be re-selected after an error
+    if (!file) return
+    setUploading(true)
+    try {
+      const { logo_url } = await storefrontApi.uploadLogo(file)
+      setForm((f) => ({ ...f, logo_url }))
+      toast.success('Logo uploaded')
+    } catch {
+      toast.error('Could not upload logo')
+    } finally {
+      setUploading(false)
+    }
+  }
 
   const save = useMutation({
     mutationFn: (input: ShopProfileInput) => storefrontApi.upsert(input),
@@ -108,8 +126,23 @@ function StorefrontForm({ initial, isNew }: { initial: ShopProfileInput; isNew: 
             <Input value={form.tagline} onChange={(e) => set('tagline', e.target.value)} />
           </div>
           <div>
-            <Label>Logo URL</Label>
-            <Input value={form.logo_url} onChange={(e) => set('logo_url', e.target.value)} />
+            <Label>Logo</Label>
+            <div className="flex items-center gap-3">
+              {form.logo_url && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={imageSrc(form.logo_url)} alt=""
+                  className="h-12 w-12 shrink-0 rounded border object-cover" />
+              )}
+              <Input value={form.logo_url} placeholder="Paste an image URL, or upload →"
+                onChange={(e) => set('logo_url', e.target.value)} />
+              <label className="shrink-0">
+                <input type="file" accept="image/png,image/jpeg,image/webp"
+                  className="hidden" onChange={onLogoFile} disabled={uploading} />
+                <span className="inline-flex h-9 cursor-pointer items-center rounded-md border px-3 text-sm hover:bg-muted">
+                  {uploading ? 'Uploading…' : 'Upload'}
+                </span>
+              </label>
+            </div>
           </div>
         </CardContent>
       </Card>

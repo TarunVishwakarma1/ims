@@ -15,4 +15,12 @@ export const storefrontApi = {
 
   upsert: (input: ShopProfileInput) =>
     api.put('admin/storefront', { json: input }).json<ShopProfile>(),
+
+  // Uploads a logo image and returns its served URL. FormData → ky sets the
+  // multipart content-type automatically.
+  uploadLogo: (file: File) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return api.post('admin/storefront/logo', { body: fd }).json<{ logo_url: string }>()
+  },
 }
