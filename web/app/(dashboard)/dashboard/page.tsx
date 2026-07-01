@@ -1,10 +1,12 @@
 'use client'
 
+import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
 import { productsApi } from '@/lib/api/products'
 import { categoriesApi } from '@/lib/api/categories'
 import { ordersApi } from '@/lib/api/orders'
 import { inventoryApi } from '@/lib/api/inventory'
+import { storefrontApi } from '@/lib/api/storefront'
 import { Package, Tags, ShoppingCart, AlertTriangle } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
@@ -16,6 +18,7 @@ export default function DashboardPage() {
     queryFn: () => ordersApi.list({ per_page: 1, page: 1 }),
   })
   const { data: inventory } = useQuery({ queryKey: ['inventory'], queryFn: inventoryApi.list })
+  const { data: storefront } = useQuery({ queryKey: ['storefront'], queryFn: storefrontApi.get })
 
   const stats = [
     { title: 'Products', value: (products ?? []).length, icon: Package },
@@ -26,6 +29,18 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
+      {storefront === null && (
+        <Link href="/storefront"
+          className="block rounded-md border border-border bg-muted px-4 py-3 text-sm hover:bg-muted/70">
+          Set up your storefront to start selling on Kirana →
+        </Link>
+      )}
+      {storefront && !storefront.is_live && (
+        <Link href="/storefront"
+          className="block rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 hover:bg-amber-100">
+          Your storefront isn&apos;t live yet — finish setup to appear in Kirana →
+        </Link>
+      )}
       <div>
         <h2 className="text-2xl font-bold tracking-tight">Overview</h2>
         <p className="text-muted-foreground">
