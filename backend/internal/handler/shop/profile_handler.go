@@ -5,15 +5,22 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/google/uuid"
+
 	"github.com/TarunVishwakarma1/ims/backend/internal/domain"
 	shopsvc "github.com/TarunVishwakarma1/ims/backend/internal/service/shop"
 	"github.com/TarunVishwakarma1/ims/backend/pkg/middleware"
+	"github.com/TarunVishwakarma1/ims/backend/pkg/storage"
 )
 
-type ProfileHandler struct{ svc shopsvc.ShopProfileService }
+type ProfileHandler struct {
+	svc      shopsvc.ShopProfileService
+	store    storage.Storage
+	maxBytes int64
+}
 
-func NewProfileHandler(svc shopsvc.ShopProfileService) *ProfileHandler {
-	return &ProfileHandler{svc: svc}
+func NewProfileHandler(svc shopsvc.ShopProfileService, store storage.Storage, maxBytes int64) *ProfileHandler {
+	return &ProfileHandler{svc: svc, store: store, maxBytes: maxBytes}
 }
 
 type profileRequest struct {
@@ -75,4 +82,59 @@ func (h *ProfileHandler) Upsert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, p)
+}
+
+// LogoUpload accepts a multipart "file" image, stores it under storefront/, and
+// returns its public URL for the caller to save into logo_url. Mirrors the
+// admin banner upload: MIME-sniffed, size-capped, only jpeg/png/webp.
+func (h *ProfileHandler) LogoUpload(w http.ResponseWriter, r *http.Request) {
+	if h.store == nil {
+		writeErr(w, http.StatusNotImplemented, "uploads_disabled")
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, h.maxBytes+1024)
+	if err := r.ParseMultipartForm(1 << 20); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid_image")
+		return
+	}
+	file, _, err := r.FormFile("file")
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid_image")
+		return
+	}
+	defer file.Close()
+
+	// Sniff the content type from the first 512 bytes, then rewind.
+	head := make([]byte, 512)
+	n, _ := file.Read(head)
+	ct := http.DetectContentType(head[:n])
+	ext := imageExt(ct)
+	if ext == "" {
+		writeErr(w, http.StatusBadRequest, "invalid_image")
+		return
+	}
+	if _, err := file.Seek(0, 0); err != nil {
+		writeErr(w, http.StatusInternalServerError, "upload_failed")
+		return
+	}
+
+	key := "storefront/" + uuid.New().String() + ext
+	url, err := h.store.Save(r.Context(), key, file, ct)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "upload_failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"logo_url": url})
+}
+
+func imageExt(ct string) string {
+	switch ct {
+	case "image/jpeg":
+		return ".jpg"
+	case "image/png":
+		return ".png"
+	case "image/webp":
+		return ".webp"
+	}
+	return ""
 }

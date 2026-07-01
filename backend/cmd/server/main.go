@@ -294,7 +294,7 @@ func main() {
 		shopPaymentH = shophandler.NewPaymentHandler(shopPaymentSvc, shopNotifier)
 
 		shopProfileSvc := shopsvc.NewShopProfileService(repository.NewShopProfileRepository(pool))
-		shopProfileH = shophandler.NewProfileHandler(shopProfileSvc)
+		shopProfileH = shophandler.NewProfileHandler(shopProfileSvc, diskStore, cfg.BannerImageMaxBytes)
 
 		if cfg.BannerSeedEnabled {
 			go func() {

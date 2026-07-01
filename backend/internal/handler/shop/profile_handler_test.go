@@ -39,7 +39,7 @@ func ctxWithOrg(orgID uuid.UUID) context.Context {
 }
 
 func TestProfileHandler_GetMine_404(t *testing.T) {
-	h := shophandler.NewProfileHandler(&fakeProfileSvc{})
+	h := shophandler.NewProfileHandler(&fakeProfileSvc{}, nil, 0)
 	req := httptest.NewRequest(http.MethodGet, "/api/admin/storefront", nil).
 		WithContext(ctxWithOrg(uuid.New()))
 	rr := httptest.NewRecorder()
@@ -54,7 +54,7 @@ func TestProfileHandler_GetMine_404(t *testing.T) {
 }
 
 func TestProfileHandler_Upsert_Conflict(t *testing.T) {
-	h := shophandler.NewProfileHandler(&fakeProfileSvc{err: shopsvc.ErrSlugTaken})
+	h := shophandler.NewProfileHandler(&fakeProfileSvc{err: shopsvc.ErrSlugTaken}, nil, 0)
 	body := `{"slug":"taken","display_name":"X"}`
 	req := httptest.NewRequest(http.MethodPut, "/api/admin/storefront",
 		strings.NewReader(body)).WithContext(ctxWithOrg(uuid.New()))
@@ -67,7 +67,7 @@ func TestProfileHandler_Upsert_Conflict(t *testing.T) {
 
 func TestProfileHandler_Upsert_OK(t *testing.T) {
 	svc := &fakeProfileSvc{}
-	h := shophandler.NewProfileHandler(svc)
+	h := shophandler.NewProfileHandler(svc, nil, 0)
 	body := `{"slug":"myshop","display_name":"My Shop","pincodes":["411001"],"lat":18.5,"lng":73.8,"is_live":true}`
 	req := httptest.NewRequest(http.MethodPut, "/api/admin/storefront",
 		strings.NewReader(body)).WithContext(ctxWithOrg(uuid.New()))

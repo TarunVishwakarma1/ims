@@ -263,6 +263,7 @@ func NewRouter(
 			// Admin storefront profile (GET = view, PUT = upsert).
 			r.With(middleware.RequirePermission(rbac.StorefrontView)).Get("/api/admin/storefront", profileH.GetMine)
 			r.With(middleware.RequirePermission(rbac.StorefrontManage)).Put("/api/admin/storefront", profileH.Upsert)
+			r.With(middleware.RequirePermission(rbac.StorefrontManage)).Post("/api/admin/storefront/logo", profileH.LogoUpload)
 		}
 	})
 
