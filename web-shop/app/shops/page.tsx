@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Store, MapPin, Search, Loader2, ArrowRight } from "lucide-react";
-import { fetchShops } from "@/lib/shop-api";
+import { Store, MapPin, Search, Loader2, ArrowRight, LocateFixed } from "lucide-react";
+import { fetchShops, fetchShopsNearby } from "@/lib/shop-api";
 import type { ShopSummary } from "@/lib/shop-types";
 import { toast } from "sonner";
 
@@ -41,6 +41,30 @@ export default function ShopsPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const nearMe = () => {
+    if (!navigator.geolocation) {
+      toast.error("Location isn't available on this device");
+      return;
+    }
+    setLoading(true);
+    setSearched(true);
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          setShops(await fetchShopsNearby(pos.coords.latitude, pos.coords.longitude));
+        } catch {
+          toast.error("Could not load nearby shops");
+        } finally {
+          setLoading(false);
+        }
+      },
+      () => {
+        toast.error("Couldn't get your location");
+        setLoading(false);
+      },
+    );
   };
 
   const visit = (slug: string) => {
@@ -81,6 +105,16 @@ export default function ShopsPage() {
           {loading ? <Loader2 className="size-4 animate-spin" /> : <Search className="size-4" />}
           Find
         </button>
+        <button
+          type="button"
+          onClick={nearMe}
+          disabled={loading}
+          title="Find shops near my current location"
+          className="h-11 px-4 rounded-lg border border-border bg-surface font-medium inline-flex items-center gap-2 hover:bg-brand-50 disabled:opacity-60"
+        >
+          <LocateFixed className="size-4" />
+          Near me
+        </button>
       </div>
 
       {shops === null ? (
@@ -115,6 +149,9 @@ export default function ShopsPage() {
                     <h2 className="font-semibold truncate group-hover:text-brand-700 transition-colors">{s.name}</h2>
                     {(s.area || s.city) && (
                       <p className="text-xs text-text-muted truncate">{[s.area, s.city].filter(Boolean).join(", ")}</p>
+                    )}
+                    {typeof s.distance_km === "number" && (
+                      <p className="text-xs font-medium text-brand-700">{s.distance_km.toFixed(1)} km away</p>
                     )}
                   </div>
                 </div>

@@ -266,6 +266,15 @@ export async function fetchShops(pincode?: string): Promise<ShopSummary[]> {
   return r.shops;
 }
 
+// fetchShopsNearby returns live shops whose delivery radius covers the given
+// coordinate, nearest first (each carries distance_km).
+export async function fetchShopsNearby(lat: number, lng: number): Promise<ShopSummary[]> {
+  const r = await jsonOrThrow<{ shops: ShopSummary[] }>(
+    await fetch(`/api/shop/shops?lat=${lat}&lng=${lng}`, { credentials: "include" }),
+  );
+  return r.shops;
+}
+
 // ── Profile ─────────────────────────────────────────────────────────────
 
 export async function getMe(): Promise<CustomerProfile> {

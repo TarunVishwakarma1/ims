@@ -115,6 +115,8 @@ export type ShopSummary = {
   area?: string;
   city?: string;
   pincodes: string[];
+  // Present only for location-based ("near me") results, in kilometres.
+  distance_km?: number;
 };
 
 export type AppliedCoupon = {
