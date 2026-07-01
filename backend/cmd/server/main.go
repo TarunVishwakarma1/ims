@@ -200,19 +200,20 @@ func main() {
 
 	// B2C Shop services and handlers
 	var (
-		shopAuthH    *shophandler.AuthHandler
-		shopCustH    *shophandler.CustomerHandler
-		shopCartH    *shophandler.CartHandler
-		shopCheckH   *shophandler.CheckoutHandler
-		shopCatalogH *shophandler.CatalogHandler
-		shopBannerH  *shophandler.BannerHandler
+		shopAuthH       *shophandler.AuthHandler
+		shopCustH       *shophandler.CustomerHandler
+		shopCartH       *shophandler.CartHandler
+		shopCheckH      *shophandler.CheckoutHandler
+		shopCatalogH    *shophandler.CatalogHandler
+		shopBannerH     *shophandler.BannerHandler
 		shopOrderH      *shophandler.OrderHandler
 		adminShopOrderH *shophandler.AdminOrderHandler
 		shopDirectoryH  *shophandler.DirectoryHandler
 		shopResolve     func(context.Context, string) (uuid.UUID, error)
 		shopPaymentH    *shophandler.PaymentHandler
-		adminBannerH *handler.AdminBannerHandler
-		shopProfileH *shophandler.ProfileHandler
+		adminBannerH    *handler.AdminBannerHandler
+		shopProfileH    *shophandler.ProfileHandler
+		shopAnalyticsH  *shophandler.AnalyticsHandler
 	)
 	if cfg.ShopEnabled {
 		shopOrgID, err := resolveShopOrg(context.Background(), pool, cfg.ShopOrgID, cfg.ShopOrgSlug, cfg.ShopOrgName)
@@ -296,6 +297,8 @@ func main() {
 		shopProfileSvc := shopsvc.NewShopProfileService(repository.NewShopProfileRepository(pool))
 		shopProfileH = shophandler.NewProfileHandler(shopProfileSvc, diskStore, cfg.BannerImageMaxBytes)
 
+		shopAnalyticsH = shophandler.NewAnalyticsHandler(shopsvc.NewShopAnalyticsService(pool))
+
 		if cfg.BannerSeedEnabled {
 			go func() {
 				stop := jobs.StartBannerSeed(ctx, pool, cacheClient, shopOrgID,
@@ -340,7 +343,7 @@ func main() {
 	webhookH := handler.NewWebhookHandler(paymentService)
 	eventsH := handler.NewEventsHandler(eventBus)
 
-	router := NewRouter(authH, userH, categoryH, productH, inventoryH, orderH, roleH, locationH, marketH, eventsH, paymentH, webhookH, partnerH, returnH, notificationH, auditH, totpH, couponH, cfg, pool, cacheClient, cfg.ShopEnabled, shopAuthH, shopCustH, shopCartH, shopCheckH, shopCatalogH, adminBannerH, shopBannerH, shopOrderH, shopPaymentH, adminShopOrderH, shopDirectoryH, shopResolve, cfg.UploadDir, shopProfileH)
+	router := NewRouter(authH, userH, categoryH, productH, inventoryH, orderH, roleH, locationH, marketH, eventsH, paymentH, webhookH, partnerH, returnH, notificationH, auditH, totpH, couponH, cfg, pool, cacheClient, cfg.ShopEnabled, shopAuthH, shopCustH, shopCartH, shopCheckH, shopCatalogH, adminBannerH, shopBannerH, shopOrderH, shopPaymentH, adminShopOrderH, shopDirectoryH, shopResolve, cfg.UploadDir, shopProfileH, shopAnalyticsH)
 
 	server := &http.Server{
 		Addr:         ":" + cfg.Port,

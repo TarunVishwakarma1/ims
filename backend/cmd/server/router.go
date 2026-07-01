@@ -54,6 +54,7 @@ func NewRouter(
 	shopResolve middleware.ShopResolver,
 	uploadDir string,
 	profileH *shophandler.ProfileHandler,
+	analyticsH *shophandler.AnalyticsHandler,
 ) http.Handler {
 	r := chi.NewRouter()
 
@@ -264,6 +265,7 @@ func NewRouter(
 			r.With(middleware.RequirePermission(rbac.StorefrontView)).Get("/api/admin/storefront", profileH.GetMine)
 			r.With(middleware.RequirePermission(rbac.StorefrontManage)).Put("/api/admin/storefront", profileH.Upsert)
 			r.With(middleware.RequirePermission(rbac.StorefrontManage)).Post("/api/admin/storefront/logo", profileH.LogoUpload)
+			r.With(middleware.RequirePermission(rbac.OrdersView)).Get("/api/admin/shop/analytics", analyticsH.Sales)
 		}
 	})
 
