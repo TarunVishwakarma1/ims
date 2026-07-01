@@ -22,7 +22,11 @@ type ShopProfile struct {
 	Lng         *float64  `json:"lng"`
 	// DeliveryRadiusKm, when set, makes the shop serviceable by distance from
 	// lat/lng. NULL falls back to pincode-only matching.
-	DeliveryRadiusKm *float64  `json:"delivery_radius_km"`
+	DeliveryRadiusKm *float64 `json:"delivery_radius_km"`
+	// OpensAt/ClosesAt are "HH:MM" IST business hours; nil either side = always
+	// open. ClosesAt < OpensAt wraps past midnight.
+	OpensAt          *string   `json:"opens_at"`
+	ClosesAt         *string   `json:"closes_at"`
 	IsLive           bool      `json:"is_live"`
 	CreatedAt        time.Time `json:"created_at"`
 	UpdatedAt        time.Time `json:"updated_at"`

@@ -34,6 +34,8 @@ type profileRequest struct {
 	Lat              *float64 `json:"lat"`
 	Lng              *float64 `json:"lng"`
 	DeliveryRadiusKm *float64 `json:"delivery_radius_km"`
+	OpensAt          *string  `json:"opens_at"`
+	ClosesAt         *string  `json:"closes_at"`
 	IsLive           bool     `json:"is_live"`
 }
 
@@ -70,7 +72,8 @@ func (h *ProfileHandler) Upsert(w http.ResponseWriter, r *http.Request) {
 		Slug: req.Slug, DisplayName: req.DisplayName, Tagline: req.Tagline,
 		LogoURL: req.LogoURL, Area: req.Area, City: req.City,
 		Pincodes: req.Pincodes, Lat: req.Lat, Lng: req.Lng,
-		DeliveryRadiusKm: req.DeliveryRadiusKm, IsLive: req.IsLive,
+		DeliveryRadiusKm: req.DeliveryRadiusKm,
+		OpensAt:          req.OpensAt, ClosesAt: req.ClosesAt, IsLive: req.IsLive,
 	})
 	if err != nil {
 		switch {

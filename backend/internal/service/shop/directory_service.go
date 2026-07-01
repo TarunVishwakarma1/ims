@@ -3,6 +3,7 @@ package shop
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -22,6 +23,9 @@ type ShopSummary struct {
 	Pincodes []string `json:"pincodes"`
 	// DistanceKm is set only for location-based (ListNearby) results.
 	DistanceKm *float64 `json:"distance_km,omitempty"`
+	// IsOpen reflects the shop's business hours at request time (always true
+	// when no hours are set).
+	IsOpen bool `json:"is_open"`
 }
 
 // ShopDirectoryService lists live consumer shops, optionally filtered to those
@@ -46,7 +50,8 @@ func NewShopDirectoryService(pool *pgxpool.Pool) ShopDirectoryService {
 
 func (s *shopDirectoryService) List(ctx context.Context, pincode string) ([]ShopSummary, error) {
 	q := `
-		SELECT slug, display_name, tagline, logo_url, area, city, pincodes
+		SELECT slug, display_name, tagline, logo_url, area, city, pincodes,
+		       to_char(opens_at, 'HH24:MI'), to_char(closes_at, 'HH24:MI')
 		  FROM shop_profiles
 		 WHERE is_live = TRUE`
 	args := []any{}
@@ -62,12 +67,15 @@ func (s *shopDirectoryService) List(ctx context.Context, pincode string) ([]Shop
 	}
 	defer rows.Close()
 
+	now := time.Now()
 	out := []ShopSummary{}
 	for rows.Next() {
 		var sm ShopSummary
-		if err := rows.Scan(&sm.Slug, &sm.Name, &sm.Tagline, &sm.LogoURL, &sm.Area, &sm.City, &sm.Pincodes); err != nil {
+		var opensAt, closesAt *string
+		if err := rows.Scan(&sm.Slug, &sm.Name, &sm.Tagline, &sm.LogoURL, &sm.Area, &sm.City, &sm.Pincodes, &opensAt, &closesAt); err != nil {
 			return nil, err
 		}
+		sm.IsOpen = ShopOpen(opensAt, closesAt, now)
 		out = append(out, sm)
 	}
 	return out, rows.Err()
@@ -79,10 +87,13 @@ func (s *shopDirectoryService) ListNearby(ctx context.Context, lat, lng float64)
 	// (which happen when the point coincides with a shop). The distance alias
 	// can't be used in WHERE, so filter in an outer query.
 	const q = `
-		SELECT slug, display_name, tagline, logo_url, area, city, pincodes, distance_km
+		SELECT slug, display_name, tagline, logo_url, area, city, pincodes,
+		       opens_at, closes_at, distance_km
 		  FROM (
 			SELECT slug, display_name, tagline, logo_url, area, city, pincodes,
 			       delivery_radius_km,
+			       to_char(opens_at, 'HH24:MI')  AS opens_at,
+			       to_char(closes_at, 'HH24:MI') AS closes_at,
 			       6371 * acos(LEAST(1,
 			           cos(radians($1)) * cos(radians(lat)) * cos(radians(lng) - radians($2))
 			         + sin(radians($1)) * sin(radians(lat))
@@ -101,15 +112,18 @@ func (s *shopDirectoryService) ListNearby(ctx context.Context, lat, lng float64)
 	}
 	defer rows.Close()
 
+	now := time.Now()
 	out := []ShopSummary{}
 	for rows.Next() {
 		var sm ShopSummary
+		var opensAt, closesAt *string
 		var dist float64
-		if err := rows.Scan(&sm.Slug, &sm.Name, &sm.Tagline, &sm.LogoURL, &sm.Area, &sm.City, &sm.Pincodes, &dist); err != nil {
+		if err := rows.Scan(&sm.Slug, &sm.Name, &sm.Tagline, &sm.LogoURL, &sm.Area, &sm.City, &sm.Pincodes, &opensAt, &closesAt, &dist); err != nil {
 			return nil, err
 		}
 		d := dist
 		sm.DistanceKm = &d
+		sm.IsOpen = ShopOpen(opensAt, closesAt, now)
 		out = append(out, sm)
 	}
 	return out, rows.Err()

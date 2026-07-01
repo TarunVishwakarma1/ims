@@ -32,6 +32,8 @@ type UpsertProfileInput struct {
 	Lat              *float64
 	Lng              *float64
 	DeliveryRadiusKm *float64
+	OpensAt          *string // "HH:MM" IST, or nil
+	ClosesAt         *string
 	IsLive           bool
 }
 
@@ -67,6 +69,17 @@ func (s *shopProfileService) Upsert(ctx context.Context, orgID uuid.UUID, in Ups
 	if in.DeliveryRadiusKm != nil && (*in.DeliveryRadiusKm <= 0 || *in.DeliveryRadiusKm > 100) {
 		return nil, errors.New("delivery radius must be between 0 and 100 km")
 	}
+	if (in.OpensAt == nil) != (in.ClosesAt == nil) {
+		return nil, errors.New("set both opening and closing time, or neither")
+	}
+	if in.OpensAt != nil {
+		if _, ok := parseHHMM(*in.OpensAt); !ok {
+			return nil, errors.New("opening time must be HH:MM (24-hour)")
+		}
+		if _, ok := parseHHMM(*in.ClosesAt); !ok {
+			return nil, errors.New("closing time must be HH:MM (24-hour)")
+		}
+	}
 
 	// Load any existing profile — needed for slug-lock.
 	existing, err := s.repo.GetByOrg(ctx, orgID)
@@ -97,7 +110,8 @@ func (s *shopProfileService) Upsert(ctx context.Context, orgID uuid.UUID, in Ups
 		OrgID: orgID, Slug: slug, DisplayName: strings.TrimSpace(in.DisplayName),
 		Tagline: in.Tagline, LogoURL: in.LogoURL, Area: in.Area, City: in.City,
 		Pincodes: in.Pincodes, Lat: in.Lat, Lng: in.Lng,
-		DeliveryRadiusKm: in.DeliveryRadiusKm, IsLive: in.IsLive,
+		DeliveryRadiusKm: in.DeliveryRadiusKm,
+		OpensAt:          in.OpensAt, ClosesAt: in.ClosesAt, IsLive: in.IsLive,
 	}
 	if p.Pincodes == nil {
 		p.Pincodes = []string{}
