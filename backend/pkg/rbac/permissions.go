@@ -48,6 +48,10 @@ const (
 	// Banner CMS (Plan 2b) — view = read list/detail; manage = create/edit/publish/archive/delete.
 	BannersView   Permission = "banners:view"
 	BannersManage Permission = "banners:manage"
+
+	// Storefront (Plan 4) — seller storefront self-management.
+	StorefrontView   Permission = "storefront:view"
+	StorefrontManage Permission = "storefront:manage"
 )
 
 

@@ -33,6 +33,9 @@ export const PERMISSIONS = {
 
   BANNERS_VIEW: 'banners:view',
   BANNERS_MANAGE: 'banners:manage',
+
+  STOREFRONT_VIEW: 'storefront:view',
+  STOREFRONT_MANAGE: 'storefront:manage',
 } as const
 
 export type Permission = typeof PERMISSIONS[keyof typeof PERMISSIONS]
@@ -54,6 +57,8 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     PERMISSIONS.PAYMENTS_VIEW,
     // Coupons — managers can view but not edit by default.
     PERMISSIONS.COUPONS_VIEW,
+    // Storefront — managers can view and manage their own storefront profile.
+    PERMISSIONS.STOREFRONT_VIEW, PERMISSIONS.STOREFRONT_MANAGE,
   ],
   staff: [
     PERMISSIONS.PRODUCTS_VIEW,
