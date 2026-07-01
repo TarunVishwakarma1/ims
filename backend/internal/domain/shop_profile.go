@@ -20,9 +20,12 @@ type ShopProfile struct {
 	Pincodes    []string  `json:"pincodes"`
 	Lat         *float64  `json:"lat"`
 	Lng         *float64  `json:"lng"`
-	IsLive      bool      `json:"is_live"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	// DeliveryRadiusKm, when set, makes the shop serviceable by distance from
+	// lat/lng. NULL falls back to pincode-only matching.
+	DeliveryRadiusKm *float64  `json:"delivery_radius_km"`
+	IsLive           bool      `json:"is_live"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
 }
 
 type ShopProfileRepository interface {

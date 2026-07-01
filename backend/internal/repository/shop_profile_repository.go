@@ -20,10 +20,10 @@ func (r *shopProfileRepo) GetByOrg(ctx context.Context, orgID uuid.UUID) (*domai
 	var p domain.ShopProfile
 	err := r.db.QueryRow(ctx, `
 		SELECT org_id, slug, display_name, tagline, logo_url, area, city,
-		       pincodes, lat, lng, is_live, created_at, updated_at
+		       pincodes, lat, lng, delivery_radius_km, is_live, created_at, updated_at
 		  FROM shop_profiles WHERE org_id = $1`, orgID,
 	).Scan(&p.OrgID, &p.Slug, &p.DisplayName, &p.Tagline, &p.LogoURL, &p.Area,
-		&p.City, &p.Pincodes, &p.Lat, &p.Lng, &p.IsLive, &p.CreatedAt, &p.UpdatedAt)
+		&p.City, &p.Pincodes, &p.Lat, &p.Lng, &p.DeliveryRadiusKm, &p.IsLive, &p.CreatedAt, &p.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, domain.ErrNotFound
 	}
@@ -37,13 +37,13 @@ func (r *shopProfileRepo) Upsert(ctx context.Context, p *domain.ShopProfile) err
 	_, err := r.db.Exec(ctx, `
 		INSERT INTO shop_profiles
 		    (org_id, slug, display_name, tagline, logo_url, area, city,
-		     pincodes, lat, lng, is_live, updated_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11, NOW())
+		     pincodes, lat, lng, delivery_radius_km, is_live, updated_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, NOW())
 		ON CONFLICT (org_id) DO UPDATE SET
 		    slug=$2, display_name=$3, tagline=$4, logo_url=$5, area=$6, city=$7,
-		    pincodes=$8, lat=$9, lng=$10, is_live=$11, updated_at=NOW()`,
+		    pincodes=$8, lat=$9, lng=$10, delivery_radius_km=$11, is_live=$12, updated_at=NOW()`,
 		p.OrgID, p.Slug, p.DisplayName, p.Tagline, p.LogoURL, p.Area, p.City,
-		p.Pincodes, p.Lat, p.Lng, p.IsLive)
+		p.Pincodes, p.Lat, p.Lng, p.DeliveryRadiusKm, p.IsLive)
 	return err
 }
 

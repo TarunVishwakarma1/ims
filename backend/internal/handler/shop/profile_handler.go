@@ -30,10 +30,11 @@ type profileRequest struct {
 	LogoURL     string   `json:"logo_url"`
 	Area        string   `json:"area"`
 	City        string   `json:"city"`
-	Pincodes    []string `json:"pincodes"`
-	Lat         *float64 `json:"lat"`
-	Lng         *float64 `json:"lng"`
-	IsLive      bool     `json:"is_live"`
+	Pincodes         []string `json:"pincodes"`
+	Lat              *float64 `json:"lat"`
+	Lng              *float64 `json:"lng"`
+	DeliveryRadiusKm *float64 `json:"delivery_radius_km"`
+	IsLive           bool     `json:"is_live"`
 }
 
 func (h *ProfileHandler) GetMine(w http.ResponseWriter, r *http.Request) {
@@ -68,7 +69,8 @@ func (h *ProfileHandler) Upsert(w http.ResponseWriter, r *http.Request) {
 	p, err := h.svc.Upsert(r.Context(), orgID, shopsvc.UpsertProfileInput{
 		Slug: req.Slug, DisplayName: req.DisplayName, Tagline: req.Tagline,
 		LogoURL: req.LogoURL, Area: req.Area, City: req.City,
-		Pincodes: req.Pincodes, Lat: req.Lat, Lng: req.Lng, IsLive: req.IsLive,
+		Pincodes: req.Pincodes, Lat: req.Lat, Lng: req.Lng,
+		DeliveryRadiusKm: req.DeliveryRadiusKm, IsLive: req.IsLive,
 	})
 	if err != nil {
 		switch {

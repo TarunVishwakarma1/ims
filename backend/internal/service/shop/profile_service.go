@@ -28,10 +28,11 @@ type UpsertProfileInput struct {
 	LogoURL     string
 	Area        string
 	City        string
-	Pincodes    []string
-	Lat         *float64
-	Lng         *float64
-	IsLive      bool
+	Pincodes         []string
+	Lat              *float64
+	Lng              *float64
+	DeliveryRadiusKm *float64
+	IsLive           bool
 }
 
 type ShopProfileService interface {
@@ -63,6 +64,9 @@ func (s *shopProfileService) Upsert(ctx context.Context, orgID uuid.UUID, in Ups
 	if in.Lng != nil && (*in.Lng < -180 || *in.Lng > 180) {
 		return nil, errors.New("longitude out of range")
 	}
+	if in.DeliveryRadiusKm != nil && (*in.DeliveryRadiusKm <= 0 || *in.DeliveryRadiusKm > 100) {
+		return nil, errors.New("delivery radius must be between 0 and 100 km")
+	}
 
 	// Load any existing profile — needed for slug-lock.
 	existing, err := s.repo.GetByOrg(ctx, orgID)
@@ -92,7 +96,8 @@ func (s *shopProfileService) Upsert(ctx context.Context, orgID uuid.UUID, in Ups
 	p := &domain.ShopProfile{
 		OrgID: orgID, Slug: slug, DisplayName: strings.TrimSpace(in.DisplayName),
 		Tagline: in.Tagline, LogoURL: in.LogoURL, Area: in.Area, City: in.City,
-		Pincodes: in.Pincodes, Lat: in.Lat, Lng: in.Lng, IsLive: in.IsLive,
+		Pincodes: in.Pincodes, Lat: in.Lat, Lng: in.Lng,
+		DeliveryRadiusKm: in.DeliveryRadiusKm, IsLive: in.IsLive,
 	}
 	if p.Pincodes == nil {
 		p.Pincodes = []string{}
