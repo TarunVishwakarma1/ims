@@ -424,6 +424,20 @@ export interface ShopProfile {
   updated_at: string;
 }
 
+export interface SalesDay {
+  date: string;
+  orders: number;
+  revenue_paise: number;
+}
+
+export interface SalesSummary {
+  days: number;
+  orders: number;
+  revenue_paise: number;
+  avg_order_paise: number;
+  by_day: SalesDay[];
+}
+
 export interface ShopProfileInput {
   slug: string;
   display_name: string;
