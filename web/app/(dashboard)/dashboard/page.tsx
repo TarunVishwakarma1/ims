@@ -1,6 +1,5 @@
 'use client'
 
-import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
 import { productsApi } from '@/lib/api/products'
 import { categoriesApi } from '@/lib/api/categories'
@@ -9,6 +8,8 @@ import { inventoryApi } from '@/lib/api/inventory'
 import { storefrontApi } from '@/lib/api/storefront'
 import { hasPermission, PERMISSIONS } from '@/lib/rbac'
 import { useAuthStore } from '@/lib/stores/auth-store'
+import { onboardingComplete } from '@/lib/onboarding'
+import { OnboardingChecklist } from '@/components/dashboard/onboarding-checklist'
 import { Package, Tags, ShoppingCart, AlertTriangle } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
@@ -28,6 +29,16 @@ export default function DashboardPage() {
     enabled: canViewStorefront,
   })
 
+  const onboarding = {
+    hasStorefront: !!storefront,
+    hasProducts: (products ?? []).length > 0,
+    isLive: !!storefront?.is_live,
+  }
+  // Show the checklist only once the storefront query has resolved (so it
+  // doesn't flash "not set up" mid-load) and while onboarding is incomplete.
+  const showOnboarding =
+    canViewStorefront && storefront !== undefined && !onboardingComplete(onboarding)
+
   const stats = [
     { title: 'Products', value: (products ?? []).length, icon: Package },
     { title: 'Categories', value: (categories ?? []).length, icon: Tags },
@@ -37,18 +48,7 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      {storefront === null && (
-        <Link href="/storefront"
-          className="block rounded-md border border-border bg-muted px-4 py-3 text-sm hover:bg-muted/70">
-          Set up your storefront to start selling on Kirana →
-        </Link>
-      )}
-      {storefront && !storefront.is_live && (
-        <Link href="/storefront"
-          className="block rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 hover:bg-amber-100">
-          Your storefront isn&apos;t live yet — finish setup to appear in Kirana →
-        </Link>
-      )}
+      {showOnboarding && <OnboardingChecklist state={onboarding} />}
       <div>
         <h2 className="text-2xl font-bold tracking-tight">Overview</h2>
         <p className="text-muted-foreground">
