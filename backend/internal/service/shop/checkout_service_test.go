@@ -571,8 +571,9 @@ func TestPlace_COD_InRange_Places(t *testing.T) {
 	if res.OrderID == (uuid.UUID{}) {
 		t.Fatal("expected non-zero OrderID")
 	}
-	if res.PayablePaise != 50000 {
-		t.Fatalf("expected PayablePaise=50000, got %d", res.PayablePaise)
+	// subtotal 50000 + 300 platform fee (delivery free at this total).
+	if res.PayablePaise != 50300 {
+		t.Fatalf("expected PayablePaise=50300, got %d", res.PayablePaise)
 	}
 }
 
@@ -628,8 +629,9 @@ func TestPlace_Razorpay_NotGatedByCODBounds(t *testing.T) {
 	if res.OrderID == (uuid.UUID{}) {
 		t.Fatal("expected non-zero OrderID")
 	}
-	if res.PayablePaise != 600000 {
-		t.Fatalf("expected PayablePaise=600000, got %d", res.PayablePaise)
+	// subtotal 600000 + 300 platform fee (delivery free at this total).
+	if res.PayablePaise != 600300 {
+		t.Fatalf("expected PayablePaise=600300, got %d", res.PayablePaise)
 	}
 	if res.RazorpayKeyID != "test_key_id" {
 		t.Fatalf("expected RazorpayKeyID='test_key_id', got %q", res.RazorpayKeyID)

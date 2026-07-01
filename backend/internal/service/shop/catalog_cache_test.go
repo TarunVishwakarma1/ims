@@ -93,7 +93,7 @@ func (m *memCache) Ping(_ context.Context) error { return nil }
 
 func TestCatalogCache_HitReturnsSameResult(t *testing.T) {
 	pool := testdb.MustOpen(t)
-	orgID := testdb.PickOrFakeOrgID(t, pool)
+	orgID := testdb.FreshOrgID(t, pool)
 	testdb.SeedShopCategory(t, pool, orgID, "Snacks", "snacks", 1, true)
 	memc := newMemCache()
 	cc := &countingCache{inner: memc}

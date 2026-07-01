@@ -195,6 +195,25 @@ func PickOrFakeOrgID(t *testing.T, pool *pgxpool.Pool) uuid.UUID {
 	return id
 }
 
+// FreshOrgID always inserts a brand-new empty organization and returns its id,
+// registering cleanup. Unlike PickOrFakeOrgID (which reuses the first existing
+// org — often the seeded demo org) it guarantees isolation, so tests that
+// assert exact category/product counts don't collide with seed data in a
+// shared database.
+func FreshOrgID(t *testing.T, pool *pgxpool.Pool) uuid.UUID {
+	t.Helper()
+	ctx := context.Background()
+	var id uuid.UUID
+	slug := "fresh-org-" + uuid.New().String()
+	if err := pool.QueryRow(ctx,
+		`INSERT INTO organizations (name, slug) VALUES ('FreshOrg', $1) RETURNING id`, slug,
+	).Scan(&id); err != nil {
+		t.Fatalf("create fresh org: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(ctx, `DELETE FROM organizations WHERE id=$1`, id) })
+	return id
+}
+
 // MarkProductShopVisible flips an existing product to shop-visible with the
 // supplied slug/description/images. Falls back to nil shopPrice (price column wins).
 func MarkProductShopVisible(t *testing.T, pool *pgxpool.Pool, productID uuid.UUID, slug, description string, imageURLs []string, shopPricePaise *int64) {

@@ -15,7 +15,7 @@ import (
 
 func TestCatalog_ListCategories_OnlyShopVisible(t *testing.T) {
 	pool := testdb.MustOpen(t)
-	orgID := testdb.PickOrFakeOrgID(t, pool)
+	orgID := testdb.FreshOrgID(t, pool)
 	testdb.SeedShopCategory(t, pool, orgID, "Snacks", "snacks", 1, true)
 	testdb.SeedShopCategory(t, pool, orgID, "Bakery", "bakery", 2, true)
 	testdb.SeedShopCategory(t, pool, orgID, "Hidden", "hidden", 99, false)
@@ -35,7 +35,7 @@ func TestCatalog_ListCategories_OnlyShopVisible(t *testing.T) {
 
 func TestCatalog_ListProducts_FilterByCategory(t *testing.T) {
 	pool := testdb.MustOpen(t)
-	orgID := testdb.PickOrFakeOrgID(t, pool)
+	orgID := testdb.FreshOrgID(t, pool)
 	catA := testdb.SeedShopCategory(t, pool, orgID, "Snacks", "snacks", 1, true)
 	catB := testdb.SeedShopCategory(t, pool, orgID, "Bakery", "bakery", 2, true)
 
@@ -58,7 +58,7 @@ func TestCatalog_ListProducts_FilterByCategory(t *testing.T) {
 
 func TestCatalog_ListProducts_PriceRange(t *testing.T) {
 	pool := testdb.MustOpen(t)
-	orgID := testdb.PickOrFakeOrgID(t, pool)
+	orgID := testdb.FreshOrgID(t, pool)
 	cat := testdb.SeedShopCategory(t, pool, orgID, "All", "all", 1, true)
 
 	for i, price := range []int64{1000, 5000, 9999} {
@@ -162,15 +162,19 @@ func TestCatalog_ListProducts_SearchFTS(t *testing.T) {
 
 func TestCatalog_ListProducts_SearchFuzzy(t *testing.T) {
 	pool := testdb.MustOpen(t)
-	orgID := testdb.PickOrFakeOrgID(t, pool)
+	orgID := testdb.FreshOrgID(t, pool)
 	p, _ := testdb.SeedProductWithStock(t, pool, "Parle G Biscuit", 1000, 5)
 	_, _ = pool.Exec(context.Background(), `UPDATE products SET org_id=$1 WHERE id=$2`, orgID, p)
 	testdb.MarkProductShopVisible(t, pool, p, "parle-g-biscuit", "", nil, nil)
 
 	svc := shop.NewCatalogService(pool, cache.NoOp(), orgID)
-	res, _ := svc.ListProducts(context.Background(), shop.ProductListQuery{Search: "biskut", Limit: 24})
+	// "biscut" is a one-letter-drop typo of "biscuit" (word_similarity ≈ 0.71,
+	// above the query's deliberate 0.5 trigram threshold). Looser typos like
+	// "biskut" (≈ 0.43) are intentionally NOT matched, to avoid false positives
+	// on long product names.
+	res, _ := svc.ListProducts(context.Background(), shop.ProductListQuery{Search: "biscut", Limit: 24})
 	if len(res.Items) == 0 {
-		t.Fatalf("expected fuzzy hit on 'biskut', got 0 items")
+		t.Fatalf("expected fuzzy hit on 'biscut', got 0 items")
 	}
 }
 
@@ -211,10 +215,10 @@ func TestCatalog_ListProducts_CursorRoundTrip(t *testing.T) {
 
 func TestCatalog_GetProductBySlug_Found(t *testing.T) {
 	pool := testdb.MustOpen(t)
-	orgID := testdb.PickOrFakeOrgID(t, pool)
+	orgID := testdb.FreshOrgID(t, pool)
 	cat := testdb.SeedShopCategory(t, pool, orgID, "Snacks", "snacks", 1, true)
 	p, _ := testdb.SeedProductWithStock(t, pool, "Parle G", 1000, 5)
-	_, _ = pool.Exec(context.Background(), `UPDATE products SET category_id=$1 WHERE id=$2`, cat, p)
+	_, _ = pool.Exec(context.Background(), `UPDATE products SET org_id=$1, category_id=$2 WHERE id=$3`, orgID, cat, p)
 	testdb.MarkProductShopVisible(t, pool, p, "parle-g", "Classic biscuit", []string{"u1","u2"}, nil)
 
 	svc := shop.NewCatalogService(pool, cache.NoOp(), orgID)
